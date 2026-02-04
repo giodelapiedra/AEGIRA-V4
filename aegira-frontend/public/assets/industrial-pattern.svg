@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300" fill="none" stroke="#475569" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+
+  <!-- Hard hat -->
+  <path d="M40 70 C40 42 65 28 80 28 C95 28 120 42 120 70"/>
+  <line x1="35" y1="70" x2="125" y2="70"/>
+  <line x1="80" y1="28" x2="80" y2="18"/>
+
+  <!-- Gear / Cog -->
+  <circle cx="230" cy="55" r="20"/>
+  <circle cx="230" cy="55" r="10"/>
+  <line x1="230" y1="30" x2="230" y2="35"/>
+  <line x1="230" y1="75" x2="230" y2="80"/>
+  <line x1="205" y1="55" x2="210" y2="55"/>
+  <line x1="250" y1="55" x2="255" y2="55"/>
+  <line x1="216" y1="41" x2="219" y2="44"/>
+  <line x1="241" y1="66" x2="244" y2="69"/>
+  <line x1="216" y1="69" x2="219" y2="66"/>
+  <line x1="241" y1="44" x2="244" y2="41"/>
+
+  <!-- Clipboard -->
+  <rect x="40" y="150" width="38" height="52" rx="4"/>
+  <rect x="50" y="144" width="18" height="10" rx="3"/>
+  <line x1="50" y1="170" x2="68" y2="170"/>
+  <line x1="50" y1="179" x2="68" y2="179"/>
+  <line x1="50" y1="188" x2="62" y2="188"/>
+
+  <!-- Shield with checkmark -->
+  <path d="M215 140 L215 172 C215 186 235 198 235 198 C235 198 255 186 255 172 L255 140 Z"/>
+  <polyline points="223 168 232 177 248 160"/>
+
+  <!-- Hexagon bolt -->
+  <polygon points="150 100, 162 107, 162 121, 150 128, 138 121, 138 107"/>
+  <circle cx="150" cy="114" r="6"/>
+
+  <!-- Wrench -->
+  <line x1="120" y1="240" x2="170" y2="260"/>
+  <circle cx="115" cy="237" r="9"/>
+  <circle cx="115" cy="237" r="4"/>
+  <path d="M170 260 L180 254 L176 266 Z"/>
+
+  <!-- Safety cone -->
+  <path d="M255 240 L265 240 L262 218 L258 218 Z"/>
+  <line x1="257" y1="228" x2="263" y2="228"/>
+  <line x1="254" y1="244" x2="266" y2="244"/>
+
+  <!-- Small cross/plus marks scattered -->
+  <g stroke-width="1">
+    <line x1="18" y1="115" x2="26" y2="115"/>
+    <line x1="22" y1="111" x2="22" y2="119"/>
+
+    <line x1="280" y1="135" x2="288" y2="135"/>
+    <line x1="284" y1="131" x2="284" y2="139"/>
+
+    <line x1="170" y1="45" x2="178" y2="45"/>
+    <line x1="174" y1="41" x2="174" y2="49"/>
+
+    <line x1="30" y1="250" x2="38" y2="250"/>
+    <line x1="34" y1="246" x2="34" y2="254"/>
+  </g>
+
+  <!-- Small dots (rivets) -->
+  <g fill="#475569" stroke="none">
+    <circle cx="150" cy="20" r="2"/>
+    <circle cx="10" cy="290" r="2"/>
+    <circle cx="290" cy="10" r="2"/>
+    <circle cx="290" cy="290" r="2"/>
+    <circle cx="150" cy="280" r="2"/>
+  </g>
+</svg>

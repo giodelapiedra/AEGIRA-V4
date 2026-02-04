@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc:*)",
+      "Bash(npx vitest run)",
+      "Bash(tree:*)",
+      "Bash(npx vite build:*)",
+      "Bash(npm run build:*)",
+      "Bash(findstr:*)",
+      "Bash(del \"D:\\\\AEGIRA V5\\\\aegira-frontend\\\\src\\\\features\\\\admin\\\\pages\\\\AdminAmendmentsPage.tsx\")",
+      "Bash(dir:*)",
+      "Bash(npx prisma migrate:*)",
+      "Bash(npx prisma db push:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(ls -la \"D:\\\\AEGIRA V5\\\\aegira-backend\\\\src\\\\shared\"\" 2>/dev/null || echo \"Directory not found \")",
+      "Bash(test:*)"
+    ]
+  }
+}
