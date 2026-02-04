@@ -1,0 +1,458 @@
+// AEGIRA Backend - Prisma Schema
+// Multi-tenant event-sourced architecture
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// CORE ENTITIES
+// ============================================
+
+model Company {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  timezone    String   @default("Asia/Manila")
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  // Relations
+  persons       Person[]
+  teams         Team[]
+  events        Event[]
+  notifications Notification[]
+  incidents     Incident[]
+  cases         Case[]
+
+  @@map("companies")
+}
+
+model Person {
+  id               String    @id @default(uuid())
+  company_id       String
+  email            String
+  password_hash    String?
+  first_name       String
+  last_name        String
+  gender           Gender?
+  date_of_birth    DateTime? @db.Date
+  profile_picture_url String?
+  role             Role      @default(WORKER)
+  team_id          String?
+  team_assigned_at DateTime? // When worker was assigned to current team
+  is_active        Boolean   @default(true)
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+
+  // Relations
+  company          Company        @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  team             Team?          @relation("TeamMembers", fields: [team_id], references: [id], onDelete: SetNull)
+  led_teams        Team[]         @relation("TeamLeader") // Teams this person leads
+  supervised_teams Team[]         @relation("TeamSupervisor") // Teams this person supervises
+  check_ins        CheckIn[]
+  missed_check_ins MissedCheckIn[]
+  notifications    Notification[]
+  events           Event[]        @relation("PersonEvents")
+  amendments       Amendment[]
+  audit_logs       AuditLog[]
+  reported_incidents  Incident[]  @relation("ReportedIncidents")
+  reviewed_incidents  Incident[]  @relation("ReviewedIncidents")
+  assigned_cases      Case[]      @relation("AssignedCases")
+
+  @@unique([company_id, email])
+  @@index([team_id])
+  @@index([company_id, is_active])
+  @@index([company_id, role])
+  @@index([company_id, is_active, role])
+  @@index([email])
+  @@index([company_id, last_name, first_name])
+  @@index([company_id, team_id, is_active])
+  @@map("persons")
+}
+
+model Team {
+  id              String   @id @default(uuid())
+  company_id      String
+  name            String
+  description     String?
+  leader_id       String   // Team leader (person with TEAM_LEAD role) - Required
+  supervisor_id   String?  // Supervisor assigned to oversee this team (optional)
+
+  // Team Schedule - Check-in window for this team
+  check_in_start  String   @default("06:00")  // e.g. "06:00" (6 AM)
+  check_in_end    String   @default("10:00")  // e.g. "10:00" (10 AM)
+  work_days       String   @default("1,2,3,4,5")  // CSV: 0=Sun, 1=Mon, ..., 6=Sat
+
+  is_active       Boolean  @default(true)
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  // Relations
+  company          Company         @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  leader           Person          @relation("TeamLeader", fields: [leader_id], references: [id])
+  supervisor       Person?         @relation("TeamSupervisor", fields: [supervisor_id], references: [id])
+  members          Person[]        @relation("TeamMembers")
+  missed_check_ins MissedCheckIn[]
+
+  @@unique([company_id, name])
+  @@index([leader_id])
+  @@index([supervisor_id])
+  @@index([company_id, is_active])
+  @@index([company_id, leader_id])
+  @@map("teams")
+}
+
+// ============================================
+// CHECK-IN SYSTEM
+// ============================================
+
+model CheckIn {
+  id              String         @id @default(uuid())
+  company_id      String
+  person_id       String
+  event_id        String         @unique
+  check_in_date   DateTime       @db.Date
+
+  // Input data
+  hours_slept     Float
+  sleep_quality   Int            // 1-10
+  stress_level    Int            // 1-10
+  physical_condition Int         // 1-10
+  pain_level      Int?           // 0-10 (0 = no pain)
+  pain_location   String?        // Dropdown selection (e.g., "Lower Back", "Knee (Left)")
+  physical_condition_notes String? // Free-text notes about physical condition
+  notes           String?
+
+  // Calculated readiness
+  readiness_score Int            // 0-100
+  readiness_level ReadinessLevel
+  sleep_score     Int            // 0-100
+  stress_score    Int            // 0-100
+  physical_score  Int            // 0-100
+  pain_score      Int?           // 0-100 (null if no pain reported)
+
+  created_at      DateTime       @default(now())
+
+  // Relations
+  person     Person      @relation(fields: [person_id], references: [id], onDelete: Cascade)
+  event      Event       @relation(fields: [event_id], references: [id])
+  amendments Amendment[]
+
+  @@unique([person_id, check_in_date])
+  @@index([company_id, check_in_date])
+  @@index([company_id, person_id, check_in_date])
+  @@map("check_ins")
+}
+
+model MissedCheckIn {
+  id              String               @id @default(uuid())
+  company_id      String
+  person_id       String
+  team_id         String
+  missed_date     DateTime             @db.Date
+  status          MissedCheckInStatus  @default(OPEN)
+  schedule_window String               // e.g. "06:00 - 10:00"
+  notes           String?
+  resolved_by     String?              // person_id of resolver
+  resolved_at     DateTime?
+  created_at      DateTime             @default(now())
+  updated_at      DateTime             @updatedAt
+
+  // Relations
+  person Person @relation(fields: [person_id], references: [id], onDelete: Cascade)
+  team   Team   @relation(fields: [team_id], references: [id], onDelete: Cascade)
+
+  @@unique([person_id, missed_date])
+  @@index([company_id, status])
+  @@index([company_id, missed_date])
+  @@index([team_id])
+  @@index([company_id, status, missed_date])
+  @@map("missed_check_ins")
+}
+
+// ============================================
+// EVENT SOURCING
+// ============================================
+
+model Event {
+  id          String    @id @default(uuid())
+  company_id  String
+  person_id   String?
+  event_type  EventType
+  entity_type String    // 'check_in', 'team', 'person', etc.
+  entity_id   String?
+  payload     Json      // Event data
+  created_at  DateTime  @default(now())
+
+  // Relations
+  company  Company   @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  person   Person?   @relation("PersonEvents", fields: [person_id], references: [id], onDelete: SetNull)
+  check_in CheckIn?
+
+  @@index([person_id])                                      // FK: onDelete SetNull — required for cascade
+  @@index([company_id, entity_type, entity_id, created_at])
+  @@map("events")
+}
+
+// ============================================
+// NOTIFICATIONS
+// ============================================
+
+model Notification {
+  id          String           @id @default(uuid())
+  company_id  String
+  person_id   String
+  type        NotificationType
+  title       String
+  message     String
+  read_at     DateTime?
+  created_at  DateTime         @default(now())
+
+  // Relations
+  company Company @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  person  Person  @relation(fields: [person_id], references: [id], onDelete: Cascade)
+
+  @@index([person_id])                        // FK: onDelete Cascade — required for cascade
+  @@index([company_id, person_id, created_at])
+  @@index([company_id, person_id, read_at])
+  @@index([company_id, created_at])
+  @@map("notifications")
+}
+
+// ============================================
+// HOLIDAYS
+// ============================================
+
+model Holiday {
+  id           String   @id @default(uuid())
+  company_id   String
+  name         String
+  date         DateTime @db.Date
+  is_recurring Boolean  @default(false)
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  @@index([company_id, date])
+  @@map("holidays")
+}
+
+// ============================================
+// AMENDMENTS
+// ============================================
+
+model Amendment {
+  id               String          @id @default(uuid())
+  company_id       String
+  person_id        String
+  check_in_id      String
+  field_name       String
+  old_value        String
+  new_value        String
+  reason           String
+  status           AmendmentStatus @default(PENDING)
+  reviewed_by      String?
+  reviewed_at      DateTime?
+  rejection_reason String?
+  created_at       DateTime        @default(now())
+  updated_at       DateTime        @updatedAt
+
+  // Relations
+  person   Person  @relation(fields: [person_id], references: [id], onDelete: Cascade)
+  check_in CheckIn @relation(fields: [check_in_id], references: [id], onDelete: Cascade)
+
+  @@index([person_id])
+  @@index([company_id, check_in_id])
+  @@index([company_id, status])
+  @@map("amendments")
+}
+
+// ============================================
+// AUDIT LOGS
+// ============================================
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  company_id String
+  person_id  String?
+  action     String
+  entity_type String
+  entity_id  String?
+  details    Json?
+  ip_address String?
+  created_at DateTime @default(now())
+
+  // Relations
+  person Person? @relation(fields: [person_id], references: [id], onDelete: SetNull)
+
+  @@index([person_id])              // FK: onDelete SetNull — required for cascade
+  @@index([company_id, created_at])
+  @@index([company_id, action])
+  @@map("audit_logs")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum Role {
+  ADMIN
+  WHS
+  SUPERVISOR
+  TEAM_LEAD
+  WORKER
+}
+
+enum ReadinessLevel {
+  GREEN
+  YELLOW
+  RED
+}
+
+enum MissedCheckInStatus {
+  OPEN
+  INVESTIGATING
+  EXCUSED
+  RESOLVED
+}
+
+enum EventType {
+  CHECK_IN_SUBMITTED
+  CHECK_IN_UPDATED
+  PERSON_CREATED
+  PERSON_UPDATED
+  PERSON_DEACTIVATED
+  TEAM_CREATED
+  TEAM_UPDATED
+  TEAM_DEACTIVATED
+  INCIDENT_CREATED
+  INCIDENT_APPROVED
+  INCIDENT_REJECTED
+  CASE_CREATED
+  CASE_UPDATED
+  CASE_RESOLVED
+}
+
+enum NotificationType {
+  CHECK_IN_REMINDER
+  MISSED_CHECK_IN
+  TEAM_ALERT
+  SYSTEM
+  INCIDENT_SUBMITTED
+  INCIDENT_APPROVED
+  INCIDENT_REJECTED
+}
+
+enum AmendmentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum IncidentType {
+  PHYSICAL_INJURY
+  ILLNESS_SICKNESS
+  MENTAL_HEALTH
+  MEDICAL_EMERGENCY
+  HEALTH_SAFETY_CONCERN
+  OTHER
+}
+
+enum IncidentSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum IncidentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum CaseStatus {
+  OPEN
+  INVESTIGATING
+  RESOLVED
+  CLOSED
+}
+
+enum RejectionReason {
+  DUPLICATE_REPORT
+  INSUFFICIENT_INFORMATION
+  NOT_WORKPLACE_INCIDENT
+  OTHER
+}
+
+// ============================================
+// INCIDENT REPORTING (WHS)
+// ============================================
+
+model Incident {
+  id                    String            @id @default(uuid())
+  company_id            String
+  incident_number       Int               // Sequential per company, set in service layer
+  reporter_id           String
+  incident_type         IncidentType
+  severity              IncidentSeverity
+  title                 String
+  location              String?
+  description           String
+  status                IncidentStatus    @default(PENDING)
+  reviewed_by           String?
+  reviewed_at           DateTime?
+  rejection_reason      RejectionReason?
+  rejection_explanation String?
+  created_at            DateTime          @default(now())
+  updated_at            DateTime          @updatedAt
+
+  // Relations
+  company   Company  @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  reporter  Person   @relation("ReportedIncidents", fields: [reporter_id], references: [id], onDelete: Cascade)
+  reviewer  Person?  @relation("ReviewedIncidents", fields: [reviewed_by], references: [id], onDelete: SetNull)
+  incident_case Case?
+
+  @@unique([company_id, incident_number])
+  @@index([company_id, status])
+  @@index([reporter_id])
+  @@index([reviewed_by])             // FK: onDelete SetNull — required for cascade
+  @@index([company_id, created_at])
+  @@index([company_id, reporter_id])
+  @@map("incidents")
+}
+
+model Case {
+  id              String      @id @default(uuid())
+  company_id      String
+  case_number     Int         // Sequential per company, set in service layer during approval
+  incident_id     String      @unique
+  assigned_to     String?
+  status          CaseStatus  @default(OPEN)
+  notes           String?
+  resolved_at     DateTime?
+  created_at      DateTime    @default(now())
+  updated_at      DateTime    @updatedAt
+
+  // Relations
+  company   Company   @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  incident  Incident  @relation(fields: [incident_id], references: [id], onDelete: Cascade)
+  assignee  Person?   @relation("AssignedCases", fields: [assigned_to], references: [id], onDelete: SetNull)
+
+  @@unique([company_id, case_number])
+  @@index([company_id, status])
+  @@index([assigned_to])
+  @@index([company_id, created_at])
+  @@map("cases")
+}

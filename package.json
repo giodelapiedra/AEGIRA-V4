@@ -1,0 +1,9 @@
+{
+  "name": "aegira-v5",
+  "private": true,
+  "scripts": {
+    "sync": "node sync-context.js --sync",
+    "sync:watch": "node sync-context.js --watch",
+    "sync:validate": "node sync-context.js --validate"
+  }
+}

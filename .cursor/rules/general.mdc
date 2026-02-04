@@ -1,0 +1,32 @@
+---
+description: AEGIRA General Project Rules
+globs: ["**/*"]
+alwaysApply: true
+---
+# AEGIRA V5
+
+Daily readiness tracking system. Multi-tenant, event-sourced.
+
+## Canonical Patterns
+
+All patterns are defined in `.mdtools/context-factory/`. Reference the relevant file before writing code.
+
+| Task | Context File |
+|------|-------------|
+| Tech stack & architecture | `architecture/tech-stack.md` |
+| Multi-tenant isolation | `architecture/multi-tenant.md` |
+| Event sourcing | `architecture/event-sourcing.md` |
+| Naming conventions | `shared/naming.md` |
+| TypeScript rules | `shared/typescript.md` |
+| Security | `shared/security.md` |
+| API contract | `shared/api-contract.md` |
+| Timezone handling | `shared/time-handling.md` |
+
+## Critical Rules
+
+- EVERY database query MUST filter by `company_id`
+- NO `any` types — strict TypeScript
+- Server state → TanStack Query, client state → Zustand (auth only)
+- JWT in httpOnly cookie — no tokens in localStorage or Zustand
+- Tailwind CSS only — no inline styles
+- NEVER hard delete — use `is_active: false`

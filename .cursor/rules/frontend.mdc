@@ -1,0 +1,32 @@
+---
+description: AEGIRA Frontend Rules - React + TanStack Query + shadcn/ui
+globs: ["aegira-frontend/**/*.{ts,tsx}"]
+alwaysApply: false
+---
+# Frontend Rules
+
+Patterns defined in `.mdtools/context-factory/frontend/`. Reference before writing code.
+
+| Task | Context File |
+|------|-------------|
+| Feature structure | `frontend/feature-structure.md` |
+| API client | `frontend/api-client.md` |
+| Query hooks | `frontend/query-hooks.md` |
+| Mutation hooks | `frontend/mutation-hooks.md` |
+| Components | `frontend/components.md` |
+| Forms | `frontend/forms.md` |
+| State management | `frontend/state-management.md` |
+| DataTable pages | `frontend/data-table.md` |
+| Page layouts | `frontend/page-patterns.md` |
+
+## Quick Reference
+
+- API calls: `apiClient` + `ENDPOINTS` constants (dynamic endpoints are functions: `ENDPOINTS.PERSON.BY_ID(id)`)
+- Query hooks: `useQuery` + `STALE_TIMES` (REALTIME 30s, STANDARD 2m, STATIC 10m, IMMUTABLE 30m)
+- Mutations: `useMutation` + invalidate ALL affected query keys in `onSuccess`
+- Pages: wrap in `<PageLoader isLoading error skeleton="type">` — never manual if/else
+- Tables: `DataTable` from `@/components/ui/data-table` — never custom pagination
+- Forms: React Hook Form + Zod (`zodResolver`) — never manual useState for form fields
+- State: TanStack Query (server), Zustand (auth only), React Hook Form (forms)
+- Page index: 0-indexed in frontend (`pageIndex`), 1-indexed in API (`page`)
+- Types: import from `@/types/`, re-export from hooks
