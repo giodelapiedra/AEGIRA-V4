@@ -200,8 +200,23 @@ export async function verifyUserPassword(c: Context): Promise<Response> {
 }
 
 export async function signup(c: Context): Promise<Response> {
-  const { firstName, lastName, email, password, companyName, timezone } =
-    await c.req.json();
+  const {
+    firstName,
+    lastName,
+    email,
+    password,
+    companyName,
+    timezone,
+    industry,
+    businessRegistrationType,
+    businessRegistrationNumber,
+    businessType,
+    addressStreet,
+    addressCity,
+    addressPostalCode,
+    addressState,
+    addressCountry,
+  } = await c.req.json();
 
   // Check if email already exists
   const existingPerson = await prisma.person.findFirst({
@@ -231,6 +246,15 @@ export async function signup(c: Context): Promise<Response> {
         name: companyName,
         slug,
         timezone: timezone || 'Asia/Manila',
+        industry: industry || null,
+        business_registration_type: businessRegistrationType,
+        business_registration_number: businessRegistrationNumber,
+        business_type: businessType,
+        address_street: addressStreet,
+        address_city: addressCity,
+        address_postal_code: addressPostalCode,
+        address_state: addressState,
+        address_country: addressCountry,
         is_active: true,
       },
     });

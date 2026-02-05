@@ -17,6 +17,16 @@ export const signupSchema = z.object({
   companyName: z.string().min(1, 'Company name is required').trim(),
   timezone: z.string().default('Asia/Manila'),
   industry: z.string().optional(),
+  businessRegistrationType: z.string().min(1, 'Business registration ID type is required').trim(),
+  businessRegistrationNumber: z.string().min(1, 'Business registration number is required').trim(),
+  businessType: z.string().min(1, 'Business type is required').trim(),
+
+  // Business physical address
+  addressStreet: z.string().min(1, 'Street address is required').trim(),
+  addressCity: z.string().min(1, 'City is required').trim(),
+  addressPostalCode: z.string().min(1, 'Postal/Zip code is required').trim(),
+  addressState: z.string().min(1, 'State/Province/Region is required').trim(),
+  addressCountry: z.string().min(1, 'Country is required').trim(),
 });
 
 export const refreshTokenSchema = z.object({

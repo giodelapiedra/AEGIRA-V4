@@ -250,7 +250,7 @@ export class DashboardService {
         leader_id: personId,
         is_active: true,
       },
-      select: { id: true, name: true, check_in_end: true, work_days: true },
+      select: { id: true, name: true, check_in_start: true, check_in_end: true, work_days: true },
     });
 
     // Base response for leaders without teams
@@ -270,27 +270,30 @@ export class DashboardService {
       };
     }
 
-    // Get WORKER members of the team (supervisors don't check-in)
-    // Include team_assigned_at to check if newly assigned
-    const teamMembers = await prisma.person.findMany({
-      where: {
-        company_id: this.companyId,
-        team_id: ledTeam.id,
-        role: 'WORKER',
-        is_active: true,
-      },
-      select: { id: true, first_name: true, last_name: true, email: true, team_assigned_at: true },
-    });
-
-    // Get today's check-ins for team workers
-    const teamCheckIns = await prisma.checkIn.findMany({
-      where: {
-        company_id: this.companyId,
-        check_in_date: today,
-        person: { team_id: ledTeam.id, role: 'WORKER' },
-      },
-      include: { person: { select: { id: true, first_name: true, last_name: true } } },
-    });
+    // Run independent queries in parallel for better performance
+    const [teamMembers, teamCheckIns, holidayCheck] = await Promise.all([
+      // Get WORKER members of the team (supervisors don't check-in)
+      prisma.person.findMany({
+        where: {
+          company_id: this.companyId,
+          team_id: ledTeam.id,
+          role: 'WORKER',
+          is_active: true,
+        },
+        select: { id: true, first_name: true, last_name: true, email: true, team_assigned_at: true },
+      }),
+      // Get today's check-ins for team workers
+      prisma.checkIn.findMany({
+        where: {
+          company_id: this.companyId,
+          check_in_date: today,
+          person: { team_id: ledTeam.id, role: 'WORKER' },
+        },
+        include: { person: { select: { id: true, first_name: true, last_name: true } } },
+      }),
+      // Check if today is a company holiday
+      checkHolidayForDate(prisma, this.companyId, todayStr),
+    ]);
 
     const checkInMap = new Map(teamCheckIns.map(c => [c.person_id, c]));
 
@@ -301,9 +304,6 @@ export class DashboardService {
       const assignedStr = formatDateInTimezone(new Date(assignedAt), timezone);
       return assignedStr === todayStr;
     };
-
-    // Check if today is a company holiday
-    const holidayCheck = await checkHolidayForDate(prisma, this.companyId, todayStr);
 
     // Determine if check-in window is closed (for missed status)
     const currentTime = getCurrentTimeInTimezone(timezone);
@@ -379,12 +379,17 @@ export class DashboardService {
       newlyAssigned: newlyAssignedCount, // Workers assigned today (not required)
       teamAvgReadiness,
       memberStatuses,
+      // Team schedule info
+      checkInStart: ledTeam.check_in_start || '06:00',
+      checkInEnd: ledTeam.check_in_end || '10:00',
+      workDays: ledTeam.work_days || '1,2,3,4,5',
     };
   }
 
   /**
    * Get supervisor dashboard stats
    * SUPERVISOR role monitors all teams and team leads in the company
+   * Optimized: Uses batch queries instead of N+1 pattern
    */
   async getSupervisorDashboard(supervisorId?: string) {
     const timezone = this.timezone;
@@ -408,57 +413,92 @@ export class DashboardService {
       },
     });
 
-    // Get team summaries
-    const teamSummaries = await Promise.all(
-      teams.map(async (team) => {
-        // Get team leader info
-        const leader = await prisma.person.findFirst({
-          where: { id: team.leader_id, company_id: this.companyId },
-          select: { id: true, first_name: true, last_name: true },
-        });
+    if (teams.length === 0) {
+      return {
+        totalTeams: 0,
+        totalWorkers: 0,
+        totalCheckIns: 0,
+        totalPending: 0,
+        overallAvgReadiness: 0,
+        overallComplianceRate: 0,
+        teams: [],
+      };
+    }
 
-        // Get worker count for this team
-        const workerCount = await prisma.person.count({
-          where: {
-            company_id: this.companyId,
-            team_id: team.id,
-            role: 'WORKER',
-            is_active: true,
-          },
-        });
+    const teamIds = teams.map(t => t.id);
+    const leaderIds = teams.map(t => t.leader_id).filter((id): id is string => id !== null);
 
-        // Get today's check-ins for this team
-        const checkInCount = await prisma.checkIn.count({
-          where: {
-            company_id: this.companyId,
-            check_in_date: today,
-            person: { team_id: team.id, role: 'WORKER' },
-          },
-        });
+    // Batch queries - run all in parallel (no nested queries inside Promise.all)
+    const [leaders, workerCounts, checkInsByPerson] = await Promise.all([
+      // Get all leaders in one query
+      prisma.person.findMany({
+        where: {
+          id: { in: leaderIds },
+          company_id: this.companyId,
+        },
+        select: { id: true, first_name: true, last_name: true },
+      }),
+      // Get worker counts grouped by team
+      prisma.person.groupBy({
+        by: ['team_id'],
+        where: {
+          company_id: this.companyId,
+          team_id: { in: teamIds },
+          role: 'WORKER',
+          is_active: true,
+        },
+        _count: { id: true },
+      }),
+      // Get today's check-ins with person info (includes team_id via join)
+      prisma.checkIn.findMany({
+        where: {
+          company_id: this.companyId,
+          check_in_date: today,
+          person: { team_id: { in: teamIds }, role: 'WORKER' },
+        },
+        select: {
+          person_id: true,
+          readiness_score: true,
+          person: { select: { team_id: true } },
+        },
+      }),
+    ]);
 
-        // Get average readiness for this team today
-        const avgResult = await prisma.checkIn.aggregate({
-          where: {
-            company_id: this.companyId,
-            check_in_date: today,
-            person: { team_id: team.id, role: 'WORKER' },
-          },
-          _avg: { readiness_score: true },
-        });
+    // Group check-ins by team (computed in-memory, no extra query)
+    const checkInStats = new Map<string, { count: number; avgSum: number }>();
+    for (const ci of checkInsByPerson) {
+      const teamId = ci.person.team_id;
+      if (!teamId) continue;
+      const existing = checkInStats.get(teamId) || { count: 0, avgSum: 0 };
+      existing.count++;
+      existing.avgSum += ci.readiness_score;
+      checkInStats.set(teamId, existing);
+    }
 
-        return {
-          teamId: team.id,
-          teamName: team.name,
-          leaderId: leader?.id || null,
-          leaderName: leader ? `${leader.first_name} ${leader.last_name}` : null,
-          workerCount,
-          todayCheckIns: checkInCount,
-          pendingCheckIns: workerCount - checkInCount,
-          avgReadiness: Math.round(avgResult._avg.readiness_score ?? 0),
-          complianceRate: workerCount > 0 ? Math.round((checkInCount / workerCount) * 100) : 0,
-        };
-      })
-    );
+    // Build lookup maps
+    const leaderMap = new Map(leaders.map(l => [l.id, l]));
+    const workerCountMap = new Map(workerCounts.map(wc => [wc.team_id, wc._count.id]));
+
+    // Build team summaries
+    const teamSummaries = teams.map(team => {
+      const leader = team.leader_id ? leaderMap.get(team.leader_id) : null;
+      const workerCount = workerCountMap.get(team.id) || 0;
+      const stats = checkInStats.get(team.id) || { count: 0, avgSum: 0 };
+      const checkInCount = stats.count;
+      const avgReadiness = checkInCount > 0 ? Math.round(stats.avgSum / checkInCount) : 0;
+
+      return {
+        teamId: team.id,
+        teamName: team.name,
+        leaderId: leader?.id || null,
+        leaderName: leader ? `${leader.first_name} ${leader.last_name}` : null,
+        workerCount,
+        todayCheckIns: checkInCount,
+        pendingCheckIns: workerCount - checkInCount,
+        avgReadiness,
+        complianceRate: workerCount > 0 ? Math.round((checkInCount / workerCount) * 100) : 0,
+      };
+    });
 
     // Calculate totals
     const totalWorkers = teamSummaries.reduce((sum, t) => sum + t.workerCount, 0);

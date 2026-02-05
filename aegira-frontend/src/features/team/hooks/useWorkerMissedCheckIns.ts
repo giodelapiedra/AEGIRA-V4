@@ -3,6 +3,20 @@ import { apiClient } from '@/lib/api/client';
 import { ENDPOINTS } from '@/lib/api/endpoints';
 import { STALE_TIMES } from '@/config/query.config';
 
+export interface MissedCheckInStateSnapshot {
+  dayOfWeek: number | null;
+  checkInStreakBefore: number | null;
+  recentReadinessAvg: number | null;
+  daysSinceLastCheckIn: number | null;
+  daysSinceLastMiss: number | null;
+  missesInLast30d: number | null;
+  missesInLast60d: number | null;
+  missesInLast90d: number | null;
+  baselineCompletionRate: number | null;
+  isFirstMissIn30d: boolean | null;
+  isIncreasingFrequency: boolean | null;
+}
+
 export interface MissedCheckInRecord {
   id: string;
   workerId: string;
@@ -17,6 +31,7 @@ export interface MissedCheckInRecord {
   resolvedAt: string | null;
   reason: string;
   createdAt: string;
+  stateSnapshot?: MissedCheckInStateSnapshot;
 }
 
 interface MissedCheckInsResponse {

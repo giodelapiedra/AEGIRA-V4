@@ -132,6 +132,11 @@ const getNavItems = (role: string): NavItem[] => {
         icon: <FolderOpen className="h-5 w-5" />,
         href: ROUTES.ADMIN_CASES,
       },
+      {
+        label: 'Analytics',
+        icon: <TrendingUp className="h-5 w-5" />,
+        href: ROUTES.WHS_ANALYTICS,
+      },
     ];
   }
 

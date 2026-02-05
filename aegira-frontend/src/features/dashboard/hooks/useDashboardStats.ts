@@ -8,8 +8,10 @@ import type {
   SupervisorDashboardStats,
   AdminDashboardStats,
 } from '@/types/check-in.types';
+import type { WhsDashboardStats } from '@/types/whs-dashboard.types';
 
 export type { WorkerDashboardStats, TeamLeadDashboardStats, SupervisorDashboardStats, AdminDashboardStats } from '@/types/check-in.types';
+export type { WhsDashboardStats } from '@/types/whs-dashboard.types';
 
 /**
  * Worker dashboard stats
@@ -57,5 +59,17 @@ export function useAdminDashboardStats() {
     queryKey: ['dashboard', 'admin'],
     staleTime: STALE_TIMES.STATIC,
     queryFn: () => apiClient.get<AdminDashboardStats>(ENDPOINTS.DASHBOARD.ADMIN),
+  });
+}
+
+/**
+ * WHS dashboard stats
+ * GET /api/v1/dashboard/whs
+ */
+export function useWhsDashboardStats() {
+  return useQuery({
+    queryKey: ['dashboard', 'whs'],
+    staleTime: STALE_TIMES.STANDARD,
+    queryFn: () => apiClient.get<WhsDashboardStats>(ENDPOINTS.DASHBOARD.WHS),
   });
 }

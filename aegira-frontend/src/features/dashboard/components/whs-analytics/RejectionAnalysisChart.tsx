@@ -1,0 +1,81 @@
+import { ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { EmptyState } from '@/components/common/EmptyState';
+import { PieChart as PieIcon } from 'lucide-react';
+import { REJECTION_COLORS } from './chartConfig';
+import type { RejectionBreakdown } from '@/types/whs-analytics.types';
+
+interface RejectionAnalysisChartProps {
+  data: RejectionBreakdown[];
+}
+
+export function RejectionAnalysisChart({ data }: RejectionAnalysisChartProps) {
+  const hasData = data.length > 0;
+  const total = data.reduce((sum, d) => sum + d.count, 0);
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium text-muted-foreground">
+          Rejection Analysis
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {!hasData ? (
+          <EmptyState
+            title="No rejections"
+            description="No incidents were rejected in this period"
+            icon={<PieIcon className="h-10 w-10" />}
+          />
+        ) : (
+          <div className="flex items-center gap-6">
+            {/* Donut chart */}
+            <div className="relative shrink-0 w-[180px] h-[180px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={data}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={55}
+                    outerRadius={85}
+                    dataKey="count"
+                    nameKey="label"
+                    paddingAngle={2}
+                    stroke="hsl(var(--card))"
+                    strokeWidth={2}
+                  >
+                    {data.map((_, i) => (
+                      <Cell key={i} fill={REJECTION_COLORS[i % REJECTION_COLORS.length]} />
+                    ))}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+              {/* Center label */}
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <span className="text-2xl font-bold">{total}</span>
+                <span className="text-xs text-muted-foreground">Rejected</span>
+              </div>
+            </div>
+
+            {/* Legend list */}
+            <div className="flex-1 space-y-2.5">
+              {data.map((entry, i) => (
+                <div key={entry.reason} className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div
+                      className="h-3 w-3 rounded-full shrink-0"
+                      style={{ backgroundColor: REJECTION_COLORS[i % REJECTION_COLORS.length] }}
+                    />
+                    <span className="text-sm text-muted-foreground truncate">{entry.label}</span>
+                  </div>
+                  <span className="text-sm font-semibold tabular-nums">{entry.count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}

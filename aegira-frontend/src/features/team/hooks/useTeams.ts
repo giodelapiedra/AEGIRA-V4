@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
 import { ENDPOINTS } from '@/lib/api/endpoints';
 import { STALE_TIMES } from '@/config/query.config';
@@ -22,6 +22,7 @@ export function useTeams(page = 1, limit = 20, includeInactive = false, search =
   return useQuery({
     queryKey: ['teams', page, limit, includeInactive, search],
     staleTime: STALE_TIMES.STANDARD,
+    placeholderData: keepPreviousData,
     queryFn: async () => {
       const params = new URLSearchParams({
         page: String(page),
@@ -68,6 +69,7 @@ export function useTeamMembers(teamId: string, page = 1, limit = 20) {
   return useQuery({
     queryKey: ['team', teamId, 'members', page, limit],
     staleTime: STALE_TIMES.STANDARD,
+    placeholderData: keepPreviousData,
     queryFn: async () => {
       const params = new URLSearchParams({
         page: String(page),

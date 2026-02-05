@@ -23,6 +23,8 @@ type CaseWithRelations = Case & {
       first_name: string;
       last_name: string;
       email: string;
+      gender: string | null;
+      date_of_birth: Date | null;
       team: { id: string; name: string } | null;
     };
   };
@@ -51,6 +53,8 @@ export class CaseRepository extends BaseRepository {
             first_name: true,
             last_name: true,
             email: true,
+            gender: true,
+            date_of_birth: true,
             team: { select: { id: true, name: true } },
           },
         },

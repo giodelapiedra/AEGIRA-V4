@@ -147,8 +147,28 @@ export function formatIncidentType(type: string): string {
 }
 
 /**
- * Human-readable rejection reason label
+ * Human-readable gender label
  */
+export function formatGender(gender: string | null): string {
+  if (!gender) return 'Not specified';
+  const labels: Record<string, string> = {
+    MALE: 'Male',
+    FEMALE: 'Female',
+  };
+  return labels[gender] ?? gender;
+}
+
+/**
+ * Format a duration in hours to a human-readable string.
+ * <1h → "42 min", <48h → "3.2 hrs", >=48h → "2.1 days"
+ */
+export function formatDuration(hours: number | null): string {
+  if (hours === null) return 'N/A';
+  if (hours < 1) return `${Math.round(hours * 60)} min`;
+  if (hours < 48) return `${hours.toFixed(1)} hrs`;
+  return `${(hours / 24).toFixed(1)} days`;
+}
+
 export function formatRejectionReason(reason: string): string {
   const labels: Record<string, string> = {
     DUPLICATE_REPORT: 'Duplicate Report',

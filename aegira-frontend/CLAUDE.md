@@ -14,6 +14,9 @@ src/
 │   ├── check-in.types.ts
 │   ├── team.types.ts
 │   ├── person.types.ts
+│   ├── incident.types.ts             # Incident, Case, severity/type enums
+│   ├── whs-dashboard.types.ts        # WhsDashboardStats (operational dashboard)
+│   ├── whs-analytics.types.ts        # WhsAnalyticsResponse (historical trends)
 │   └── common.types.ts               # PaginatedResponse<T>, ApiResponse, BaseEntity
 ├── lib/
 │   ├── api/
@@ -39,16 +42,20 @@ src/
     └── <feature>/
         ├── pages/                    # Route-level page components
         ├── components/               # Feature-specific components (optional)
+        │   ├── <sub-feature>/        # Sub-feature components (e.g., whs/, whs-analytics/)
+        │   └── StatCard.tsx          # Reusable stat card (shared across dashboards)
         └── hooks/                    # TanStack Query hooks (queries + mutations)
 ```
 
 ## Before Writing Code
 1. Check `components/ui/` for existing shadcn/ui components
 2. Check `components/common/` for PageHeader, PageLoader, EmptyState, ConfirmDialog, skeletons
-3. Check `lib/utils/` for cn, date utils, format utils
+3. Check `lib/utils/` for cn, date utils, format utils (includes `formatDuration`, `formatIncidentType`, `formatRejectionReason`)
 4. Check `lib/api/endpoints.ts` for existing API endpoints
 5. Check `types/` for existing interfaces
-6. Follow the same pattern as the nearest similar feature module
+6. Check `features/dashboard/components/StatCard.tsx` for reusable stat card
+7. Check `features/dashboard/components/whs-analytics/chartConfig.ts` for chart color palettes
+8. Follow the same pattern as the nearest similar feature module
 
 ---
 
@@ -346,6 +353,35 @@ PageHeader (title + back button) →
       Form sections in Cards
       Submit button at bottom
 ```
+
+### Role-Specific Dashboard Page
+```
+PageLoader (skeleton="dashboard") →
+  PageHeader (title + description) →
+    StatCards row (summary counts with icons) →
+      Sub-components in grid layout (tables, breakdowns, activity feeds)
+```
+- One hook, one endpoint, one data fetch per dashboard
+- Sub-components receive data as props (no individual fetches)
+- Group sub-components in `components/<role>/` (e.g., `components/whs/`)
+- Dashboard.tsx uses role switch to render the correct dashboard
+- Use `StatCard` from `features/dashboard/components/StatCard.tsx`
+
+### Analytics Page (Charts + Period Selector)
+```
+PageLoader (skeleton="dashboard") →
+  PageHeader (title + period selector buttons in action slot) →
+    Chart components in responsive grid →
+      StatCards row (summary metrics) →
+        More chart components
+```
+- Period selector: `useState<AnalyticsPeriod>` with `'7d' | '30d' | '90d'`
+- Use `keepPreviousData` in the query hook for smooth period switching
+- Use `STALE_TIMES.STATIC` (10m) for historical analytics data
+- Chart components use **Recharts** (`AreaChart`, `PieChart`, `ResponsiveContainer`)
+- Centralize chart colors in `components/<feature>-analytics/chartConfig.ts`
+- Each chart component: Card wrapper + EmptyState fallback + Recharts content
+- Pass `data ?? []` to chart components (never undefined)
 
 ---
 

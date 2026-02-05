@@ -16,7 +16,14 @@ import {
 import { useSignup } from '../hooks/useSignup';
 import { useToast } from '@/lib/hooks/use-toast';
 import { ROUTES } from '@/config/routes.config';
-import { Loader2, Check, Building2, User, ArrowLeft, ArrowRight } from 'lucide-react';
+import {
+  TIMEZONES,
+  INDUSTRIES,
+  BUSINESS_REGISTRATION_TYPES,
+  BUSINESS_TYPES,
+  COUNTRIES,
+} from '@/config/company.config';
+import { Loader2, Check, Building2, User, ArrowLeft, ArrowRight, MapPin } from 'lucide-react';
 
 // Step 1: Personal Info Schema
 const step1Schema = z
@@ -35,36 +42,20 @@ const step1Schema = z
 // Step 2: Company Info Schema
 const step2Schema = z.object({
   companyName: z.string().min(1, 'Company name is required'),
-  timezone: z.string().min(1, 'Timezone is required'),
+  businessRegistrationType: z.string().min(1, 'Business registration ID type is required'),
+  businessRegistrationNumber: z.string().min(1, 'Business registration number is required'),
+  businessType: z.string().min(1, 'Business type is required'),
   industry: z.string().optional(),
+  addressStreet: z.string().min(1, 'Street address is required'),
+  addressCity: z.string().min(1, 'City is required'),
+  addressPostalCode: z.string().min(1, 'Postal/Zip code is required'),
+  addressState: z.string().min(1, 'State/Province/Region is required'),
+  addressCountry: z.string().min(1, 'Country is required'),
+  timezone: z.string().min(1, 'Timezone is required'),
 });
 
 type Step1Data = z.infer<typeof step1Schema>;
 type Step2Data = z.infer<typeof step2Schema>;
-
-const TIMEZONES = [
-  { value: 'Asia/Manila', label: 'Manila (GMT+8)' },
-  { value: 'Asia/Singapore', label: 'Singapore (GMT+8)' },
-  { value: 'Asia/Hong_Kong', label: 'Hong Kong (GMT+8)' },
-  { value: 'Asia/Tokyo', label: 'Tokyo (GMT+9)' },
-  { value: 'Asia/Seoul', label: 'Seoul (GMT+9)' },
-  { value: 'Australia/Sydney', label: 'Sydney (GMT+11)' },
-  { value: 'America/New_York', label: 'New York (GMT-5)' },
-  { value: 'America/Los_Angeles', label: 'Los Angeles (GMT-8)' },
-  { value: 'Europe/London', label: 'London (GMT+0)' },
-];
-
-const INDUSTRIES = [
-  { value: '', label: 'Select your industry' },
-  { value: 'manufacturing', label: 'Manufacturing' },
-  { value: 'construction', label: 'Construction' },
-  { value: 'mining', label: 'Mining & Resources' },
-  { value: 'logistics', label: 'Logistics & Transport' },
-  { value: 'healthcare', label: 'Healthcare' },
-  { value: 'retail', label: 'Retail' },
-  { value: 'technology', label: 'Technology' },
-  { value: 'other', label: 'Other' },
-];
 
 export function SignupPage() {
   const [step, setStep] = useState(1);
@@ -88,8 +79,16 @@ export function SignupPage() {
     resolver: zodResolver(step2Schema),
     defaultValues: {
       companyName: '',
-      timezone: 'Asia/Manila',
+      businessRegistrationType: '',
+      businessRegistrationNumber: '',
+      businessType: '',
       industry: '',
+      addressStreet: '',
+      addressCity: '',
+      addressPostalCode: '',
+      addressState: '',
+      addressCountry: '',
+      timezone: 'Asia/Manila',
     },
   });
 
@@ -110,6 +109,14 @@ export function SignupPage() {
         companyName: data.companyName,
         timezone: data.timezone,
         industry: data.industry,
+        businessRegistrationType: data.businessRegistrationType,
+        businessRegistrationNumber: data.businessRegistrationNumber,
+        businessType: data.businessType,
+        addressStreet: data.addressStreet,
+        addressCity: data.addressCity,
+        addressPostalCode: data.addressPostalCode,
+        addressState: data.addressState,
+        addressCountry: data.addressCountry,
       });
       toast({
         variant: 'success',
@@ -179,7 +186,7 @@ export function SignupPage() {
       </div>
 
       {/* Right Side - Signup Form */}
-      <div className="flex-1 flex items-start pt-20 lg:items-center lg:pt-0 justify-center p-8 relative">
+      <div className="flex-1 flex items-start pt-10 lg:items-start lg:pt-0 justify-center p-8 relative overflow-y-auto">
         {/* Dot Pattern Background */}
         <div
           className="absolute inset-0"
@@ -190,7 +197,7 @@ export function SignupPage() {
         />
         <div className="absolute inset-0 bg-white/60" />
 
-        <div className="relative z-10 w-full max-w-md">
+        <div className="relative z-10 w-full max-w-md py-10">
           {/* Header */}
           <div className="mb-6">
             <h2 className="text-2xl font-bold text-gray-900">Create your account</h2>
@@ -306,60 +313,222 @@ export function SignupPage() {
 
             {/* Step 2: Company Information */}
             {step === 2 && (
-              <form onSubmit={step2Form.handleSubmit(handleStep2Submit)} className="space-y-4">
-                <div className="space-y-2">
-                  <Label className="text-gray-700">Company name</Label>
-                  <Input
-                    type="text"
-                    {...step2Form.register('companyName')}
-                    placeholder="Acme Corporation"
-                    className="h-11 px-4 border-gray-200 rounded-lg"
-                  />
-                  {step2Form.formState.errors.companyName && (
-                    <p className="text-sm text-red-500">{step2Form.formState.errors.companyName.message}</p>
-                  )}
+              <form onSubmit={step2Form.handleSubmit(handleStep2Submit)} className="space-y-5">
+                {/* --- Company Details Section --- */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Building2 className="h-4 w-4 text-gray-500" />
+                    <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Company Details</h3>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-gray-700">Company name</Label>
+                    <Input
+                      type="text"
+                      {...step2Form.register('companyName')}
+                      placeholder="Acme Corporation"
+                      className="h-11 px-4 border-gray-200 rounded-lg"
+                    />
+                    {step2Form.formState.errors.companyName && (
+                      <p className="text-sm text-red-500">{step2Form.formState.errors.companyName.message}</p>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-gray-700">Registration ID Type</Label>
+                      <Controller
+                        control={step2Form.control}
+                        name="businessRegistrationType"
+                        render={({ field }) => (
+                          <Select value={field.value || undefined} onValueChange={field.onChange}>
+                            <SelectTrigger className="h-11 border-gray-200 rounded-lg">
+                              <SelectValue placeholder="Select type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {BUSINESS_REGISTRATION_TYPES.map((type) => (
+                                <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                      {step2Form.formState.errors.businessRegistrationType && (
+                        <p className="text-sm text-red-500">{step2Form.formState.errors.businessRegistrationType.message}</p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-gray-700">Registration Number</Label>
+                      <Input
+                        type="text"
+                        {...step2Form.register('businessRegistrationNumber')}
+                        placeholder="e.g. 12 345 678 901"
+                        className="h-11 px-4 border-gray-200 rounded-lg"
+                      />
+                      {step2Form.formState.errors.businessRegistrationNumber && (
+                        <p className="text-sm text-red-500">{step2Form.formState.errors.businessRegistrationNumber.message}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-gray-700">Business Type</Label>
+                      <Controller
+                        control={step2Form.control}
+                        name="businessType"
+                        render={({ field }) => (
+                          <Select value={field.value || undefined} onValueChange={field.onChange}>
+                            <SelectTrigger className="h-11 border-gray-200 rounded-lg">
+                              <SelectValue placeholder="Select type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {BUSINESS_TYPES.map((type) => (
+                                <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                      {step2Form.formState.errors.businessType && (
+                        <p className="text-sm text-red-500">{step2Form.formState.errors.businessType.message}</p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-gray-700">
+                        Industry <span className="text-gray-400 font-normal">(optional)</span>
+                      </Label>
+                      <Controller
+                        control={step2Form.control}
+                        name="industry"
+                        render={({ field }) => (
+                          <Select value={field.value || undefined} onValueChange={field.onChange}>
+                            <SelectTrigger className="h-11 border-gray-200 rounded-lg">
+                              <SelectValue placeholder="Select industry" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {INDUSTRIES.map((ind) => (
+                                <SelectItem key={ind.value} value={ind.value}>{ind.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label className="text-gray-700">Timezone</Label>
-                  <Controller
-                    control={step2Form.control}
-                    name="timezone"
-                    render={({ field }) => (
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <SelectTrigger className="h-11 border-gray-200 rounded-lg">
-                          <SelectValue placeholder="Select timezone" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {TIMEZONES.map((tz) => (
-                            <SelectItem key={tz.value} value={tz.value}>{tz.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                {/* --- Divider --- */}
+                <div className="border-t border-gray-100" />
+
+                {/* --- Business Physical Address Section --- */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-gray-500" />
+                    <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Business Physical Address</h3>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-gray-700">Street Address</Label>
+                    <Input
+                      type="text"
+                      {...step2Form.register('addressStreet')}
+                      placeholder="e.g. Unit 13/11-21 Waterloo St"
+                      className="h-11 px-4 border-gray-200 rounded-lg"
+                    />
+                    {step2Form.formState.errors.addressStreet && (
+                      <p className="text-sm text-red-500">{step2Form.formState.errors.addressStreet.message}</p>
                     )}
-                  />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="col-span-2 space-y-2">
+                      <Label className="text-gray-700">City</Label>
+                      <Input
+                        type="text"
+                        {...step2Form.register('addressCity')}
+                        placeholder="e.g. Narrabeen"
+                        className="h-11 px-4 border-gray-200 rounded-lg"
+                      />
+                      {step2Form.formState.errors.addressCity && (
+                        <p className="text-sm text-red-500">{step2Form.formState.errors.addressCity.message}</p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-gray-700">Postal/Zip Code</Label>
+                      <Input
+                        type="text"
+                        {...step2Form.register('addressPostalCode')}
+                        placeholder="e.g. 2101"
+                        className="h-11 px-4 border-gray-200 rounded-lg"
+                      />
+                      {step2Form.formState.errors.addressPostalCode && (
+                        <p className="text-sm text-red-500">{step2Form.formState.errors.addressPostalCode.message}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-gray-700">State / Prov / Region</Label>
+                    <Input
+                      type="text"
+                      {...step2Form.register('addressState')}
+                      placeholder="e.g. NSW"
+                      className="h-11 px-4 border-gray-200 rounded-lg"
+                    />
+                    {step2Form.formState.errors.addressState && (
+                      <p className="text-sm text-red-500">{step2Form.formState.errors.addressState.message}</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-gray-700">Country</Label>
+                    <Controller
+                      control={step2Form.control}
+                      name="addressCountry"
+                      render={({ field }) => (
+                        <Select value={field.value || undefined} onValueChange={field.onChange}>
+                          <SelectTrigger className="h-11 border-gray-200 rounded-lg">
+                            <SelectValue placeholder="Select country" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {COUNTRIES.map((country) => (
+                              <SelectItem key={country.value} value={country.value}>{country.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                    {step2Form.formState.errors.addressCountry && (
+                      <p className="text-sm text-red-500">{step2Form.formState.errors.addressCountry.message}</p>
+                    )}
+                  </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label className="text-gray-700">
-                    Industry <span className="text-gray-400 font-normal">(optional)</span>
-                  </Label>
-                  <Controller
-                    control={step2Form.control}
-                    name="industry"
-                    render={({ field }) => (
-                      <Select value={field.value || undefined} onValueChange={field.onChange}>
-                        <SelectTrigger className="h-11 border-gray-200 rounded-lg">
-                          <SelectValue placeholder="Select your industry" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {INDUSTRIES.filter((ind) => ind.value !== '').map((ind) => (
-                            <SelectItem key={ind.value} value={ind.value}>{ind.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  />
+                {/* --- Divider --- */}
+                <div className="border-t border-gray-100" />
+
+                {/* --- Settings Section --- */}
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label className="text-gray-700">Timezone</Label>
+                    <Controller
+                      control={step2Form.control}
+                      name="timezone"
+                      render={({ field }) => (
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <SelectTrigger className="h-11 border-gray-200 rounded-lg">
+                            <SelectValue placeholder="Select timezone" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {TIMEZONES.map((tz) => (
+                              <SelectItem key={tz.value} value={tz.value}>{tz.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  </div>
                 </div>
 
                 <div className="flex gap-3 pt-2">

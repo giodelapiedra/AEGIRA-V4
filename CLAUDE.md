@@ -37,6 +37,7 @@ See `aegira-backend/CLAUDE.md` and `aegira-frontend/CLAUDE.md` for module-specif
 - **Client State**: Zustand (auth only)
 - **Tables**: TanStack Table v8
 - **Forms**: React Hook Form + Zod
+- **Charts**: Recharts (area, pie/donut charts for analytics)
 - **UI**: Radix UI + Tailwind CSS + shadcn/ui (CVA, clsx, tailwind-merge)
 - **Icons**: Lucide React
 - **Testing**: Vitest + Testing Library + MSW
@@ -47,17 +48,18 @@ See `aegira-backend/CLAUDE.md` and `aegira-frontend/CLAUDE.md` for module-specif
 Each module follows: `routes.ts` → `controller.ts` → `service.ts` (optional) → `repository.ts` → `validator.ts`
 All inside `src/modules/<feature>/`
 
-Current modules: `auth`, `person`, `team`, `check-in`, `missed-check-in`, `notification`, `dashboard`, `admin`
+Current modules: `auth`, `person`, `team`, `check-in`, `missed-check-in`, `notification`, `dashboard`, `admin`, `incident`, `case`
 
 ### Frontend Features
 Each feature follows: `pages/` → `components/` (optional) → `hooks/`
 All inside `src/features/<feature>/`
 
-Current features: `auth`, `dashboard`, `check-in`, `team`, `person`, `notifications`, `schedule`, `admin`
+Current features: `auth`, `dashboard`, `check-in`, `team`, `person`, `notifications`, `schedule`, `admin`, `incident`
 
 ### Database Models
 ```
 Company → Person → CheckIn / MissedCheckIn
+Company → Person → Incident → Case
 Company → Team → Person (members)
 Event (event sourcing), Notification, Amendment, AuditLog, Holiday
 ```
@@ -65,7 +67,7 @@ Event (event sourcing), Notification, Amendment, AuditLog, Holiday
 ### Key Patterns
 - **Multi-tenant**: Every query filters by `company_id` via `BaseRepository`
 - **Event sourcing**: State changes recorded as `Event` entities
-- **Role-based access**: `ADMIN`, `SUPERVISOR`, `TEAM_LEAD`, `WORKER`
+- **Role-based access**: `ADMIN`, `WHS`, `SUPERVISOR`, `TEAM_LEAD`, `WORKER`
 - **Pagination**: All list endpoints paginated with `{ items, pagination }` response format
 - **Fire-and-forget**: Audit logs and notifications never block main operations
 

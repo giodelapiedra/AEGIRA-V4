@@ -14,6 +14,14 @@ export interface SignupData {
   companyName: string;
   timezone: string;
   industry?: string;
+  businessRegistrationType: string;
+  businessRegistrationNumber: string;
+  businessType: string;
+  addressStreet: string;
+  addressCity: string;
+  addressPostalCode: string;
+  addressState: string;
+  addressCountry: string;
 }
 
 export function useSignup() {

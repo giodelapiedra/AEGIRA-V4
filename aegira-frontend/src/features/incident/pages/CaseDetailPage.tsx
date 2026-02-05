@@ -29,6 +29,7 @@ import {
   formatCaseNumber,
   formatIncidentNumber,
   formatIncidentType,
+  formatGender,
 } from '@/lib/utils/format.utils';
 import { ROUTES } from '@/config/routes.config';
 import type { CaseStatus } from '@/types/incident.types';
@@ -199,6 +200,11 @@ export function CaseDetailPage() {
                   Reporter Information
                 </h3>
                 <InfoRow label="Name" value={caseData.incident.reporterName} />
+                <InfoRow
+                  label="Age"
+                  value={caseData.incident.reporterAge != null ? `${caseData.incident.reporterAge} years old` : 'Not specified'}
+                />
+                <InfoRow label="Gender" value={formatGender(caseData.incident.reporterGender)} />
                 <InfoRow label="Email" value={caseData.incident.reporterEmail} />
                 <InfoRow label="Team" value={caseData.incident.teamName} />
                 {caseData.incident.location && (

@@ -6,8 +6,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ============================================
@@ -15,13 +16,22 @@ datasource db {
 // ============================================
 
 model Company {
-  id          String   @id @default(uuid())
-  name        String
-  slug        String   @unique
-  timezone    String   @default("Asia/Manila")
-  is_active   Boolean  @default(true)
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
+  id                           String   @id @default(uuid())
+  name                         String
+  slug                         String   @unique
+  timezone                     String   @default("Asia/Manila")
+  industry                     String?
+  business_registration_type   String?
+  business_registration_number String?
+  business_type                String?
+  address_street               String?
+  address_city                 String?
+  address_postal_code          String?
+  address_state                String?
+  address_country              String?
+  is_active                    Boolean  @default(true)
+  created_at                   DateTime @default(now())
+  updated_at                   DateTime @updatedAt
 
   // Relations
   persons       Person[]
@@ -35,36 +45,36 @@ model Company {
 }
 
 model Person {
-  id               String    @id @default(uuid())
-  company_id       String
-  email            String
-  password_hash    String?
-  first_name       String
-  last_name        String
-  gender           Gender?
-  date_of_birth    DateTime? @db.Date
+  id                  String    @id @default(uuid())
+  company_id          String
+  email               String
+  password_hash       String?
+  first_name          String
+  last_name           String
+  gender              Gender?
+  date_of_birth       DateTime? @db.Date
   profile_picture_url String?
-  role             Role      @default(WORKER)
-  team_id          String?
-  team_assigned_at DateTime? // When worker was assigned to current team
-  is_active        Boolean   @default(true)
-  created_at       DateTime  @default(now())
-  updated_at       DateTime  @updatedAt
+  role                Role      @default(WORKER)
+  team_id             String?
+  team_assigned_at    DateTime? // When worker was assigned to current team
+  is_active           Boolean   @default(true)
+  created_at          DateTime  @default(now())
+  updated_at          DateTime  @updatedAt
 
   // Relations
-  company          Company        @relation(fields: [company_id], references: [id], onDelete: Cascade)
-  team             Team?          @relation("TeamMembers", fields: [team_id], references: [id], onDelete: SetNull)
-  led_teams        Team[]         @relation("TeamLeader") // Teams this person leads
-  supervised_teams Team[]         @relation("TeamSupervisor") // Teams this person supervises
-  check_ins        CheckIn[]
-  missed_check_ins MissedCheckIn[]
-  notifications    Notification[]
-  events           Event[]        @relation("PersonEvents")
-  amendments       Amendment[]
-  audit_logs       AuditLog[]
-  reported_incidents  Incident[]  @relation("ReportedIncidents")
-  reviewed_incidents  Incident[]  @relation("ReviewedIncidents")
-  assigned_cases      Case[]      @relation("AssignedCases")
+  company            Company         @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  team               Team?           @relation("TeamMembers", fields: [team_id], references: [id], onDelete: SetNull)
+  led_teams          Team[]          @relation("TeamLeader") // Teams this person leads
+  supervised_teams   Team[]          @relation("TeamSupervisor") // Teams this person supervises
+  check_ins          CheckIn[]
+  missed_check_ins   MissedCheckIn[]
+  notifications      Notification[]
+  events             Event[]         @relation("PersonEvents")
+  amendments         Amendment[]
+  audit_logs         AuditLog[]
+  reported_incidents Incident[]      @relation("ReportedIncidents")
+  reviewed_incidents Incident[]      @relation("ReviewedIncidents")
+  assigned_cases     Case[]          @relation("AssignedCases")
 
   @@unique([company_id, email])
   @@index([team_id])
@@ -78,21 +88,21 @@ model Person {
 }
 
 model Team {
-  id              String   @id @default(uuid())
-  company_id      String
-  name            String
-  description     String?
-  leader_id       String   // Team leader (person with TEAM_LEAD role) - Required
-  supervisor_id   String?  // Supervisor assigned to oversee this team (optional)
+  id            String  @id @default(uuid())
+  company_id    String
+  name          String
+  description   String?
+  leader_id     String // Team leader (person with TEAM_LEAD role) - Required
+  supervisor_id String? // Supervisor assigned to oversee this team (optional)
 
   // Team Schedule - Check-in window for this team
-  check_in_start  String   @default("06:00")  // e.g. "06:00" (6 AM)
-  check_in_end    String   @default("10:00")  // e.g. "10:00" (10 AM)
-  work_days       String   @default("1,2,3,4,5")  // CSV: 0=Sun, 1=Mon, ..., 6=Sat
+  check_in_start String @default("06:00") // e.g. "06:00" (6 AM)
+  check_in_end   String @default("10:00") // e.g. "10:00" (10 AM)
+  work_days      String @default("1,2,3,4,5") // CSV: 0=Sun, 1=Mon, ..., 6=Sat
 
-  is_active       Boolean  @default(true)
-  created_at      DateTime @default(now())
-  updated_at      DateTime @updatedAt
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
 
   // Relations
   company          Company         @relation(fields: [company_id], references: [id], onDelete: Cascade)
@@ -114,31 +124,31 @@ model Team {
 // ============================================
 
 model CheckIn {
-  id              String         @id @default(uuid())
-  company_id      String
-  person_id       String
-  event_id        String         @unique
-  check_in_date   DateTime       @db.Date
+  id            String   @id @default(uuid())
+  company_id    String
+  person_id     String
+  event_id      String   @unique
+  check_in_date DateTime @db.Date
 
   // Input data
-  hours_slept     Float
-  sleep_quality   Int            // 1-10
-  stress_level    Int            // 1-10
-  physical_condition Int         // 1-10
-  pain_level      Int?           // 0-10 (0 = no pain)
-  pain_location   String?        // Dropdown selection (e.g., "Lower Back", "Knee (Left)")
+  hours_slept              Float
+  sleep_quality            Int // 1-10
+  stress_level             Int // 1-10
+  physical_condition       Int // 1-10
+  pain_level               Int? // 0-10 (0 = no pain)
+  pain_location            String? // Dropdown selection (e.g., "Lower Back", "Knee (Left)")
   physical_condition_notes String? // Free-text notes about physical condition
-  notes           String?
+  notes                    String?
 
   // Calculated readiness
-  readiness_score Int            // 0-100
+  readiness_score Int // 0-100
   readiness_level ReadinessLevel
-  sleep_score     Int            // 0-100
-  stress_score    Int            // 0-100
-  physical_score  Int            // 0-100
-  pain_score      Int?           // 0-100 (null if no pain reported)
+  sleep_score     Int // 0-100
+  stress_score    Int // 0-100
+  physical_score  Int // 0-100
+  pain_score      Int? // 0-100 (null if no pain reported)
 
-  created_at      DateTime       @default(now())
+  created_at DateTime @default(now())
 
   // Relations
   person     Person      @relation(fields: [person_id], references: [id], onDelete: Cascade)
@@ -152,18 +162,40 @@ model CheckIn {
 }
 
 model MissedCheckIn {
-  id              String               @id @default(uuid())
+  id              String              @id @default(uuid())
   company_id      String
   person_id       String
   team_id         String
-  missed_date     DateTime             @db.Date
-  status          MissedCheckInStatus  @default(OPEN)
-  schedule_window String               // e.g. "06:00 - 10:00"
+  missed_date     DateTime            @db.Date
+  status          MissedCheckInStatus @default(OPEN)
+  schedule_window String // e.g. "06:00 - 10:00"
   notes           String?
-  resolved_by     String?              // person_id of resolver
+  resolved_by     String? // person_id of resolver
   resolved_at     DateTime?
-  created_at      DateTime             @default(now())
-  updated_at      DateTime             @updatedAt
+  created_at      DateTime            @default(now())
+  updated_at      DateTime            @updatedAt
+
+  // ===== STATE SNAPSHOT FIELDS =====
+  // Contextual snapshot - captured at detection time for analytics
+  worker_role_at_miss      Role? // Worker's role (can change later)
+  day_of_week              Int? // 0=Sun, 6=Sat
+  week_of_month            Int? // 1-5
+  days_since_last_check_in Int? // null if first ever
+  days_since_last_miss     Int? // null if first miss ever
+  check_in_streak_before   Int? // Consecutive days before this miss
+  recent_readiness_avg     Float? // Avg readiness last 7 days
+  misses_in_last_30d       Int? // Count of misses in last 30 days
+  misses_in_last_60d       Int? // Count of misses in last 60 days
+  misses_in_last_90d       Int? // Count of misses in last 90 days
+  baseline_completion_rate Float? // % completion rate since team assignment
+
+  // Pattern indicators
+  is_first_miss_in_30d    Boolean? // First miss in 30 days?
+  is_increasing_frequency Boolean? // Misses accelerating?
+
+  // System state
+  reminder_sent   Boolean @default(true)
+  reminder_failed Boolean @default(false)
 
   // Relations
   person Person @relation(fields: [person_id], references: [id], onDelete: Cascade)
@@ -186,17 +218,17 @@ model Event {
   company_id  String
   person_id   String?
   event_type  EventType
-  entity_type String    // 'check_in', 'team', 'person', etc.
+  entity_type String // 'check_in', 'team', 'person', etc.
   entity_id   String?
-  payload     Json      // Event data
+  payload     Json // Event data
   created_at  DateTime  @default(now())
 
   // Relations
-  company  Company   @relation(fields: [company_id], references: [id], onDelete: Cascade)
-  person   Person?   @relation("PersonEvents", fields: [person_id], references: [id], onDelete: SetNull)
+  company  Company  @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  person   Person?  @relation("PersonEvents", fields: [person_id], references: [id], onDelete: SetNull)
   check_in CheckIn?
 
-  @@index([person_id])                                      // FK: onDelete SetNull — required for cascade
+  @@index([person_id]) // FK: onDelete SetNull — required for cascade
   @@index([company_id, entity_type, entity_id, created_at])
   @@map("events")
 }
@@ -206,20 +238,20 @@ model Event {
 // ============================================
 
 model Notification {
-  id          String           @id @default(uuid())
-  company_id  String
-  person_id   String
-  type        NotificationType
-  title       String
-  message     String
-  read_at     DateTime?
-  created_at  DateTime         @default(now())
+  id         String           @id @default(uuid())
+  company_id String
+  person_id  String
+  type       NotificationType
+  title      String
+  message    String
+  read_at    DateTime?
+  created_at DateTime         @default(now())
 
   // Relations
   company Company @relation(fields: [company_id], references: [id], onDelete: Cascade)
   person  Person  @relation(fields: [person_id], references: [id], onDelete: Cascade)
 
-  @@index([person_id])                        // FK: onDelete Cascade — required for cascade
+  @@index([person_id]) // FK: onDelete Cascade — required for cascade
   @@index([company_id, person_id, created_at])
   @@index([company_id, person_id, read_at])
   @@index([company_id, created_at])
@@ -270,6 +302,7 @@ model Amendment {
   @@index([person_id])
   @@index([company_id, check_in_id])
   @@index([company_id, status])
+  @@index([company_id, status, created_at]) // Pending amendments list with sort
   @@map("amendments")
 }
 
@@ -278,20 +311,20 @@ model Amendment {
 // ============================================
 
 model AuditLog {
-  id         String   @id @default(uuid())
-  company_id String
-  person_id  String?
-  action     String
+  id          String   @id @default(uuid())
+  company_id  String
+  person_id   String?
+  action      String
   entity_type String
-  entity_id  String?
-  details    Json?
-  ip_address String?
-  created_at DateTime @default(now())
+  entity_id   String?
+  details     Json?
+  ip_address  String?
+  created_at  DateTime @default(now())
 
   // Relations
   person Person? @relation(fields: [person_id], references: [id], onDelete: SetNull)
 
-  @@index([person_id])              // FK: onDelete SetNull — required for cascade
+  @@index([person_id]) // FK: onDelete SetNull — required for cascade
   @@index([company_id, created_at])
   @@index([company_id, action])
   @@map("audit_logs")
@@ -401,58 +434,61 @@ enum RejectionReason {
 // ============================================
 
 model Incident {
-  id                    String            @id @default(uuid())
+  id                    String           @id @default(uuid())
   company_id            String
-  incident_number       Int               // Sequential per company, set in service layer
+  incident_number       Int // Sequential per company, set in service layer
   reporter_id           String
   incident_type         IncidentType
   severity              IncidentSeverity
   title                 String
   location              String?
   description           String
-  status                IncidentStatus    @default(PENDING)
+  status                IncidentStatus   @default(PENDING)
   reviewed_by           String?
   reviewed_at           DateTime?
   rejection_reason      RejectionReason?
   rejection_explanation String?
-  created_at            DateTime          @default(now())
-  updated_at            DateTime          @updatedAt
+  created_at            DateTime         @default(now())
+  updated_at            DateTime         @updatedAt
 
   // Relations
-  company   Company  @relation(fields: [company_id], references: [id], onDelete: Cascade)
-  reporter  Person   @relation("ReportedIncidents", fields: [reporter_id], references: [id], onDelete: Cascade)
-  reviewer  Person?  @relation("ReviewedIncidents", fields: [reviewed_by], references: [id], onDelete: SetNull)
+  company       Company @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  reporter      Person  @relation("ReportedIncidents", fields: [reporter_id], references: [id], onDelete: Cascade)
+  reviewer      Person? @relation("ReviewedIncidents", fields: [reviewed_by], references: [id], onDelete: SetNull)
   incident_case Case?
 
   @@unique([company_id, incident_number])
   @@index([company_id, status])
+  @@index([company_id, status, created_at]) // Filtered list by status + sort
   @@index([reporter_id])
-  @@index([reviewed_by])             // FK: onDelete SetNull — required for cascade
+  @@index([reviewed_by]) // FK: onDelete SetNull — required for cascade
   @@index([company_id, created_at])
   @@index([company_id, reporter_id])
   @@map("incidents")
 }
 
 model Case {
-  id              String      @id @default(uuid())
-  company_id      String
-  case_number     Int         // Sequential per company, set in service layer during approval
-  incident_id     String      @unique
-  assigned_to     String?
-  status          CaseStatus  @default(OPEN)
-  notes           String?
-  resolved_at     DateTime?
-  created_at      DateTime    @default(now())
-  updated_at      DateTime    @updatedAt
+  id          String     @id @default(uuid())
+  company_id  String
+  case_number Int // Sequential per company, set in service layer during approval
+  incident_id String     @unique
+  assigned_to String?
+  status      CaseStatus @default(OPEN)
+  notes       String?
+  resolved_at DateTime?
+  created_at  DateTime   @default(now())
+  updated_at  DateTime   @updatedAt
 
   // Relations
-  company   Company   @relation(fields: [company_id], references: [id], onDelete: Cascade)
-  incident  Incident  @relation(fields: [incident_id], references: [id], onDelete: Cascade)
-  assignee  Person?   @relation("AssignedCases", fields: [assigned_to], references: [id], onDelete: SetNull)
+  company  Company  @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  incident Incident @relation(fields: [incident_id], references: [id], onDelete: Cascade)
+  assignee Person?  @relation("AssignedCases", fields: [assigned_to], references: [id], onDelete: SetNull)
 
   @@unique([company_id, case_number])
   @@index([company_id, status])
-  @@index([assigned_to])
+  @@index([company_id, status, created_at]) // Filtered list by status + sort
+  @@index([company_id, assigned_to]) // My assigned cases (company-scoped)
+  @@index([assigned_to]) // FK: onDelete SetNull — required for cascade
   @@index([company_id, created_at])
   @@map("cases")
 }

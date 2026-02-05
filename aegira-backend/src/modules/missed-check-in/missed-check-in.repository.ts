@@ -1,5 +1,5 @@
 // MissedCheckIn Repository - Database Access
-import type { PrismaClient, MissedCheckIn, MissedCheckInStatus, Prisma } from '@prisma/client';
+import type { PrismaClient, MissedCheckIn, MissedCheckInStatus, Prisma, Role } from '@prisma/client';
 import { BaseRepository } from '../../shared/base.repository';
 import { calculateSkip, paginate } from '../../shared/utils';
 import type { PaginationParams, PaginatedResponse } from '../../types/api.types';
@@ -9,6 +9,22 @@ export interface CreateMissedCheckInData {
   teamId: string;
   missedDate: Date;
   scheduleWindow: string;
+  // State snapshot fields (optional for backward compatibility)
+  workerRoleAtMiss?: Role | null;
+  dayOfWeek?: number;
+  weekOfMonth?: number;
+  daysSinceLastCheckIn?: number | null;
+  daysSinceLastMiss?: number | null;
+  checkInStreakBefore?: number;
+  recentReadinessAvg?: number | null;
+  missesInLast30d?: number;
+  missesInLast60d?: number;
+  missesInLast90d?: number;
+  baselineCompletionRate?: number;
+  isFirstMissIn30d?: boolean;
+  isIncreasingFrequency?: boolean;
+  reminderSent?: boolean;
+  reminderFailed?: boolean;
 }
 
 export interface MissedCheckInFilters extends PaginationParams {
@@ -30,6 +46,7 @@ export class MissedCheckInRepository extends BaseRepository {
   /**
    * Bulk insert missed check-in records.
    * Uses skipDuplicates (ON CONFLICT DO NOTHING) for idempotency.
+   * Includes state snapshot fields for analytics when provided.
    */
   async createMany(records: CreateMissedCheckInData[]): Promise<number> {
     if (records.length === 0) return 0;
@@ -41,6 +58,22 @@ export class MissedCheckInRepository extends BaseRepository {
         team_id: r.teamId,
         missed_date: r.missedDate,
         schedule_window: r.scheduleWindow,
+        // State snapshot fields
+        worker_role_at_miss: r.workerRoleAtMiss ?? null,
+        day_of_week: r.dayOfWeek ?? null,
+        week_of_month: r.weekOfMonth ?? null,
+        days_since_last_check_in: r.daysSinceLastCheckIn ?? null,
+        days_since_last_miss: r.daysSinceLastMiss ?? null,
+        check_in_streak_before: r.checkInStreakBefore ?? null,
+        recent_readiness_avg: r.recentReadinessAvg ?? null,
+        misses_in_last_30d: r.missesInLast30d ?? null,
+        misses_in_last_60d: r.missesInLast60d ?? null,
+        misses_in_last_90d: r.missesInLast90d ?? null,
+        baseline_completion_rate: r.baselineCompletionRate ?? null,
+        is_first_miss_in_30d: r.isFirstMissIn30d ?? null,
+        is_increasing_frequency: r.isIncreasingFrequency ?? null,
+        reminder_sent: r.reminderSent ?? true,
+        reminder_failed: r.reminderFailed ?? false,
       })),
       skipDuplicates: true,
     });

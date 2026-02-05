@@ -15,6 +15,7 @@ export function useApproveIncident() {
       queryClient.invalidateQueries({ queryKey: ['incident-timeline', incidentId] });
       queryClient.invalidateQueries({ queryKey: ['my-incidents'] });
       queryClient.invalidateQueries({ queryKey: ['cases'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     },
   });
 }

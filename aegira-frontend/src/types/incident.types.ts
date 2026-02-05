@@ -16,12 +16,16 @@ export type RejectionReason =
   | 'NOT_WORKPLACE_INCIDENT'
   | 'OTHER';
 
+export type Gender = 'MALE' | 'FEMALE';
+
 export interface Incident {
   id: string;
   incidentNumber: number;
   reporterId: string;
   reporterName: string;
   reporterEmail: string;
+  reporterGender: Gender | null;
+  reporterAge: number | null;
   teamName: string;
   incidentType: IncidentType;
   severity: IncidentSeverity;
@@ -57,6 +61,8 @@ export interface Case {
     reporterId: string;
     reporterName: string;
     reporterEmail: string;
+    reporterGender: Gender | null;
+    reporterAge: number | null;
     teamName: string;
   };
   assignedTo: string | null;

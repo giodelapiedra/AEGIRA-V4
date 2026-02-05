@@ -26,8 +26,10 @@ import {
   formatCaseNumber,
   formatIncidentType,
   formatRejectionReason,
+  formatGender,
 } from '@/lib/utils/format.utils';
 import { ROUTES } from '@/config/routes.config';
+import { buildRoute } from '@/lib/utils/route.utils';
 
 /** Key-value row used inside each quadrant card */
 interface InfoRowProps {
@@ -145,6 +147,11 @@ export function IncidentDetailPage() {
                   Reporter Information
                 </h3>
                 <InfoRow label="Name" value={incident.reporterName} />
+                <InfoRow
+                  label="Age"
+                  value={incident.reporterAge != null ? `${incident.reporterAge} years old` : 'Not specified'}
+                />
+                <InfoRow label="Gender" value={formatGender(incident.reporterGender)} />
                 <InfoRow label="Email" value={incident.reporterEmail} />
                 <InfoRow label="Team" value={incident.teamName} />
                 <InfoRow
@@ -216,7 +223,7 @@ export function IncidentDetailPage() {
                           variant="outline"
                           size="sm"
                           className="w-full"
-                          onClick={() => navigate(`/admin/cases/${incident.caseId}`)}
+                          onClick={() => navigate(buildRoute(ROUTES.ADMIN_CASE_DETAIL, { id: incident.caseId! }))}
                         >
                           <ExternalLink className="h-4 w-4 mr-1" />
                           View Full Case

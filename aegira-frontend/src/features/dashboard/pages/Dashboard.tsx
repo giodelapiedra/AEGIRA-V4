@@ -3,6 +3,7 @@ import { WorkerDashboard } from './WorkerDashboard';
 import { TeamLeadDashboard } from './TeamLeaderDashboard';
 import { SupervisorDashboard } from './SupervisorDashboard';
 import { AdminDashboard } from './AdminDashboard';
+import { WhsDashboard } from './WhsDashboard';
 
 /**
  * Smart Dashboard - Shows different dashboard based on user role
@@ -18,6 +19,8 @@ export function Dashboard() {
   switch (user.role) {
     case 'ADMIN':
       return <AdminDashboard />;
+    case 'WHS':
+      return <WhsDashboard />;
     case 'SUPERVISOR':
       return <SupervisorDashboard />;
     case 'TEAM_LEAD':

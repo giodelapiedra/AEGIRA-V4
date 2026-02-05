@@ -150,6 +150,13 @@ const AdminTeamEditPage = lazy(() =>
   }))
 );
 
+// WHS Analytics
+const WhsAnalyticsPage = lazy(() =>
+  import('@/features/dashboard/pages/WhsAnalyticsPage').then((m) => ({
+    default: m.WhsAnalyticsPage,
+  }))
+);
+
 // Incident pages
 const ReportIncidentPage = lazy(() =>
   import('@/features/incident/pages/ReportIncidentPage').then((m) => ({
@@ -260,6 +267,14 @@ export function AppRoutes() {
             <Route path={ROUTES.ADMIN_INCIDENT_DETAIL} element={<IncidentDetailPage />} />
             <Route path={ROUTES.ADMIN_CASES} element={<AdminCasesPage />} />
             <Route path={ROUTES.ADMIN_CASE_DETAIL} element={<CaseDetailPage />} />
+          </Route>
+
+          {/* ============================================ */}
+          {/* WHS ONLY ROUTES                             */}
+          {/* WHS analytics (historical trends)           */}
+          {/* ============================================ */}
+          <Route element={<RouteGuard allowedRoles={['WHS']} />}>
+            <Route path={ROUTES.WHS_ANALYTICS} element={<WhsAnalyticsPage />} />
           </Route>
 
           {/* ============================================ */}

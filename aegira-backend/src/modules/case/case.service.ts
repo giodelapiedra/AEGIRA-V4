@@ -28,61 +28,70 @@ export class CaseService {
     updaterId: string,
     data: UpdateCaseInput
   ): Promise<Case> {
-    const existing = await this.repository.findById(caseId);
-
-    if (!existing) {
-      throw new AppError('NOT_FOUND', 'Case not found', 404);
-    }
-
-    // Validate status transition if status change requested
-    if (data.status && data.status !== existing.status) {
-      const allowed = VALID_TRANSITIONS[existing.status] || [];
-      if (!allowed.includes(data.status)) {
-        throw new AppError(
-          'INVALID_TRANSITION',
-          `Cannot transition from ${existing.status} to ${data.status}`,
-          400
-        );
+    // Validate assignee outside transaction (user input validation)
+    if (data.assignedTo !== undefined && data.assignedTo !== null) {
+      const assignee = await this.prisma.person.findFirst({
+        where: { id: data.assignedTo, company_id: companyId },
+        select: { id: true, role: true, is_active: true },
+      });
+      if (!assignee) {
+        throw new AppError('INVALID_ASSIGNEE', 'Assignee not found', 400);
       }
-    }
-
-    const updateData: Prisma.CaseUpdateInput = {};
-
-    if (data.status !== undefined) {
-      updateData.status = data.status;
-      if (data.status === 'RESOLVED') {
-        updateData.resolved_at = new Date();
+      if (!['WHS', 'ADMIN'].includes(assignee.role)) {
+        throw new AppError('INVALID_ASSIGNEE_ROLE', 'Assignee must have WHS or ADMIN role', 400);
       }
-    }
-
-    if (data.assignedTo !== undefined) {
-      if (data.assignedTo === null) {
-        updateData.assignee = { disconnect: true };
-      } else {
-        // Validate assignee: must exist, same company, WHS/ADMIN role, active
-        const assignee = await this.prisma.person.findFirst({
-          where: { id: data.assignedTo, company_id: companyId },
-          select: { id: true, role: true, is_active: true },
-        });
-        if (!assignee) {
-          throw new AppError('INVALID_ASSIGNEE', 'Assignee not found', 400);
-        }
-        if (!['WHS', 'ADMIN'].includes(assignee.role)) {
-          throw new AppError('INVALID_ASSIGNEE_ROLE', 'Assignee must have WHS or ADMIN role', 400);
-        }
-        if (!assignee.is_active) {
-          throw new AppError('INVALID_ASSIGNEE', 'Assignee account is inactive', 400);
-        }
-        updateData.assignee = { connect: { id: data.assignedTo } };
+      if (!assignee.is_active) {
+        throw new AppError('INVALID_ASSIGNEE', 'Assignee account is inactive', 400);
       }
-    }
-
-    if (data.notes !== undefined) {
-      updateData.notes = data.notes;
     }
 
     // Update with event sourcing inside transaction
+    // All case existence checks and status validation are inside transaction to avoid TOCTOU race
     const updated = await this.prisma.$transaction(async (tx) => {
+      // Fetch existing case INSIDE transaction to avoid race condition
+      const existing = await tx.case.findFirst({
+        where: { id: caseId, company_id: companyId },
+        select: { id: true, status: true, case_number: true, incident_id: true },
+      });
+
+      if (!existing) {
+        throw new AppError('NOT_FOUND', 'Case not found', 404);
+      }
+
+      // Validate status transition if status change requested
+      if (data.status && data.status !== existing.status) {
+        const allowed = VALID_TRANSITIONS[existing.status] || [];
+        if (!allowed.includes(data.status)) {
+          throw new AppError(
+            'INVALID_TRANSITION',
+            `Cannot transition from ${existing.status} to ${data.status}`,
+            400
+          );
+        }
+      }
+
+      // Build update data
+      const updateData: Prisma.CaseUpdateInput = {};
+
+      if (data.status !== undefined) {
+        updateData.status = data.status;
+        if (data.status === 'RESOLVED') {
+          updateData.resolved_at = new Date();
+        }
+      }
+
+      if (data.assignedTo !== undefined) {
+        if (data.assignedTo === null) {
+          updateData.assignee = { disconnect: true };
+        } else {
+          updateData.assignee = { connect: { id: data.assignedTo } };
+        }
+      }
+
+      if (data.notes !== undefined) {
+        updateData.notes = data.notes;
+      }
+
       const caseRecord = await tx.case.update({
         where: { id: caseId, company_id: companyId },
         data: updateData,
@@ -103,6 +112,8 @@ export class CaseService {
                   first_name: true,
                   last_name: true,
                   email: true,
+                  gender: true,
+                  date_of_birth: true,
                   team: { select: { id: true, name: true } },
                 },
               },

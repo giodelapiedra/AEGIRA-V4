@@ -52,7 +52,7 @@ export async function getMissedCheckIns(c: Context): Promise<Response> {
     repository.countByStatus(teamIds || undefined),
   ]);
 
-  // Transform to API response shape (backward-compatible)
+  // Transform to API response shape (includes state snapshot for analytics)
   const items = result.items.map((record) => ({
     id: record.id,
     workerId: record.person_id,
@@ -67,6 +67,20 @@ export async function getMissedCheckIns(c: Context): Promise<Response> {
     resolvedAt: record.resolved_at,
     reason: 'No check-in submitted',
     createdAt: record.created_at,
+    // State snapshot fields (for detail view)
+    stateSnapshot: {
+      dayOfWeek: record.day_of_week,
+      checkInStreakBefore: record.check_in_streak_before,
+      recentReadinessAvg: record.recent_readiness_avg,
+      daysSinceLastCheckIn: record.days_since_last_check_in,
+      daysSinceLastMiss: record.days_since_last_miss,
+      missesInLast30d: record.misses_in_last_30d,
+      missesInLast60d: record.misses_in_last_60d,
+      missesInLast90d: record.misses_in_last_90d,
+      baselineCompletionRate: record.baseline_completion_rate,
+      isFirstMissIn30d: record.is_first_miss_in_30d,
+      isIncreasingFrequency: record.is_increasing_frequency,
+    },
   }));
 
   return c.json({

@@ -14,6 +14,7 @@ export function useUpdateCase() {
       queryClient.invalidateQueries({ queryKey: ['case', caseId] });
       queryClient.invalidateQueries({ queryKey: ['incidents'] });
       queryClient.invalidateQueries({ queryKey: ['my-incidents'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       if (updatedCase.incidentId) {
         queryClient.invalidateQueries({ queryKey: ['incident-timeline', updatedCase.incidentId] });
       }

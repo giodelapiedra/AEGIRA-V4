@@ -150,6 +150,10 @@ export interface TeamLeadDashboardStats {
   newlyAssigned: number; // Workers assigned today (not required to check-in)
   teamAvgReadiness: number;
   memberStatuses: TeamMemberStatus[];
+  // Team schedule info
+  checkInStart: string; // e.g. "06:00"
+  checkInEnd: string;   // e.g. "10:00"
+  workDays: string;     // CSV: "1,2,3,4,5"
 }
 
 // Team summary for supervisor view

@@ -1,4 +1,4 @@
-import { useState, useDeferredValue } from 'react';
+import { useState, useDeferredValue, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ColumnDef, PaginationState } from '@tanstack/react-table';
 import { UserCircle, Plus, Edit, Search } from 'lucide-react';
@@ -12,6 +12,7 @@ import { DataTable, SortableHeader } from '@/components/ui/data-table';
 import { PageLoader } from '@/components/common/PageLoader';
 import { usePersons, Person } from '@/features/person/hooks/usePersons';
 import { ROUTES } from '@/config/routes.config';
+import { buildRoute } from '@/lib/utils/route.utils';
 
 const columns: ColumnDef<Person>[] = [
   {
@@ -61,7 +62,7 @@ const columns: ColumnDef<Person>[] = [
     header: 'Actions',
     cell: ({ row }) => (
       <Button variant="ghost" size="icon" asChild>
-        <Link to={`${ROUTES.ADMIN_WORKERS}/${row.original.id}/edit`}>
+        <Link to={buildRoute(ROUTES.ADMIN_WORKERS_EDIT, { workerId: row.original.id })}>
           <Edit className="h-4 w-4" />
         </Link>
       </Button>
@@ -84,9 +85,13 @@ export function AdminWorkersPage() {
     deferredSearch
   );
 
+  // Reset pagination when deferred search changes (not on every keystroke)
+  useEffect(() => {
+    setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+  }, [deferredSearch]);
+
   const handleSearchChange = (value: string) => {
     setSearch(value);
-    setPagination((prev) => ({ ...prev, pageIndex: 0 }));
   };
 
   const persons = personsData?.items || [];

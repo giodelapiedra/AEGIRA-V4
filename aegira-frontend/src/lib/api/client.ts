@@ -41,7 +41,12 @@ class APIClient {
       }
 
       if (!response.ok) {
-        const errorBody: { error?: { message?: string } } = await response.json().catch(() => ({ error: { message: response.statusText } }));
+        const errorBody: { error?: { message?: string } } = await response.json().catch((parseError) => {
+          if (import.meta.env.DEV) {
+            console.error('[APIClient] Failed to parse error response:', parseError);
+          }
+          return { error: { message: response.statusText } };
+        });
         throw new Error(errorBody.error?.message || `Request failed: ${response.statusText}`);
       }
 

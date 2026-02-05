@@ -19,6 +19,15 @@ export async function getCompanySettings(c: Context): Promise<Response> {
       name: true,
       slug: true,
       timezone: true,
+      industry: true,
+      business_registration_type: true,
+      business_registration_number: true,
+      business_type: true,
+      address_street: true,
+      address_city: true,
+      address_postal_code: true,
+      address_state: true,
+      address_country: true,
       is_active: true,
       created_at: true,
     },
@@ -36,6 +45,15 @@ export async function getCompanySettings(c: Context): Promise<Response> {
       companyName: company.name,
       companyCode: company.slug,
       timezone: company.timezone,
+      industry: company.industry || '',
+      businessRegistrationType: company.business_registration_type || '',
+      businessRegistrationNumber: company.business_registration_number || '',
+      businessType: company.business_type || '',
+      addressStreet: company.address_street || '',
+      addressCity: company.address_city || '',
+      addressPostalCode: company.address_postal_code || '',
+      addressState: company.address_state || '',
+      addressCountry: company.address_country || '',
       // Default settings (could be stored in a separate settings table in future)
       checkInWindowStart: '06:00',
       checkInWindowEnd: '10:00',
@@ -52,6 +70,15 @@ export async function updateCompanySettings(c: Context): Promise<Response> {
   const updateData: Prisma.CompanyUpdateInput = {};
   if (data.companyName) updateData.name = data.companyName;
   if (data.timezone) updateData.timezone = data.timezone;
+  if (data.industry !== undefined) updateData.industry = data.industry || null;
+  if (data.businessRegistrationType !== undefined) updateData.business_registration_type = data.businessRegistrationType;
+  if (data.businessRegistrationNumber !== undefined) updateData.business_registration_number = data.businessRegistrationNumber;
+  if (data.businessType !== undefined) updateData.business_type = data.businessType;
+  if (data.addressStreet !== undefined) updateData.address_street = data.addressStreet;
+  if (data.addressCity !== undefined) updateData.address_city = data.addressCity;
+  if (data.addressPostalCode !== undefined) updateData.address_postal_code = data.addressPostalCode;
+  if (data.addressState !== undefined) updateData.address_state = data.addressState;
+  if (data.addressCountry !== undefined) updateData.address_country = data.addressCountry;
 
   const company = await prisma.company.update({
     where: { id: companyId },
@@ -78,6 +105,15 @@ export async function updateCompanySettings(c: Context): Promise<Response> {
       companyName: company.name,
       companyCode: company.slug,
       timezone: company.timezone,
+      industry: company.industry || '',
+      businessRegistrationType: company.business_registration_type || '',
+      businessRegistrationNumber: company.business_registration_number || '',
+      businessType: company.business_type || '',
+      addressStreet: company.address_street || '',
+      addressCity: company.address_city || '',
+      addressPostalCode: company.address_postal_code || '',
+      addressState: company.address_state || '',
+      addressCountry: company.address_country || '',
       checkInWindowStart: data.checkInWindowStart || '06:00',
       checkInWindowEnd: data.checkInWindowEnd || '10:00',
       reminderTime: data.reminderTime || '07:00',

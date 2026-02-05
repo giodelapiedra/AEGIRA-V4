@@ -19,6 +19,17 @@ function getService(): IncidentService {
   return new IncidentService(prisma);
 }
 
+function calculateAge(dateOfBirth: Date | null): number | null {
+  if (!dateOfBirth) return null;
+  const today = new Date();
+  let age = today.getFullYear() - dateOfBirth.getFullYear();
+  const monthDiff = today.getMonth() - dateOfBirth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dateOfBirth.getDate())) {
+    age--;
+  }
+  return age;
+}
+
 function mapIncidentToResponse(incident: {
   id: string;
   incident_number: number;
@@ -28,6 +39,8 @@ function mapIncidentToResponse(incident: {
     first_name: string;
     last_name: string;
     email: string;
+    gender: string | null;
+    date_of_birth: Date | null;
     team: { id: string; name: string } | null;
   };
   incident_type: string;
@@ -50,6 +63,8 @@ function mapIncidentToResponse(incident: {
     reporterId: incident.reporter_id,
     reporterName: `${incident.reporter.first_name} ${incident.reporter.last_name}`,
     reporterEmail: incident.reporter.email,
+    reporterGender: incident.reporter.gender,
+    reporterAge: calculateAge(incident.reporter.date_of_birth),
     teamName: incident.reporter.team?.name ?? 'Unassigned',
     incidentType: incident.incident_type,
     severity: incident.severity,

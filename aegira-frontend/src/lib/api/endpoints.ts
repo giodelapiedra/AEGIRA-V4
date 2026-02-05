@@ -29,6 +29,8 @@ export const ENDPOINTS = {
     TEAM_LEAD: '/dashboard/team-lead',
     SUPERVISOR: '/dashboard/supervisor',
     ADMIN: '/dashboard/admin',
+    WHS: '/dashboard/whs',
+    WHS_ANALYTICS: '/dashboard/whs-analytics',
   },
 
   // Team Module

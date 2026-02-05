@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
 import { ENDPOINTS } from '@/lib/api/endpoints';
 import { STALE_TIMES } from '@/config/query.config';
@@ -31,6 +31,7 @@ export function useIncidents({
   return useQuery({
     queryKey: ['incidents', page, limit, status, severity, type, search],
     staleTime: STALE_TIMES.STANDARD,
+    placeholderData: keepPreviousData,
     queryFn: async () => {
       const params = new URLSearchParams({
         page: String(page),

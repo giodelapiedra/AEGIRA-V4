@@ -48,6 +48,9 @@ export const ROUTES = {
   ADMIN_AUDIT_LOGS: '/admin/audit-logs',
   ADMIN_SYSTEM_HEALTH: '/admin/system-health',
 
+  // WHS Analytics
+  WHS_ANALYTICS: '/whs-analytics',
+
   // Person management (admin)
   PERSON: '/person',
   PERSON_DETAIL: '/person/:personId',

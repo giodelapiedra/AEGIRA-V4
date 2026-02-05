@@ -1,5 +1,5 @@
 import { ColumnDef } from '@tanstack/react-table';
-import { Users, CheckCircle, AlertCircle, TrendingUp, Clock, UserPlus, XCircle, BarChart3, CalendarOff } from 'lucide-react';
+import { Users, CheckCircle, AlertCircle, TrendingUp, Clock, UserPlus, XCircle, BarChart3, CalendarOff, CalendarClock } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { PageLoader } from '@/components/common/PageLoader';
@@ -9,6 +9,15 @@ import { StatCard } from '../components/StatCard';
 import { useTeamLeadDashboardStats } from '../hooks/useDashboardStats';
 import type { TeamMemberStatus } from '@/types/check-in.types';
 import { formatTime } from '@/lib/utils/date.utils';
+import { formatScheduleWindow } from '@/lib/utils/format.utils';
+
+// Map day number (0=Sun..6=Sat) to short label
+const DAY_LABELS: Record<string, string> = {
+  '0': 'Sun', '1': 'Mon', '2': 'Tue', '3': 'Wed',
+  '4': 'Thu', '5': 'Fri', '6': 'Sat',
+};
+
+const ALL_DAYS = ['0', '1', '2', '3', '4', '5', '6'];
 
 // Helper to get readiness badge
 const getReadinessBadge = (category?: string) => {
@@ -193,6 +202,41 @@ export function TeamLeadDashboard() {
           </CardContent>
         </Card>
       )}
+
+      {/* Team Schedule */}
+      {stats?.checkInStart && (() => {
+        const activeDays = new Set(stats.workDays?.split(',') ?? []);
+        return (
+          <Card>
+            <CardContent className="py-4">
+              <div className="flex items-center gap-6 flex-wrap">
+                <div className="flex items-center gap-2 text-sm">
+                  <CalendarClock className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-muted-foreground">Check-in Window:</span>
+                  <span className="font-medium">{formatScheduleWindow(stats.checkInStart, stats.checkInEnd)}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-muted-foreground">Work Days:</span>
+                  <div className="flex gap-1">
+                    {ALL_DAYS.map(day => {
+                      const isActive = activeDays.has(day);
+                      return (
+                        <Badge
+                          key={day}
+                          variant={isActive ? 'default' : 'outline'}
+                          className={isActive ? 'px-1.5 py-0.5 text-xs' : 'px-1.5 py-0.5 text-xs opacity-40'}
+                        >
+                          {DAY_LABELS[day]}
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       <Card>
         <CardHeader>

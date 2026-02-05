@@ -19,6 +19,7 @@ export function useRejectIncident() {
       queryClient.invalidateQueries({ queryKey: ['incident', incidentId] });
       queryClient.invalidateQueries({ queryKey: ['incident-timeline', incidentId] });
       queryClient.invalidateQueries({ queryKey: ['my-incidents'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     },
   });
 }

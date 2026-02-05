@@ -15,6 +15,17 @@ function getService(companyId: string): CaseService {
   return new CaseService(prisma, repository);
 }
 
+function calculateAge(dateOfBirth: Date | null): number | null {
+  if (!dateOfBirth) return null;
+  const today = new Date();
+  let age = today.getFullYear() - dateOfBirth.getFullYear();
+  const monthDiff = today.getMonth() - dateOfBirth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dateOfBirth.getDate())) {
+    age--;
+  }
+  return age;
+}
+
 function mapCaseToResponse(caseRecord: {
   id: string;
   case_number: number;
@@ -33,6 +44,8 @@ function mapCaseToResponse(caseRecord: {
       first_name: string;
       last_name: string;
       email: string;
+      gender: string | null;
+      date_of_birth: Date | null;
       team: { id: string; name: string } | null;
     };
   };
@@ -59,6 +72,8 @@ function mapCaseToResponse(caseRecord: {
       reporterId: caseRecord.incident.reporter.id,
       reporterName: `${caseRecord.incident.reporter.first_name} ${caseRecord.incident.reporter.last_name}`,
       reporterEmail: caseRecord.incident.reporter.email,
+      reporterGender: caseRecord.incident.reporter.gender,
+      reporterAge: calculateAge(caseRecord.incident.reporter.date_of_birth),
       teamName: caseRecord.incident.reporter.team?.name ?? 'Unassigned',
     },
     assignedTo: caseRecord.assigned_to,

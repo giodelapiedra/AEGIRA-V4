@@ -3,6 +3,7 @@
 // after the team's check-in window has closed for the day.
 import { prisma } from '../config/database';
 import { MissedCheckInRepository } from '../modules/missed-check-in/missed-check-in.repository';
+import { MissedCheckInSnapshotService } from '../modules/missed-check-in/missed-check-in-snapshot.service';
 import { NotificationRepository } from '../modules/notification/notification.repository';
 import { logger } from '../config/logger';
 import {
@@ -13,7 +14,31 @@ import {
   parseDateInTimezone,
   formatTime12h,
 } from '../shared/utils';
-import { isHoliday } from '../shared/holiday.utils';
+import { isHoliday, buildHolidayDateSet } from '../shared/holiday.utils';
+
+/**
+ * Add minutes to a time string (HH:mm).
+ * Handles hour overflow (e.g., 10:59 + 2 = 11:01).
+ */
+function addMinutesToTime(time: string, minutes: number): string {
+  const [hours, mins] = time.split(':').map(Number);
+  const totalMinutes = hours * 60 + mins + minutes;
+  const newHours = Math.floor(totalMinutes / 60) % 24;
+  const newMins = totalMinutes % 60;
+  return `${String(newHours).padStart(2, '0')}:${String(newMins).padStart(2, '0')}`;
+}
+
+/**
+ * Buffer time (in minutes) after check-in window closes before detecting misses.
+ * Prevents false positives from in-flight check-in submissions at window boundary.
+ */
+const WINDOW_BUFFER_MINUTES = 2;
+
+/**
+ * In-memory lock to prevent overlapping job runs.
+ * For multi-instance deployments, use Redis or database-based locking.
+ */
+let isRunning = false;
 
 /**
  * Core detection logic:
@@ -22,13 +47,20 @@ import { isHoliday } from '../shared/holiday.utils';
  *   1. Get current time in company timezone
  *   2. Check if today is a company holiday → skip if yes
  *   3. Get today's day-of-week in company timezone
- *   4. Find teams where today is a work day AND check_in_end <= current time
+ *   4. Find teams where today is a work day AND check_in_end + buffer <= current time
  *   5. Find active workers on those teams who were assigned before today
  *      and do NOT have a CheckIn record for today
  *   6. Insert MissedCheckIn records (skipDuplicates for idempotency)
  *   7. Send notifications for newly detected records
  */
 export async function detectMissedCheckIns(): Promise<void> {
+  // Prevent overlapping runs
+  if (isRunning) {
+    logger.info('Skipping missed check-in detection: previous run still in progress');
+    return;
+  }
+
+  isRunning = true;
   logger.info('Running missed check-in detection');
 
   try {
@@ -40,15 +72,26 @@ export async function detectMissedCheckIns(): Promise<void> {
 
     let totalDetected = 0;
 
+    // Process companies sequentially to control connection pool usage
     for (const company of companies) {
-      const detected = await processCompany(company.id, company.timezone);
-      totalDetected += detected;
+      try {
+        const detected = await processCompany(company.id, company.timezone);
+        totalDetected += detected;
+      } catch (companyError) {
+        // Log error but continue processing other companies
+        logger.error(
+          { error: companyError, companyId: company.id },
+          'Failed to process company for missed check-ins'
+        );
+      }
     }
 
     logger.info({ totalDetected }, 'Missed check-in detection completed');
   } catch (error) {
     logger.error({ error }, 'Failed to run missed check-in detection');
     throw error;
+  } finally {
+    isRunning = false;
   }
 }
 
@@ -80,13 +123,16 @@ async function processCompany(companyId: string, timezone: string): Promise<numb
     },
   });
 
-  // Filter to teams where today is a work day and window has closed
+  // Filter to teams where today is a work day and window has closed (with buffer)
   const eligibleTeams = teams.filter((team) => {
     const workDays = team.work_days?.split(',') || ['1', '2', '3', '4', '5'];
     if (!workDays.includes(todayDow)) return false;
-    // Only process teams whose check-in window has already closed
+
+    // Only process teams whose check-in window has closed + buffer time
+    // Buffer prevents false positives from in-flight check-ins at window boundary
     const endTime = team.check_in_end || '10:00';
-    return currentTime >= endTime;
+    const endWithBuffer = addMinutesToTime(endTime, WINDOW_BUFFER_MINUTES);
+    return currentTime >= endWithBuffer;
   });
 
   if (eligibleTeams.length === 0) return 0;
@@ -106,6 +152,7 @@ async function processCompany(companyId: string, timezone: string): Promise<numb
       id: true,
       team_id: true,
       team_assigned_at: true,
+      role: true, // Needed for state snapshot
     },
   });
 
@@ -153,16 +200,56 @@ async function processCompany(companyId: string, timezone: string): Promise<numb
 
   if (newMissing.length === 0) return 0;
 
-  // Build records for insertion
+  // Build holiday date set for snapshot calculations (last 90 days)
+  const ninetyDaysAgo = new Date(todayDate.getTime() - 90 * 24 * 60 * 60 * 1000);
+  const holidayDateSet = await buildHolidayDateSet(prisma, companyId, ninetyDaysAgo, todayDate, timezone);
+
+  // Calculate state snapshots for all workers in batch
+  const snapshotService = new MissedCheckInSnapshotService(prisma, companyId, timezone);
+
+  const workerContexts = newMissing.map((w) => {
+    const team = teamMap.get(w.team_id!);
+    return {
+      personId: w.id,
+      teamId: w.team_id!,
+      role: w.role,
+      teamAssignedAt: w.team_assigned_at,
+      workDays: team?.work_days?.split(',') || ['1', '2', '3', '4', '5'],
+    };
+  });
+
+  const snapshots = await snapshotService.calculateBatch(workerContexts, todayDate, holidayDateSet);
+
+  // Build records for insertion with state snapshots
   const records = newMissing.map((w) => {
     const team = teamMap.get(w.team_id!);
     const start = team?.check_in_start || '06:00';
     const end = team?.check_in_end || '10:00';
+    const snapshot = snapshots.get(w.id);
+
     return {
       personId: w.id,
       teamId: w.team_id!,
       missedDate: todayDate,
       scheduleWindow: `${formatTime12h(start)} - ${formatTime12h(end)}`,
+      // Include state snapshot
+      ...(snapshot && {
+        workerRoleAtMiss: snapshot.workerRoleAtMiss,
+        dayOfWeek: snapshot.dayOfWeek,
+        weekOfMonth: snapshot.weekOfMonth,
+        daysSinceLastCheckIn: snapshot.daysSinceLastCheckIn,
+        daysSinceLastMiss: snapshot.daysSinceLastMiss,
+        checkInStreakBefore: snapshot.checkInStreakBefore,
+        recentReadinessAvg: snapshot.recentReadinessAvg,
+        missesInLast30d: snapshot.missesInLast30d,
+        missesInLast60d: snapshot.missesInLast60d,
+        missesInLast90d: snapshot.missesInLast90d,
+        baselineCompletionRate: snapshot.baselineCompletionRate,
+        isFirstMissIn30d: snapshot.isFirstMissIn30d,
+        isIncreasingFrequency: snapshot.isIncreasingFrequency,
+      }),
+      reminderSent: true,
+      reminderFailed: false,
     };
   });
 
