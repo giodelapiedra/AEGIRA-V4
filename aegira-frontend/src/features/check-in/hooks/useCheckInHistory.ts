@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
 import { ENDPOINTS } from '@/lib/api/endpoints';
 import { STALE_TIMES } from '@/config/query.config';
@@ -46,17 +46,18 @@ function transformCheckIn(data: BackendCheckIn): CheckIn {
 
 interface UseCheckInHistoryParams {
   page?: number;
-  pageSize?: number;
+  limit?: number;
 }
 
-export function useCheckInHistory({ page = 1, pageSize = 10 }: UseCheckInHistoryParams = {}) {
+export function useCheckInHistory({ page = 1, limit = 10 }: UseCheckInHistoryParams = {}) {
   return useQuery({
-    queryKey: ['check-ins', 'history', page, pageSize], // ✅ FIX: Standardize to all primitives
+    queryKey: ['check-ins', 'history', page, limit],
     staleTime: STALE_TIMES.IMMUTABLE, // Historical data rarely changes
+    placeholderData: keepPreviousData, // Smooth pagination transitions
     queryFn: async () => {
       const params = new URLSearchParams({
         page: String(page),
-        pageSize: String(pageSize),
+        limit: String(limit),
       });
       const data = await apiClient.get<BackendPaginatedResponse>(
         `${ENDPOINTS.CHECK_IN.HISTORY}?${params.toString()}`

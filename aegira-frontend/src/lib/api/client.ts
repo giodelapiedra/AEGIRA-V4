@@ -1,6 +1,7 @@
 import { useAuthStore } from '@/stores/auth.store';
 import { API_CONFIG } from '@/config/api.config';
 import { ENDPOINTS } from './endpoints';
+import { ROUTES } from '@/config/routes.config';
 
 // Auth endpoints that should not trigger hard redirect on 401
 const AUTH_ENDPOINTS = [
@@ -35,7 +36,7 @@ class APIClient {
         if (!isAuthEndpoint) {
           // Only redirect for non-auth endpoints (session expired)
           useAuthStore.getState().clearAuth();
-          window.location.href = '/login';
+          window.location.href = ROUTES.LOGIN;
           throw new Error('Session expired');
         }
       }

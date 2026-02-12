@@ -69,7 +69,7 @@ const columns: ColumnDef<Incident>[] = [
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => navigate(`/incidents/${row.original.id}`)}
+          onClick={() => navigate(ROUTES.INCIDENT_DETAIL.replace(':id', row.original.id))}
         >
           <Eye className="h-4 w-4 mr-1" />
           View

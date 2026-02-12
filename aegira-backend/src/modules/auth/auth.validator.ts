@@ -11,7 +11,11 @@ export const signupSchema = z.object({
   firstName: z.string().min(1, 'First name is required').trim(),
   lastName: z.string().min(1, 'Last name is required').trim(),
   email: z.string().email('Invalid email address').toLowerCase().trim(),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
+  password: z.string()
+    .min(12, 'Password must be at least 12 characters')
+    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+    .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
+    .regex(/[0-9]/, 'Password must contain at least one number'),
 
   // Company info
   companyName: z.string().min(1, 'Company name is required').trim(),
@@ -35,7 +39,11 @@ export const refreshTokenSchema = z.object({
 
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, 'Current password is required'),
-  newPassword: z.string().min(8, 'New password must be at least 8 characters'),
+  newPassword: z.string()
+    .min(12, 'New password must be at least 12 characters')
+    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+    .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
+    .regex(/[0-9]/, 'Password must contain at least one number'),
 });
 
 export const verifyPasswordSchema = z.object({

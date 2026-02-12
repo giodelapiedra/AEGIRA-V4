@@ -13,7 +13,6 @@ export const ROUTES = {
   // Worker routes
   CHECK_IN: '/check-in',
   CHECK_IN_HISTORY: '/check-in/history',
-  MY_SCHEDULE: '/schedule',
 
   // Incident routes (all authenticated users)
   MY_INCIDENTS: '/my-incidents',
@@ -38,7 +37,6 @@ export const ROUTES = {
   ADMIN_WORKERS: '/admin/workers',
   ADMIN_WORKERS_CREATE: '/admin/workers/create',
   ADMIN_WORKERS_EDIT: '/admin/workers/:workerId/edit',
-  ADMIN_SCHEDULES: '/admin/schedules',
   ADMIN_HOLIDAYS: '/admin/holidays',
   ADMIN_SETTINGS: '/admin/settings',
   ADMIN_INCIDENTS: '/admin/incidents',
@@ -46,9 +44,9 @@ export const ROUTES = {
   ADMIN_CASES: '/admin/cases',
   ADMIN_CASE_DETAIL: '/admin/cases/:id',
   ADMIN_AUDIT_LOGS: '/admin/audit-logs',
-  ADMIN_SYSTEM_HEALTH: '/admin/system-health',
 
-  // WHS Analytics
+  // WHS routes
+  WHS_WORKERS: '/whs/workers',
   WHS_ANALYTICS: '/whs-analytics',
 
   // Person management (admin)

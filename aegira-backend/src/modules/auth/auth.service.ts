@@ -13,13 +13,14 @@ interface TokenPayload {
 export class AuthService {
   generateToken(payload: TokenPayload): string {
     return jwt.sign(payload, env.JWT_SECRET, {
+      algorithm: 'HS256',
       expiresIn: env.JWT_EXPIRES_IN,
     } as jwt.SignOptions);
   }
 
   verifyToken(token: string): TokenPayload {
     try {
-      return jwt.verify(token, env.JWT_SECRET) as TokenPayload;
+      return jwt.verify(token, env.JWT_SECRET, { algorithms: ['HS256'] }) as TokenPayload;
     } catch {
       throw new AppError('INVALID_TOKEN', 'Invalid or expired token', 401);
     }

@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
 import { ENDPOINTS } from '@/lib/api/endpoints';
 import { STALE_TIMES } from '@/config/query.config';
@@ -75,22 +75,23 @@ function transformCheckIn(data: TeamCheckInRecord): CheckIn {
 interface UseWorkerCheckInsParams {
   personId: string;
   page?: number;
-  pageSize?: number;
+  limit?: number;
 }
 
 /**
  * Fetch check-in records for a specific worker via /teams/check-in-history
  * Accessible by TEAM_LEAD, SUPERVISOR, and ADMIN roles
  */
-export function useWorkerCheckIns({ personId, page = 1, pageSize = 10 }: UseWorkerCheckInsParams) {
+export function useWorkerCheckIns({ personId, page = 1, limit = 10 }: UseWorkerCheckInsParams) {
   return useQuery({
-    queryKey: ['worker-check-ins', personId, page, pageSize], // ✅ FIX: Standardize to all primitives
+    queryKey: ['worker-check-ins', personId, page, limit],
     staleTime: STALE_TIMES.IMMUTABLE,
+    placeholderData: keepPreviousData,
     queryFn: async () => {
       const params = new URLSearchParams({
         workerId: personId,
         page: String(page),
-        limit: String(pageSize),
+        limit: String(limit),
       });
 
       const data = await apiClient.get<TeamCheckInResponse>(

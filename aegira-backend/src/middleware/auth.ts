@@ -21,7 +21,7 @@ export async function authMiddleware(c: Context, next: Next): Promise<void> {
   }
 
   try {
-    const payload = jwt.verify(token, env.JWT_SECRET) as JwtPayload;
+    const payload = jwt.verify(token, env.JWT_SECRET, { algorithms: ['HS256'] }) as JwtPayload;
 
     const user: AuthenticatedUser = {
       id: payload.sub,

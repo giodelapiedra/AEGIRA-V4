@@ -1,18 +1,19 @@
-import { useState, useDeferredValue } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { ColumnDef, PaginationState } from '@tanstack/react-table';
 import { Eye } from 'lucide-react';
 import { DataTable } from '@/components/ui/data-table';
 import { PageHeader } from '@/components/common/PageHeader';
 import { PageLoader } from '@/components/common/PageLoader';
+import { TableSearch } from '@/components/common/TableSearch';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CaseStatusBadge } from '../components/CaseStatusBadge';
 import { SeverityBadge } from '../components/SeverityBadge';
 import { useCases } from '../hooks/useCases';
 import { formatDate } from '@/lib/utils/date.utils';
 import { formatCaseNumber } from '@/lib/utils/format.utils';
+import { ROUTES } from '@/config/routes.config';
 import type { Case, CaseStatus } from '@/types/incident.types';
 
 const columns: ColumnDef<Case>[] = [
@@ -21,20 +22,34 @@ const columns: ColumnDef<Case>[] = [
     header: 'Case #',
     cell: ({ row }) =>
       formatCaseNumber(row.original.caseNumber, row.original.createdAt),
+    // Hide on mobile (< 1024px)
+    meta: {
+      className: 'hidden lg:table-cell',
+    },
   },
   {
     accessorKey: 'incident.title',
     header: 'Incident Title',
     cell: ({ row }) => (
-      <span className="font-medium max-w-[200px] truncate block">
-        {row.original.incident.title}
-      </span>
+      <div>
+        <span className="font-medium line-clamp-2">
+          {row.original.incident.title}
+        </span>
+        {/* Show reporter on mobile (when Reporter column is hidden) */}
+        <div className="text-xs text-muted-foreground mt-0.5 md:hidden">
+          {row.original.incident.reporterName}
+        </div>
+      </div>
     ),
   },
   {
     accessorKey: 'incident.reporterName',
     header: 'Reporter',
     cell: ({ row }) => row.original.incident.reporterName,
+    // Hide on mobile, show on medium+ (≥ 768px)
+    meta: {
+      className: 'hidden md:table-cell',
+    },
   },
   {
     accessorKey: 'incident.severity',
@@ -47,16 +62,28 @@ const columns: ColumnDef<Case>[] = [
     accessorKey: 'status',
     header: 'Status',
     cell: ({ row }) => <CaseStatusBadge status={row.original.status} />,
+    // Hide on small mobile (< 640px)
+    meta: {
+      className: 'hidden sm:table-cell',
+    },
   },
   {
     accessorKey: 'assigneeName',
     header: 'Assigned To',
     cell: ({ row }) => row.original.assigneeName ?? 'Unassigned',
+    // Hide on mobile (< 1024px)
+    meta: {
+      className: 'hidden lg:table-cell',
+    },
   },
   {
     accessorKey: 'createdAt',
     header: 'Created',
     cell: ({ row }) => formatDate(row.original.createdAt),
+    // Hide on mobile (< 768px)
+    meta: {
+      className: 'hidden md:table-cell',
+    },
   },
   {
     id: 'actions',
@@ -67,10 +94,11 @@ const columns: ColumnDef<Case>[] = [
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => navigate(`/admin/cases/${row.original.id}`)}
+          onClick={() => navigate(ROUTES.ADMIN_CASE_DETAIL.replace(':id', row.original.id))}
+          aria-label="View case details"
         >
           <Eye className="h-4 w-4 mr-1" />
-          View
+          <span className="hidden sm:inline">View</span>
         </Button>
       );
     },
@@ -81,8 +109,8 @@ type StatusTab = 'ALL' | CaseStatus;
 
 export function AdminCasesPage() {
   const [statusTab, setStatusTab] = useState<StatusTab>('ALL');
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
-  const deferredSearch = useDeferredValue(search);
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize: 20,
@@ -92,8 +120,13 @@ export function AdminCasesPage() {
     page: pagination.pageIndex + 1,
     limit: pagination.pageSize,
     status: statusTab === 'ALL' ? undefined : statusTab,
-    search: deferredSearch || undefined,
+    search: search || undefined,
   });
+
+  const handleSearch = () => {
+    setSearch(searchInput.trim());
+    setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+  };
 
   const handleTabChange = (value: string) => {
     setStatusTab(value as StatusTab);
@@ -121,46 +154,45 @@ export function AdminCasesPage() {
         />
 
         <Tabs value={statusTab} onValueChange={handleTabChange}>
-          <TabsList>
-            <TabsTrigger value="ALL" className="gap-1.5">
-              All
-              <span className="text-xs text-muted-foreground">({totalCount})</span>
-            </TabsTrigger>
-            <TabsTrigger value="OPEN" className="gap-1.5">
-              Open
-              <span className="text-xs text-muted-foreground">
-                ({statusCounts.OPEN})
-              </span>
-            </TabsTrigger>
-            <TabsTrigger value="INVESTIGATING" className="gap-1.5">
-              Investigating
-              <span className="text-xs text-muted-foreground">
-                ({statusCounts.INVESTIGATING})
-              </span>
-            </TabsTrigger>
-            <TabsTrigger value="RESOLVED" className="gap-1.5">
-              Resolved
-              <span className="text-xs text-muted-foreground">
-                ({statusCounts.RESOLVED})
-              </span>
-            </TabsTrigger>
-            <TabsTrigger value="CLOSED" className="gap-1.5">
-              Closed
-              <span className="text-xs text-muted-foreground">
-                ({statusCounts.CLOSED})
-              </span>
-            </TabsTrigger>
-          </TabsList>
+          <div className="overflow-x-auto pb-2">
+            <TabsList className="inline-flex w-auto min-w-full sm:min-w-0">
+              <TabsTrigger value="ALL" className="gap-1.5 whitespace-nowrap">
+                All
+                <span className="text-xs text-muted-foreground">({totalCount})</span>
+              </TabsTrigger>
+              <TabsTrigger value="OPEN" className="gap-1.5 whitespace-nowrap">
+                Open
+                <span className="text-xs text-muted-foreground">
+                  ({statusCounts.OPEN})
+                </span>
+              </TabsTrigger>
+              <TabsTrigger value="INVESTIGATING" className="gap-1.5 whitespace-nowrap">
+                Investigating
+                <span className="text-xs text-muted-foreground">
+                  ({statusCounts.INVESTIGATING})
+                </span>
+              </TabsTrigger>
+              <TabsTrigger value="RESOLVED" className="gap-1.5 whitespace-nowrap">
+                Resolved
+                <span className="text-xs text-muted-foreground">
+                  ({statusCounts.RESOLVED})
+                </span>
+              </TabsTrigger>
+              <TabsTrigger value="CLOSED" className="gap-1.5 whitespace-nowrap">
+                Closed
+                <span className="text-xs text-muted-foreground">
+                  ({statusCounts.CLOSED})
+                </span>
+              </TabsTrigger>
+            </TabsList>
+          </div>
         </Tabs>
 
-        <Input
+        <TableSearch
           placeholder="Search by incident title or reporter..."
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setPagination((prev) => ({ ...prev, pageIndex: 0 }));
-          }}
-          className="max-w-xs"
+          value={searchInput}
+          onChange={setSearchInput}
+          onSearch={handleSearch}
         />
 
         <DataTable

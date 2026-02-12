@@ -42,8 +42,8 @@ export class NotificationRepository extends BaseRepository {
   }
 
   async findById(id: string): Promise<Notification | null> {
-    return this.prisma.notification.findUnique({
-      where: { id, company_id: this.companyId },
+    return this.prisma.notification.findFirst({
+      where: this.where({ id }),
     });
   }
 
@@ -93,7 +93,7 @@ export class NotificationRepository extends BaseRepository {
 
     if (result.count === 0) return null;
 
-    return this.prisma.notification.findUnique({ where: { id } });
+    return this.prisma.notification.findFirst({ where: this.where({ id }) });
   }
 
   async markAllAsRead(personId: string): Promise<number> {

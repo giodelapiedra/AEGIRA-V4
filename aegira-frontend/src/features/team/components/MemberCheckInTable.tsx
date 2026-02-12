@@ -3,7 +3,7 @@ import { ColumnDef, PaginationState } from '@tanstack/react-table';
 import { ClipboardList } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { DataTable, SortableHeader } from '@/components/ui/data-table';
-import { ReadinessBadge } from '@/features/check-in/components/ReadinessIndicator';
+import { ReadinessCategoryBadge } from '@/components/common/badge-utils';
 import { useWorkerCheckIns } from '../hooks/useWorkerCheckIns';
 import { formatDate, formatTime } from '@/lib/utils/date.utils';
 import type { CheckIn } from '@/types/check-in.types';
@@ -58,7 +58,7 @@ const columns: ColumnDef<CheckIn>[] = [
     id: 'status',
     header: 'Status',
     cell: ({ row }) => (
-      <ReadinessBadge category={row.original.readinessResult.category} />
+      <ReadinessCategoryBadge category={row.original.readinessResult.category} />
     ),
   },
 ];
@@ -72,7 +72,7 @@ export function MemberCheckInTable({ personId }: MemberCheckInTableProps) {
   const { data, isLoading } = useWorkerCheckIns({
     personId,
     page: pagination.pageIndex + 1,
-    pageSize: pagination.pageSize,
+    limit: pagination.pageSize,
   });
 
   const checkIns = data?.items ?? [];

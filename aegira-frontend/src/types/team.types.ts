@@ -35,7 +35,7 @@ export interface TeamMember {
   first_name: string;
   last_name: string;
   email: string;
-  role: 'WORKER' | 'TEAM_LEAD' | 'SUPERVISOR' | 'ADMIN';
+  role: 'WORKER' | 'TEAM_LEAD' | 'SUPERVISOR' | 'WHS' | 'ADMIN';
   team_id?: string;
   is_active: boolean;
 }

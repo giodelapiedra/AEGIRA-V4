@@ -10,22 +10,22 @@ type NotificationFilter = 'all' | 'unread' | 'read';
 
 interface UseNotificationsParams {
   page?: number;
-  pageSize?: number;
+  limit?: number;
   filter?: NotificationFilter;
 }
 
 /**
  * Server-side paginated notifications - for the full NotificationsPage
  */
-export function useNotifications({ page = 1, pageSize = 20, filter = 'all' }: UseNotificationsParams = {}) {
+export function useNotifications({ page = 1, limit = 20, filter = 'all' }: UseNotificationsParams = {}) {
   return useQuery({
-    queryKey: ['notifications', page, pageSize, filter],
+    queryKey: ['notifications', page, limit, filter],
     staleTime: STALE_TIMES.STANDARD,
     placeholderData: keepPreviousData,
     queryFn: () => {
       const params = new URLSearchParams({
         page: String(page),
-        limit: String(pageSize),
+        limit: String(limit),
       });
       if (filter !== 'all') params.set('filter', filter);
       return apiClient.get<PaginatedResponse<Notification>>(

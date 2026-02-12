@@ -7,7 +7,7 @@ import { roleMiddleware } from '../../middleware/role';
 import * as controller from './team.controller';
 import * as missedCheckInController from '../missed-check-in/missed-check-in.controller';
 import { createTeamSchema, updateTeamSchema } from './team.validator';
-import { getMissedCheckInsQuerySchema, updateMissedCheckInSchema } from '../missed-check-in/missed-check-in.validator';
+import { getMissedCheckInsQuerySchema } from '../missed-check-in/missed-check-in.validator';
 
 const router = new Hono();
 
@@ -17,6 +17,7 @@ router.use('*', tenantMiddleware);
 // Role-based access
 const adminOnly = roleMiddleware(['ADMIN']);
 const teamLeadUp = roleMiddleware(['TEAM_LEAD', 'SUPERVISOR', 'ADMIN']);
+const teamLeadUpOrWhs = roleMiddleware(['TEAM_LEAD', 'SUPERVISOR', 'ADMIN', 'WHS']);
 
 // GET /api/v1/teams - List teams (ADMIN only - full list)
 router.get('/', adminOnly, controller.listTeams);
@@ -27,21 +28,13 @@ router.post('/', adminOnly, zValidator('json', createTeamSchema), controller.cre
 // IMPORTANT: Specific routes MUST come BEFORE parameterized routes
 
 // GET /api/v1/teams/missed-check-ins - Get missed check-ins (from DB)
-router.get('/missed-check-ins', teamLeadUp, zValidator('query', getMissedCheckInsQuerySchema), missedCheckInController.getMissedCheckIns);
-
-// PATCH /api/v1/teams/missed-check-ins/:id - Update missed check-in status
-router.patch(
-  '/missed-check-ins/:id',
-  teamLeadUp,
-  zValidator('json', updateMissedCheckInSchema),
-  missedCheckInController.updateMissedCheckInStatus
-);
+router.get('/missed-check-ins', teamLeadUpOrWhs, zValidator('query', getMissedCheckInsQuerySchema), missedCheckInController.getMissedCheckIns);
 
 // GET /api/v1/teams/analytics - Get team analytics
 router.get('/analytics', teamLeadUp, controller.getTeamAnalytics);
 
-// GET /api/v1/teams/check-in-history - Get check-in history for team workers
-router.get('/check-in-history', teamLeadUp, controller.getCheckInHistory);
+// GET /api/v1/teams/check-in-history - Get check-in history for team workers (+ WHS for investigation)
+router.get('/check-in-history', teamLeadUpOrWhs, controller.getCheckInHistory);
 
 // GET /api/v1/teams/my-members - Get current user's team members
 router.get('/my-members', teamLeadUp, controller.getMyTeamMembers);

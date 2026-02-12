@@ -23,20 +23,34 @@ import { useTeam, useUpdateTeam } from '@/features/team/hooks/useTeams';
 import { useTeamLeads, useSupervisors } from '@/features/person/hooks/usePersons';
 import { useToast } from '@/lib/hooks/use-toast';
 import { ROUTES } from '@/config/routes.config';
+import { isEndTimeAfterStart, TIME_REGEX } from '@/lib/utils/format.utils';
 import { WORK_DAYS_OPTIONS } from '@/types/team.types';
 import type { Team } from '@/types/team.types';
 import type { Person } from '@/types/person.types';
 
-const updateTeamSchema = z.object({
-  name: z.string().min(1, 'Team name is required').max(100),
-  description: z.string().max(500).optional(),
-  leaderId: z.string().min(1, 'Team leader is required'),
-  supervisorId: z.string().optional().or(z.literal('')),
-  isActive: z.boolean(),
-  checkInStart: z.string().regex(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Invalid time format'),
-  checkInEnd: z.string().regex(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Invalid time format'),
-  workDays: z.array(z.string()).min(1, 'Select at least one work day'),
-});
+const updateTeamSchema = z
+  .object({
+    name: z.string().min(1, 'Team name is required').max(100),
+    description: z.string().max(500).optional(),
+    leaderId: z.string().min(1, 'Team leader is required'),
+    supervisorId: z.string().optional().or(z.literal('')),
+    isActive: z.boolean(),
+    checkInStart: z.string().regex(TIME_REGEX, 'Invalid time format (HH:MM)'),
+    checkInEnd: z.string().regex(TIME_REGEX, 'Invalid time format (HH:MM)'),
+    workDays: z.array(z.string()).min(1, 'Select at least one work day'),
+  })
+  .refine(
+    (data) => {
+      if (data.checkInStart && data.checkInEnd) {
+        return isEndTimeAfterStart(data.checkInStart, data.checkInEnd);
+      }
+      return true;
+    },
+    {
+      message: 'Check-in end time must be after start time',
+      path: ['checkInEnd'],
+    }
+  );
 
 type UpdateTeamFormData = z.infer<typeof updateTeamSchema>;
 
@@ -59,6 +73,8 @@ export function AdminTeamEditPage() {
           team={team}
           teamLeads={teamLeads}
           supervisors={supervisors}
+          loadingTeamLeads={loadingTeamLeads}
+          loadingSupervisors={loadingSupervisors}
         />
       )}
     </PageLoader>
@@ -69,9 +85,11 @@ interface TeamEditFormProps {
   team: Team;
   teamLeads: Person[];
   supervisors: Person[];
+  loadingTeamLeads: boolean;
+  loadingSupervisors: boolean;
 }
 
-function TeamEditForm({ team, teamLeads, supervisors }: TeamEditFormProps) {
+function TeamEditForm({ team, teamLeads, supervisors, loadingTeamLeads, loadingSupervisors }: TeamEditFormProps) {
   const navigate = useNavigate();
   const updateTeam = useUpdateTeam();
   const { toast } = useToast();
@@ -104,29 +122,34 @@ function TeamEditForm({ team, teamLeads, supervisors }: TeamEditFormProps) {
   const toggleWorkDay = (day: string) => {
     const current = selectedWorkDays;
     if (current.includes(day)) {
-      setValue('workDays', current.filter((d) => d !== day));
+      setValue('workDays', current.filter((d) => d !== day), { shouldValidate: true });
     } else {
-      setValue('workDays', [...current, day].sort());
+      setValue('workDays', [...current, day].sort(), { shouldValidate: true });
     }
   };
 
   const onSubmit = async (data: UpdateTeamFormData) => {
     // Only send fields that actually changed
     const workDaysStr = data.workDays.join(',');
-    const updates = {
-      ...(data.name !== team.name && { name: data.name }),
-      ...((data.description || '') !== (team.description || '') && { description: data.description }),
-      ...(data.leaderId !== (team.leader_id || '') && { leaderId: data.leaderId }),
-      ...((data.supervisorId || null) !== (team.supervisor_id || null) && { supervisorId: data.supervisorId || null }),
-      ...(data.isActive !== team.is_active && { isActive: data.isActive }),
-      ...(data.checkInStart !== (team.check_in_start || '06:00') && { checkInStart: data.checkInStart }),
-      ...(data.checkInEnd !== (team.check_in_end || '10:00') && { checkInEnd: data.checkInEnd }),
-      ...(workDaysStr !== (team.work_days || '1,2,3,4,5') && { workDays: workDaysStr }),
-    };
+    const updates: Record<string, unknown> = {};
+
+    if (data.name !== team.name) updates.name = data.name;
+    if ((data.description || '') !== (team.description || '')) updates.description = data.description;
+    if (data.leaderId !== (team.leader_id || '')) updates.leaderId = data.leaderId;
+    if ((data.supervisorId || null) !== (team.supervisor_id || null)) updates.supervisorId = data.supervisorId || null;
+    if (data.isActive !== team.is_active) updates.isActive = data.isActive;
+    if (workDaysStr !== (team.work_days || '1,2,3,4,5')) updates.workDays = workDaysStr;
+
+    // Always send both time fields together to ensure backend validation runs
+    const startChanged = data.checkInStart !== (team.check_in_start || '06:00');
+    const endChanged = data.checkInEnd !== (team.check_in_end || '10:00');
+    if (startChanged || endChanged) {
+      updates.checkInStart = data.checkInStart;
+      updates.checkInEnd = data.checkInEnd;
+    }
 
     if (Object.keys(updates).length === 0) {
       toast({ title: 'No changes', description: 'No modifications were detected.' });
-      navigate(ROUTES.ADMIN_TEAMS);
       return;
     }
 
@@ -234,10 +257,11 @@ function TeamEditForm({ team, teamLeads, supervisors }: TeamEditFormProps) {
               <Label htmlFor="leaderId">Team Leader <span className="text-destructive">*</span></Label>
               <Select
                 value={selectedLeaderId}
-                onValueChange={(value) => setValue('leaderId', value)}
+                onValueChange={(value) => setValue('leaderId', value, { shouldValidate: true })}
+                disabled={loadingTeamLeads}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select a team lead" />
+                  <SelectValue placeholder={loadingTeamLeads ? 'Loading...' : 'Select a team lead'} />
                 </SelectTrigger>
                 <SelectContent>
                   {teamLeads.map((lead) => (
@@ -274,9 +298,10 @@ function TeamEditForm({ team, teamLeads, supervisors }: TeamEditFormProps) {
               <Select
                 value={selectedSupervisorId || '__none__'}
                 onValueChange={(value) => setValue('supervisorId', value === '__none__' ? '' : value)}
+                disabled={loadingSupervisors}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select a supervisor (optional)" />
+                  <SelectValue placeholder={loadingSupervisors ? 'Loading...' : 'Select a supervisor (optional)'} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">None</SelectItem>

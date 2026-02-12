@@ -1,14 +1,14 @@
-import { useState, useDeferredValue } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { ColumnDef, PaginationState } from '@tanstack/react-table';
 import { Eye, MoreHorizontal, CheckCircle2, XCircle } from 'lucide-react';
 import { DataTable } from '@/components/ui/data-table';
 import { PageHeader } from '@/components/common/PageHeader';
 import { PageLoader } from '@/components/common/PageLoader';
+import { TableSearch } from '@/components/common/TableSearch';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -29,6 +29,7 @@ import { useIncidents } from '../hooks/useIncidents';
 import { useApproveIncident } from '../hooks/useApproveIncident';
 import { useToast } from '@/lib/hooks/use-toast';
 import { useAuth } from '@/lib/hooks/use-auth';
+import { ROUTES } from '@/config/routes.config';
 import { formatDate } from '@/lib/utils/date.utils';
 import { formatIncidentNumber, formatIncidentType } from '@/lib/utils/format.utils';
 import type {
@@ -137,7 +138,7 @@ function RowActions({ incident }: { incident: Incident }) {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem
-            onClick={() => navigate(`/admin/incidents/${incident.id}`)}
+            onClick={() => navigate(ROUTES.ADMIN_INCIDENT_DETAIL.replace(':id', incident.id))}
           >
             <Eye className="h-4 w-4 mr-2" />
             View Details
@@ -200,8 +201,8 @@ export function AdminIncidentsPage() {
   const [statusTab, setStatusTab] = useState<StatusTab>('ALL');
   const [severityFilter, setSeverityFilter] = useState<string>('ALL');
   const [typeFilter, setTypeFilter] = useState<string>('ALL');
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
-  const deferredSearch = useDeferredValue(search);
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize: 20,
@@ -214,8 +215,13 @@ export function AdminIncidentsPage() {
     severity:
       severityFilter === 'ALL' ? undefined : (severityFilter as IncidentSeverity),
     type: typeFilter === 'ALL' ? undefined : (typeFilter as IncidentType),
-    search: deferredSearch || undefined,
+    search: search || undefined,
   });
+
+  const handleSearch = () => {
+    setSearch(searchInput.trim());
+    setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+  };
 
   const handleTabChange = (value: string) => {
     setStatusTab(value as StatusTab);
@@ -267,14 +273,11 @@ export function AdminIncidentsPage() {
 
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-3">
-          <Input
+          <TableSearch
             placeholder="Search by title or reporter..."
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPagination((prev) => ({ ...prev, pageIndex: 0 }));
-            }}
-            className="sm:max-w-xs"
+            value={searchInput}
+            onChange={setSearchInput}
+            onSearch={handleSearch}
           />
           <Select
             value={severityFilter}

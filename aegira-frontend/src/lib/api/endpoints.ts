@@ -19,8 +19,6 @@ export const ENDPOINTS = {
     TODAY: '/check-ins/today',
     STATUS: '/check-ins/status',
     HISTORY: '/check-ins/history',
-    BY_ID: (id: string) => `/check-ins/${id}`,
-    BY_PERSON: (personId: string) => `/check-ins/person/${personId}`,
   },
 
   // Dashboard Module
@@ -43,7 +41,6 @@ export const ENDPOINTS = {
     DELETE: (id: string) => `/teams/${id}`,       // DELETE
     MEMBERS: (id: string) => `/teams/${id}/members`,  // GET / POST
     MEMBER: (teamId: string, personId: string) => `/teams/${teamId}/members/${personId}`, // DELETE
-    SCHEDULE: (id: string) => `/teams/${id}/schedule`,
   },
 
   // Person Module
@@ -74,7 +71,6 @@ export const ENDPOINTS = {
     HOLIDAYS: '/admin/holidays',
     HOLIDAY_BY_ID: (id: string) => `/admin/holidays/${id}`,
     AUDIT_LOGS: '/admin/audit-logs',
-    SYSTEM_HEALTH: '/admin/system/health',
   },
 
   // Incident Module
@@ -98,7 +94,6 @@ export const ENDPOINTS = {
   // Team Management (extended)
   TEAM_MANAGEMENT: {
     MISSED_CHECK_INS: '/teams/missed-check-ins',
-    UPDATE_MISSED_CHECK_IN: (id: string) => `/teams/missed-check-ins/${id}`,
     ANALYTICS: '/teams/analytics',
     MY_MEMBERS: '/teams/my-members',
     CHECK_IN_HISTORY: '/teams/check-in-history',

@@ -18,7 +18,17 @@
       "Bash(curl:*)",
       "Bash(npm install:*)",
       "Bash(npx prisma format:*)",
-      "Bash(npx prisma generate)"
+      "Bash(npx prisma generate)",
+      "Bash(npx prisma validate:*)",
+      "Bash(cd:*)",
+      "Bash(done)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(npm run typecheck:*)",
+      "Bash(del \"D:\\\\AEGIRA V5\\\\aegira-backend\\\\src\\\\modules\\\\missed-check-in\\\\missed-check-in.service.ts\")",
+      "Bash(node -e \"const {execSync} = require\\(''child_process''\\); try { execSync\\(''npx prisma generate'', {stdio: ''inherit'', timeout: 30000}\\); } catch\\(e\\) { process.exit\\(1\\); }\")",
+      "Bash(wmic process:*)",
+      "Bash(taskkill:*)"
     ]
   }
 }

@@ -1,6 +1,7 @@
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Activity, Calendar, TrendingUp } from 'lucide-react';
+import { ArrowLeft, Activity, Calendar, TrendingUp, Clock } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import { StatCard } from '@/features/dashboard/components/StatCard';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { PageLoader } from '@/components/common/PageLoader';
@@ -8,6 +9,7 @@ import { ErrorMessage } from '@/components/common/ErrorMessage';
 import { PageHeader } from '@/components/common/PageHeader';
 import { usePerson, usePersonStats } from '../hooks/usePersons';
 import { ROLE_LABELS } from '@/lib/utils/format.utils';
+import { useTeam } from '@/features/team/hooks/useTeams';
 
 export function PersonDetailPage() {
   const { personId } = useParams<{ personId: string }>();
@@ -15,6 +17,7 @@ export function PersonDetailPage() {
 
   const { data: person, isLoading, error } = usePerson(personId || '');
   const { data: stats } = usePersonStats(personId || '');
+  const { data: team } = useTeam(person?.team_id || '');
 
   if (!person && !isLoading) {
     return <ErrorMessage message="Person not found" />;
@@ -80,45 +83,67 @@ export function PersonDetailPage() {
         </Card>
       </div>
 
+      {/* Worker Schedule (if WORKER role and has team) */}
+      {person.role === 'WORKER' && person.team_id && team && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="h-5 w-5" />
+              Work Schedule
+            </CardTitle>
+            <CardDescription>
+              Check-in requirements for this worker
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-muted-foreground">Work Days</p>
+              <p className="text-base font-medium">
+                {person.work_days || team.work_days}
+                {!person.work_days && (
+                  <span className="ml-2 text-xs text-muted-foreground">(Team default)</span>
+                )}
+              </p>
+            </div>
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-muted-foreground">Check-in Window</p>
+              <p className="text-base font-medium">
+                {person.check_in_start && person.check_in_end
+                  ? `${person.check_in_start} - ${person.check_in_end}`
+                  : `${team.check_in_start} - ${team.check_in_end}`}
+                {(!person.check_in_start || !person.check_in_end) && (
+                  <span className="ml-2 text-xs text-muted-foreground">(Team default)</span>
+                )}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Stats Cards */}
       {stats && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Average Readiness
-              </CardTitle>
-              <Activity className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.avgReadiness}%</div>
-              <p className="text-xs text-muted-foreground">last 7 days</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Weekly Completion
-              </CardTitle>
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.weeklyCompletion}%</div>
-              <p className="text-xs text-muted-foreground">this week</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Total Check-Ins
-              </CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.totalCheckIns}</div>
-              <p className="text-xs text-muted-foreground">all time</p>
-            </CardContent>
-          </Card>
+          <StatCard
+            title="Average Readiness"
+            value={`${stats.avgReadiness}%`}
+            description="last 7 days"
+            icon={<Activity className="h-5 w-5" />}
+            iconBgColor="green"
+          />
+          <StatCard
+            title="Weekly Completion"
+            value={`${stats.weeklyCompletion}%`}
+            description="this week"
+            icon={<Calendar className="h-5 w-5" />}
+            iconBgColor="blue"
+          />
+          <StatCard
+            title="Total Check-Ins"
+            value={stats.totalCheckIns}
+            description="all time"
+            icon={<TrendingUp className="h-5 w-5" />}
+            iconBgColor="purple"
+          />
         </div>
       )}
 

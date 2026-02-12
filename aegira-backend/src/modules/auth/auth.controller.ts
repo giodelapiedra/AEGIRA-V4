@@ -57,10 +57,32 @@ function formatUserResponse(person: UserWithCompany) {
 export async function login(c: Context): Promise<Response> {
   const { email, password } = await c.req.json();
 
-  // Find person by email
+  // Find active person by email in an active company
+  // NOTE: Email is scoped @@unique([company_id, email]) so the same email can
+  // theoretically exist in multiple companies. We filter by is_active to ensure
+  // we only match active users in active companies. If duplicates exist across
+  // companies, we prefer the most recently created active account.
   const person = await prisma.person.findFirst({
-    where: { email: email.toLowerCase() },
-    include: { company: true },
+    where: {
+      email: email.toLowerCase(),
+      is_active: true,
+      company: { is_active: true },
+    },
+    orderBy: { created_at: 'desc' },
+    select: {
+      id: true,
+      email: true,
+      first_name: true,
+      last_name: true,
+      gender: true,
+      date_of_birth: true,
+      profile_picture_url: true,
+      role: true,
+      company_id: true,
+      is_active: true,
+      password_hash: true,
+      company: { select: { name: true, timezone: true } },
+    },
   });
 
   if (!person || !person.password_hash) {
@@ -71,10 +93,6 @@ export async function login(c: Context): Promise<Response> {
   const isValid = await verifyPassword(password, person.password_hash);
   if (!isValid) {
     throw new AppError('INVALID_CREDENTIALS', 'Invalid email or password', 401);
-  }
-
-  if (!person.is_active) {
-    throw new AppError('ACCOUNT_DISABLED', 'Account is disabled', 403);
   }
 
   // Generate token and set cookie
@@ -106,13 +124,32 @@ export async function login(c: Context): Promise<Response> {
 
 export async function getMe(c: Context): Promise<Response> {
   const userId = c.get('userId') as string;
+  const companyId = c.get('companyId') as string;
 
-  const person = await prisma.person.findUnique({
-    where: { id: userId },
-    include: { company: true },
+  // Verify user belongs to the authenticated company (defense-in-depth)
+  const person = await prisma.person.findFirst({
+    where: {
+      id: userId,
+      company_id: companyId,
+      is_active: true,
+      company: { is_active: true },
+    },
+    select: {
+      id: true,
+      email: true,
+      first_name: true,
+      last_name: true,
+      gender: true,
+      date_of_birth: true,
+      profile_picture_url: true,
+      role: true,
+      company_id: true,
+      is_active: true,
+      company: { select: { name: true, timezone: true } },
+    },
   });
 
-  if (!person || !person.is_active) {
+  if (!person) {
     throw new AppError('UNAUTHORIZED', 'Account not found or disabled', 401);
   }
 
@@ -123,8 +160,8 @@ export async function getMe(c: Context): Promise<Response> {
 }
 
 export async function refreshToken(c: Context): Promise<Response> {
-  // TODO: Implement refresh token logic
-  return c.json({ success: true, data: { token: '' } });
+  // Token refresh not yet implemented - return proper error instead of stub
+  throw new AppError('NOT_IMPLEMENTED', 'Token refresh is not yet available. Please re-login.', 501);
 }
 
 export async function logout(c: Context): Promise<Response> {
@@ -137,9 +174,9 @@ export async function changePassword(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const { currentPassword, newPassword } = await c.req.json();
 
-  // Find person
-  const person = await prisma.person.findUnique({
-    where: { id: userId },
+  // Find person with company_id verification
+  const person = await prisma.person.findFirst({
+    where: { id: userId, company_id: companyId },
     select: { id: true, password_hash: true },
   });
 
@@ -177,10 +214,12 @@ export async function changePassword(c: Context): Promise<Response> {
 
 export async function verifyUserPassword(c: Context): Promise<Response> {
   const userId = c.get('userId') as string;
+  const companyId = c.get('companyId') as string;
   const { password } = await c.req.json();
 
-  const person = await prisma.person.findUnique({
-    where: { id: userId },
+  // Find person with company_id verification
+  const person = await prisma.person.findFirst({
+    where: { id: userId, company_id: companyId },
     select: { id: true, password_hash: true },
   });
 
@@ -221,6 +260,7 @@ export async function signup(c: Context): Promise<Response> {
   // Check if email already exists
   const existingPerson = await prisma.person.findFirst({
     where: { email: email.toLowerCase() },
+    select: { id: true },
   });
 
   if (existingPerson) {

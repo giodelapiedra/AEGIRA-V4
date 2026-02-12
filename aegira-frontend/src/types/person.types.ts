@@ -14,9 +14,16 @@ export interface Person {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  // Worker schedule override (optional, uses team schedule if null)
+  work_days?: string | null; // CSV: "0,1,2,3,4,5,6"
+  check_in_start?: string | null; // HH:mm format
+  check_in_end?: string | null; // HH:mm format
   team?: {
     id: string;
     name: string;
+    check_in_start: string;
+    check_in_end: string;
+    work_days: string;
   };
 }
 
@@ -38,6 +45,10 @@ export interface CreatePersonData {
   dateOfBirth?: string;
   role?: UserRole;
   teamId?: string;
+  // Worker schedule override (optional)
+  workDays?: string;
+  checkInStart?: string;
+  checkInEnd?: string;
 }
 
 export interface UpdatePersonData {
@@ -48,4 +59,8 @@ export interface UpdatePersonData {
   role?: UserRole;
   teamId?: string | null;
   isActive?: boolean;
+  // Worker schedule override (optional, null clears override)
+  workDays?: string | null;
+  checkInStart?: string | null;
+  checkInEnd?: string | null;
 }

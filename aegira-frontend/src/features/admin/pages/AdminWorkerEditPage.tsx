@@ -2,9 +2,11 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { ArrowLeft, UserCog } from 'lucide-react';
+import { ArrowLeft, UserCog, Calendar } from 'lucide-react';
+import { formatWorkDays } from '@/lib/utils/string.utils';
+import { isEndTimeAfterStart, TIME_REGEX, WORK_DAYS_REGEX } from '@/lib/utils/format.utils';
 import { PageHeader } from '@/components/common/PageHeader';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -24,14 +26,51 @@ import { useToast } from '@/lib/hooks/use-toast';
 import { ROUTES } from '@/config/routes.config';
 import type { Person } from '@/types/person.types';
 import type { Team } from '@/types/team.types';
+import { WORK_DAYS_OPTIONS } from '@/types/team.types';
 
-const updateWorkerSchema = z.object({
-  firstName: z.string().min(1, 'First name is required').max(100),
-  lastName: z.string().min(1, 'Last name is required').max(100),
-  role: z.enum(['WORKER', 'TEAM_LEAD', 'SUPERVISOR', 'WHS', 'ADMIN']),
-  teamId: z.string().nullable().optional(),
-  isActive: z.boolean(),
-});
+const updateWorkerSchema = z
+  .object({
+    firstName: z.string().min(1, 'First name is required').max(100),
+    lastName: z.string().min(1, 'Last name is required').max(100),
+    role: z.enum(['WORKER', 'TEAM_LEAD', 'SUPERVISOR', 'WHS', 'ADMIN']),
+    teamId: z.string().nullable().optional(),
+    isActive: z.boolean(),
+    // Worker schedule override (optional, empty string clears override)
+    workDays: z.string().regex(WORK_DAYS_REGEX, 'Invalid work days format').optional().or(z.literal('')),
+    checkInStart: z.string().regex(TIME_REGEX, 'Invalid time format (HH:MM)').optional().or(z.literal('')),
+    checkInEnd: z.string().regex(TIME_REGEX, 'Invalid time format (HH:MM)').optional().or(z.literal('')),
+  })
+  .refine(
+    (data) => {
+      if (data.role === 'WORKER' && !data.teamId) return false;
+      return true;
+    },
+    { message: 'Team is required for workers', path: ['teamId'] }
+  )
+  .refine(
+    (data) => {
+      // Both checkInStart and checkInEnd must be set together or both empty
+      const hasStart = !!data.checkInStart;
+      const hasEnd = !!data.checkInEnd;
+      return hasStart === hasEnd;
+    },
+    {
+      message: 'Both check-in start and end times must be set together',
+      path: ['checkInStart'],
+    }
+  )
+  .refine(
+    (data) => {
+      if (data.checkInStart && data.checkInEnd) {
+        return isEndTimeAfterStart(data.checkInStart, data.checkInEnd);
+      }
+      return true;
+    },
+    {
+      message: 'Check-in end time must be after start time',
+      path: ['checkInEnd'],
+    }
+  );
 
 type UpdateWorkerFormData = z.infer<typeof updateWorkerSchema>;
 
@@ -77,25 +116,54 @@ function WorkerEditForm({ person, teams }: WorkerEditFormProps) {
       role: person.role,
       teamId: person.team_id || null,
       isActive: person.is_active,
+      workDays: person.work_days || '',
+      checkInStart: person.check_in_start || '',
+      checkInEnd: person.check_in_end || '',
     },
   });
 
   const selectedRole = watch('role');
   const selectedTeamId = watch('teamId');
   const isActive = watch('isActive');
+  const workDaysValue = watch('workDays') || '';
+  const selectedWorkDays = workDaysValue ? workDaysValue.split(',').filter(Boolean) : [];
+
+  const toggleWorkDay = (dayValue: string) => {
+    const newSelection = selectedWorkDays.includes(dayValue)
+      ? selectedWorkDays.filter((d) => d !== dayValue)
+      : [...selectedWorkDays, dayValue].sort();
+
+    setValue('workDays', newSelection.length > 0 ? newSelection.join(',') : '', { shouldValidate: true });
+  };
 
   const onSubmit = async (data: UpdateWorkerFormData) => {
+    // Schedule override - MUST send both checkInStart and checkInEnd together
+    // Backend validation requires both to be present if either is being updated
+    const currentStart = data.checkInStart || null;
+    const currentEnd = data.checkInEnd || null;
+    const originalStart = person.check_in_start || null;
+    const originalEnd = person.check_in_end || null;
+
+    const scheduleTimeChanged = currentStart !== originalStart || currentEnd !== originalEnd;
+    const workDaysChanged = (data.workDays || '') !== (person.work_days || '');
+
     // Only send fields that actually changed
-    const updates = {
-      ...(data.firstName !== person.first_name && { firstName: data.firstName }),
-      ...(data.lastName !== person.last_name && { lastName: data.lastName }),
-      ...((data.teamId ?? null) !== (person.team_id ?? null) && { teamId: data.teamId }),
-      ...(data.isActive !== person.is_active && { isActive: data.isActive }),
-    };
+    const updates: Record<string, unknown> = {};
+    if (data.firstName !== person.first_name) updates.firstName = data.firstName;
+    if (data.lastName !== person.last_name) updates.lastName = data.lastName;
+    if (data.role !== person.role) updates.role = data.role;
+    if ((data.teamId ?? null) !== (person.team_id ?? null)) updates.teamId = data.teamId;
+    if (data.isActive !== person.is_active) updates.isActive = data.isActive;
+    // Work days can be updated independently
+    if (workDaysChanged) updates.workDays = data.workDays || null;
+    // Both check-in times must be sent together to satisfy backend validation
+    if (scheduleTimeChanged) {
+      updates.checkInStart = currentStart;
+      updates.checkInEnd = currentEnd;
+    }
 
     if (Object.keys(updates).length === 0) {
       toast({ title: 'No changes', description: 'No modifications were detected.' });
-      navigate(ROUTES.ADMIN_WORKERS);
       return;
     }
 
@@ -185,6 +253,12 @@ function WorkerEditForm({ person, teams }: WorkerEditFormProps) {
                     if (value !== 'WORKER' && value !== 'TEAM_LEAD') {
                       setValue('teamId', null);
                     }
+                    // Clear schedule overrides when switching away from WORKER
+                    if (value !== 'WORKER') {
+                      setValue('workDays', '');
+                      setValue('checkInStart', '');
+                      setValue('checkInEnd', '');
+                    }
                   }}
                 >
                   <SelectTrigger>
@@ -198,9 +272,6 @@ function WorkerEditForm({ person, teams }: WorkerEditFormProps) {
                     <SelectItem value="ADMIN">Admin</SelectItem>
                   </SelectContent>
                 </Select>
-                <p className="text-sm text-muted-foreground">
-                  Role changes are handled through the Roles management page
-                </p>
               </div>
 
               {selectedRole === 'WORKER' || selectedRole === 'TEAM_LEAD' ? (
@@ -236,6 +307,82 @@ function WorkerEditForm({ person, teams }: WorkerEditFormProps) {
                 </div>
               )}
             </div>
+
+            {/* Worker Schedule Override */}
+            {selectedRole === 'WORKER' && selectedTeamId && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Calendar className="h-5 w-5" />
+                    Schedule Override (Optional)
+                  </CardTitle>
+                  <CardDescription>
+                    Override team schedule for this worker. Clear to use team defaults.
+                    {(() => {
+                      const selectedTeam = teams.find(t => t.id === selectedTeamId);
+                      return selectedTeam ? (
+                        <div className="mt-2 text-sm">
+                          <strong>Team default:</strong>{' '}
+                          {formatWorkDays(selectedTeam.work_days) || 'Mon-Fri'} |{' '}
+                          {selectedTeam.check_in_start} - {selectedTeam.check_in_end}
+                        </div>
+                      ) : null;
+                    })()}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Work Days Toggle */}
+                  <div className="space-y-2">
+                    <Label>Work Days</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {WORK_DAYS_OPTIONS.map((day) => (
+                        <Button
+                          key={day.value}
+                          type="button"
+                          variant={selectedWorkDays.includes(day.value) ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => toggleWorkDay(day.value)}
+                        >
+                          {day.label.slice(0, 3)}
+                        </Button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Deselect all to use team work days
+                    </p>
+                  </div>
+
+                  {/* Check-in Time Override */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="checkInStart">Check-in Start</Label>
+                      <Input
+                        id="checkInStart"
+                        type="time"
+                        placeholder="Team default"
+                        {...register('checkInStart')}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Clear to use team time
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="checkInEnd">Check-in End</Label>
+                      <Input
+                        id="checkInEnd"
+                        type="time"
+                        placeholder="Team default"
+                        {...register('checkInEnd')}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Clear to use team time
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             <div className="flex items-center space-x-4 rounded-lg border p-4">
               <Switch

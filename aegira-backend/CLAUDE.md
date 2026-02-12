@@ -35,7 +35,6 @@ src/
 │       └── <feature>.validator.ts   # Zod schemas + exported inferred types
 ├── jobs/
 │   ├── scheduler.ts                 # Cron job initialization
-│   ├── daily-reminder.ts            # Check-in reminders
 │   ├── missed-check-in-detector.ts  # Missed check-in detection
 │   └── cleanup.ts                   # Weekly cleanup
 └── prisma/

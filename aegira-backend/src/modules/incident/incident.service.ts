@@ -266,29 +266,17 @@ export class IncidentService {
           result.caseRecord.case_number
         );
 
-        // Re-fetch with updated case relation
-        const final = await this.prisma.incident.findFirst({
-          where: { id: incidentId, company_id: companyId },
-          include: {
-            reporter: {
-              select: {
-                id: true,
-                first_name: true,
-                last_name: true,
-                email: true,
-                team: { select: { id: true, name: true } },
-              },
-            },
-            reviewer: {
-              select: { id: true, first_name: true, last_name: true },
-            },
-            incident_case: {
-              select: { id: true, case_number: true, status: true, notes: true },
-            },
+        // Combine transaction result with case data (avoids extra DB query)
+        // The incident was fetched before case creation, so we manually attach the case
+        return {
+          ...result.incident,
+          incident_case: {
+            id: result.caseRecord.id,
+            case_number: result.caseRecord.case_number,
+            status: result.caseRecord.status,
+            notes: result.caseRecord.notes,
           },
-        });
-
-        return final!;
+        } as Incident;
       } catch (e: unknown) {
         if ((e as { code?: string }).code === 'P2002' && attempt < 2) continue;
         throw e;

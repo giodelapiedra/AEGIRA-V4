@@ -112,6 +112,7 @@ export function useCreatePerson() {
       apiClient.post<Person>(ENDPOINTS.PERSON.CREATE, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['persons'] });
+      queryClient.invalidateQueries({ queryKey: ['teams'] });
     },
   });
 }
@@ -128,7 +129,9 @@ export function useUpdatePerson() {
     onSuccess: (_, { personId }) => {
       queryClient.invalidateQueries({ queryKey: ['persons'] });
       queryClient.invalidateQueries({ queryKey: ['person', personId] });
-      queryClient.invalidateQueries({ queryKey: ['person', personId, 'stats'] }); // ✅ FIX: Invalidate person stats
+      queryClient.invalidateQueries({ queryKey: ['person', personId, 'stats'] });
+      queryClient.invalidateQueries({ queryKey: ['team', 'my-members'] });
+      queryClient.invalidateQueries({ queryKey: ['teams'] });
     },
   });
 }

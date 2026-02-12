@@ -1,0 +1,92 @@
+{
+  "patterns_dir": ".ai/patterns",
+  "skills_dir": ".ai/skills",
+  "rules_dir": ".ai/rules",
+  "targets": {
+    "claude": ".claude"
+  },
+  "skills": {
+    "query-hooks": {
+      "patterns": [
+        "frontend/query-hooks",
+        "shared/response-format",
+        "shared/decision-trees"
+      ]
+    },
+    "mutation-hooks": {
+      "patterns": [
+        "frontend/mutation-hooks"
+      ]
+    },
+    "data-table-page": {
+      "patterns": [
+        "frontend/data-table-pattern",
+        "frontend/query-hooks",
+        "shared/response-format"
+      ]
+    },
+    "backend-crud-module": {
+      "patterns": [
+        "backend/module-structure",
+        "backend/routes-pattern",
+        "backend/validation-pattern",
+        "backend/repository-pattern",
+        "backend/controller-pattern",
+        "backend/fire-and-forget"
+      ]
+    },
+    "backend-service": {
+      "patterns": [
+        "backend/service-layer",
+        "backend/controller-pattern",
+        "backend/error-handling",
+        "shared/decision-trees"
+      ]
+    },
+    "form-component": {
+      "patterns": [
+        "frontend/form-pattern",
+        "frontend/mutation-hooks"
+      ]
+    },
+    "dashboard-page": {
+      "patterns": [
+        "frontend/page-patterns",
+        "ui/component-usage",
+        "frontend/query-hooks"
+      ]
+    },
+    "analytics-page": {
+      "patterns": [
+        "frontend/page-patterns",
+        "ui/chart-patterns",
+        "ui/design-tokens"
+      ]
+    },
+    "code-review": {
+      "patterns": [
+        "shared/security-checklist",
+        "shared/code-review"
+      ]
+    }
+  },
+  "rules": {
+    "backend": {
+      "patterns": [
+        "backend/module-structure",
+        "shared/security-checklist",
+        "backend/error-handling",
+        "backend/fire-and-forget",
+        "shared/decision-trees"
+      ]
+    },
+    "frontend": {
+      "patterns": [
+        "frontend/mutation-hooks"
+      ]
+    },
+    "general": {
+      "patterns": []
+    }
+  }
+}

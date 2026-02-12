@@ -1,10 +1,11 @@
-import { Mail, Shield, Users, CheckCircle, XCircle, User as UserIcon, Cake } from 'lucide-react';
+import { Mail, Shield, Users, CheckCircle, XCircle, User as UserIcon, Cake, Clock, CalendarDays } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import type { Person } from '@/types/person.types';
 import { ROLE_LABELS } from '@/lib/utils/format.utils';
+import { formatWorkDays } from '@/lib/utils/string.utils';
 
 interface MemberInfoCardProps {
   person: Person;
@@ -136,6 +137,52 @@ export function MemberInfoCard({ person }: MemberInfoCardProps) {
               />
             </div>
           </div>
+
+          {person.team && (
+            <>
+              <Separator />
+
+              {/* Check-In Schedule */}
+              <div className="py-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Check-In Schedule
+                  </p>
+                  {(person.check_in_start || person.check_in_end || person.work_days) && (
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-medium text-amber-600 border-amber-300 bg-amber-50">
+                      Override
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-x-8 gap-y-2">
+                  <InfoItem
+                    label="Check-In Window"
+                    value={
+                      <span className="flex items-center gap-1.5">
+                        <span>{person.check_in_start ?? person.team.check_in_start} – {person.check_in_end ?? person.team.check_in_end}</span>
+                        {(person.check_in_start || person.check_in_end) && (
+                          <span className="text-xs text-muted-foreground">(team: {person.team.check_in_start} – {person.team.check_in_end})</span>
+                        )}
+                      </span>
+                    }
+                    icon={<Clock className="h-3.5 w-3.5 text-muted-foreground" />}
+                  />
+                  <InfoItem
+                    label="Work Days"
+                    value={
+                      <span className="flex items-center gap-1.5">
+                        <span>{formatWorkDays(person.work_days ?? person.team.work_days)}</span>
+                        {person.work_days && person.work_days !== person.team.work_days && (
+                          <span className="text-xs text-muted-foreground">(team: {formatWorkDays(person.team.work_days)})</span>
+                        )}
+                      </span>
+                    }
+                    icon={<CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />}
+                  />
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </Card>

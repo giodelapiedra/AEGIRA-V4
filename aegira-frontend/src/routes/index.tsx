@@ -54,13 +54,6 @@ const PersonDetailPage = lazy(() =>
   }))
 );
 
-// Worker pages
-const MySchedulePage = lazy(() =>
-  import('@/features/schedule/pages/MySchedulePage').then((m) => ({
-    default: m.MySchedulePage,
-  }))
-);
-
 // Team Leader / Supervisor pages
 const MissedCheckInsPage = lazy(() =>
   import('@/features/team/pages/MissedCheckInsPage').then((m) => ({
@@ -104,11 +97,6 @@ const AdminWorkersPage = lazy(() =>
     default: m.AdminWorkersPage,
   }))
 );
-const AdminSchedulesPage = lazy(() =>
-  import('@/features/admin/pages/AdminSchedulesPage').then((m) => ({
-    default: m.AdminSchedulesPage,
-  }))
-);
 const AdminHolidaysPage = lazy(() =>
   import('@/features/admin/pages/AdminHolidaysPage').then((m) => ({
     default: m.AdminHolidaysPage,
@@ -117,11 +105,6 @@ const AdminHolidaysPage = lazy(() =>
 const AdminAuditLogsPage = lazy(() =>
   import('@/features/admin/pages/AdminAuditLogsPage').then((m) => ({
     default: m.AdminAuditLogsPage,
-  }))
-);
-const AdminSystemHealthPage = lazy(() =>
-  import('@/features/admin/pages/AdminSystemHealthPage').then((m) => ({
-    default: m.AdminSystemHealthPage,
   }))
 );
 const AdminCompanySettingsPage = lazy(() =>
@@ -150,7 +133,12 @@ const AdminTeamEditPage = lazy(() =>
   }))
 );
 
-// WHS Analytics
+// WHS pages
+const WhsWorkersPage = lazy(() =>
+  import('@/features/dashboard/pages/WhsWorkersPage').then((m) => ({
+    default: m.WhsWorkersPage,
+  }))
+);
 const WhsAnalyticsPage = lazy(() =>
   import('@/features/dashboard/pages/WhsAnalyticsPage').then((m) => ({
     default: m.WhsAnalyticsPage,
@@ -232,7 +220,6 @@ export function AppRoutes() {
           <Route element={<RouteGuard allowedRoles={['WORKER']} />}>
             <Route path={ROUTES.CHECK_IN} element={<CheckInPage />} />
             <Route path={ROUTES.CHECK_IN_HISTORY} element={<CheckInHistoryPage />} />
-            <Route path={ROUTES.MY_SCHEDULE} element={<MySchedulePage />} />
           </Route>
 
           {/* ============================================ */}
@@ -243,8 +230,12 @@ export function AppRoutes() {
             <Route path={ROUTES.TEAM_MISSED_CHECKINS} element={<MissedCheckInsPage />} />
             <Route path={ROUTES.TEAM_ANALYTICS} element={<TeamAnalyticsPage />} />
             <Route path={ROUTES.TEAM_MEMBERS} element={<TeamMembersPage />} />
-            <Route path={ROUTES.TEAM_WORKER_DETAIL} element={<TeamWorkerDetailPage />} />
             <Route path={ROUTES.TEAM_CHECK_IN_HISTORY} element={<TeamCheckInHistoryPage />} />
+          </Route>
+
+          {/* Worker Profile - viewable by team management + WHS */}
+          <Route element={<RouteGuard allowedRoles={['TEAM_LEAD', 'SUPERVISOR', 'WHS']} />}>
+            <Route path={ROUTES.TEAM_WORKER_DETAIL} element={<TeamWorkerDetailPage />} />
           </Route>
 
           {/* ============================================ */}
@@ -271,10 +262,19 @@ export function AppRoutes() {
 
           {/* ============================================ */}
           {/* WHS ONLY ROUTES                             */}
-          {/* WHS analytics (historical trends)           */}
+          {/* Workers lookup + analytics                  */}
           {/* ============================================ */}
           <Route element={<RouteGuard allowedRoles={['WHS']} />}>
+            <Route path={ROUTES.WHS_WORKERS} element={<WhsWorkersPage />} />
             <Route path={ROUTES.WHS_ANALYTICS} element={<WhsAnalyticsPage />} />
+          </Route>
+
+          {/* ============================================ */}
+          {/* ADMIN ONLY: Person management               */}
+          {/* ============================================ */}
+          <Route element={<RouteGuard allowedRoles={['ADMIN']} />}>
+            <Route path={ROUTES.PERSON} element={<PersonsPage />} />
+            <Route path={ROUTES.PERSON_DETAIL} element={<PersonDetailPage />} />
           </Route>
 
           {/* ============================================ */}
@@ -282,10 +282,6 @@ export function AppRoutes() {
           {/* Full system administration access           */}
           {/* ============================================ */}
           <Route element={<RouteGuard allowedRoles={['ADMIN']} />}>
-            {/* Person/Worker Management */}
-            <Route path={ROUTES.PERSON} element={<PersonsPage />} />
-            <Route path={ROUTES.PERSON_DETAIL} element={<PersonDetailPage />} />
-
             {/* Team Administration */}
             <Route path={ROUTES.ADMIN_TEAMS} element={<AdminTeamsPage />} />
             <Route path={ROUTES.ADMIN_TEAMS_CREATE} element={<AdminTeamCreatePage />} />
@@ -296,13 +292,11 @@ export function AppRoutes() {
             <Route path={ROUTES.ADMIN_WORKERS_CREATE} element={<AdminWorkerCreatePage />} />
             <Route path={ROUTES.ADMIN_WORKERS_EDIT} element={<AdminWorkerEditPage />} />
 
-            {/* Schedule & Holiday Management */}
-            <Route path={ROUTES.ADMIN_SCHEDULES} element={<AdminSchedulesPage />} />
+            {/* Holiday Management */}
             <Route path={ROUTES.ADMIN_HOLIDAYS} element={<AdminHolidaysPage />} />
 
             {/* System Administration */}
             <Route path={ROUTES.ADMIN_AUDIT_LOGS} element={<AdminAuditLogsPage />} />
-            <Route path={ROUTES.ADMIN_SYSTEM_HEALTH} element={<AdminSystemHealthPage />} />
             <Route path={ROUTES.ADMIN_SETTINGS} element={<AdminCompanySettingsPage />} />
           </Route>
         </Route>

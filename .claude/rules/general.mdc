@@ -1,0 +1,41 @@
+---
+description: AEGIRA General Project Rules
+globs: ["**/*"]
+alwaysApply: true
+---
+# AEGIRA V5
+
+Daily readiness tracking system. Multi-tenant, event-sourced.
+
+## Documentation
+
+| Resource | Location | Purpose |
+|----------|----------|---------|
+| Pattern Library | `.ai/patterns/` | Atomic coding pattern files (source of truth) |
+| Skill Templates | `.ai/skills/` | Skill templates with @pattern markers |
+| Root CLAUDE.md | `CLAUDE.md` | Project overview |
+| Backend CLAUDE.md | `aegira-backend/CLAUDE.md` | Backend-specific rules |
+| Frontend CLAUDE.md | `aegira-frontend/CLAUDE.md` | Frontend-specific rules |
+| UI Design System | `docs/ui/UI_DESIGN_SYSTEM.md` | Human-readable UI reference |
+
+## Pattern Library Reference
+
+| Category | Patterns | When to Use |
+|----------|----------|-------------|
+| `backend/` | module-structure, repository, service, controller, routes, validation, error-handling, fire-and-forget | Backend module development |
+| `frontend/` | query-hooks, mutation-hooks, data-table, form, page-patterns, state-management, error-handling, routing | Frontend feature development |
+| `ui/` | design-tokens, component-usage, chart-patterns, page-templates | UI/styling decisions |
+| `shared/` | decision-trees, security-checklist, testing-patterns, code-review, response-format | Cross-cutting concerns |
+
+## Critical Rules (MUST FOLLOW)
+
+1. **Multi-tenant Isolation**: EVERY query MUST filter by `company_id` via `BaseRepository.where()`
+2. **No `any` Types**: Strict TypeScript everywhere
+3. **State Management**: Server state → TanStack Query, Auth only → Zustand
+4. **No Hardcoded URLs**: Use `ENDPOINTS` constant (frontend), route patterns (backend)
+5. **Fire-and-Forget**: NEVER await audit logs or notifications
+6. **Repository Pattern**: NEVER use Prisma directly in controllers
+7. **JWT in httpOnly Cookie**: No tokens in localStorage or Zustand
+8. **Tailwind CSS Only**: No inline styles
+9. **Soft Delete**: NEVER hard delete — use `is_active: false`
+10. **Zod Validation**: ALL API inputs validated with Zod schemas

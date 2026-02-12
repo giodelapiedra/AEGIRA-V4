@@ -3,31 +3,12 @@ import { ColumnDef, PaginationState } from '@tanstack/react-table';
 import { ClipboardList } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { DataTable, SortableHeader } from '@/components/ui/data-table';
 import { PageLoader } from '@/components/common/PageLoader';
+import { ReadinessCategoryBadge } from '@/components/common/badge-utils';
 import { useCheckInHistory } from '../hooks/useCheckInHistory';
 import { formatDate } from '@/lib/utils/date.utils';
-import { getReadinessLabel } from '@/lib/utils/format.utils';
 import type { CheckIn } from '@/types/check-in.types';
-
-const getReadinessBadge = (checkIn: CheckIn) => {
-  const category = checkIn.readinessResult?.category;
-  const label = category ? getReadinessLabel(category) : 'Unknown';
-
-  switch (category) {
-    case 'ready':
-      return <Badge variant="success">{label}</Badge>;
-    case 'modified_duty':
-      return <Badge variant="warning">{label}</Badge>;
-    case 'needs_attention':
-      return <Badge className="border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-800 dark:bg-orange-950 dark:text-orange-400">{label}</Badge>;
-    case 'not_ready':
-      return <Badge variant="destructive">{label}</Badge>;
-    default:
-      return <Badge variant="outline">N/A</Badge>;
-  }
-};
 
 const columns: ColumnDef<CheckIn>[] = [
   {
@@ -40,7 +21,7 @@ const columns: ColumnDef<CheckIn>[] = [
   {
     accessorKey: 'readiness',
     header: 'Readiness',
-    cell: ({ row }) => getReadinessBadge(row.original),
+    cell: ({ row }) => <ReadinessCategoryBadge category={row.original.readinessResult?.category} />,
   },
   {
     accessorKey: 'sleepHours',
@@ -77,7 +58,7 @@ export function CheckInHistoryPage() {
 
   const { data, isLoading, error } = useCheckInHistory({
     page: pagination.pageIndex + 1,
-    pageSize: pagination.pageSize,
+    limit: pagination.pageSize,
   });
 
   const checkIns = data?.items || [];

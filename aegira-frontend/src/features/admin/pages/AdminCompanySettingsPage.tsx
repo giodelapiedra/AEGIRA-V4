@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { Save, Building2, MapPin } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,9 +16,7 @@ import {
 } from '@/components/ui/select';
 import { PageLoader } from '@/components/common/PageLoader';
 import { ErrorMessage } from '@/components/common/ErrorMessage';
-import { apiClient } from '@/lib/api/client';
-import { ENDPOINTS } from '@/lib/api/endpoints';
-import { STALE_TIMES } from '@/config/query.config';
+import { useCompanySettings, useUpdateCompanySettings } from '../hooks/useCompanySettings';
 import { useToast } from '@/lib/hooks/use-toast';
 import {
   TIMEZONES,
@@ -26,277 +25,300 @@ import {
   BUSINESS_TYPES,
   COUNTRIES,
 } from '@/config/company.config';
+import type { CompanySettings } from '@/types/company.types';
 
-interface CompanySettings {
-  id: string;
-  companyName: string;
-  companyCode: string;
-  timezone: string;
-  industry: string;
-  businessRegistrationType: string;
-  businessRegistrationNumber: string;
-  businessType: string;
-  addressStreet: string;
-  addressCity: string;
-  addressPostalCode: string;
-  addressState: string;
-  addressCountry: string;
-}
+const companySettingsSchema = z.object({
+  companyName: z.string().min(1, 'Company name is required').max(100),
+  timezone: z.string().min(1, 'Timezone is required'),
+  industry: z.string(),
+  businessRegistrationType: z.string(),
+  businessRegistrationNumber: z.string(),
+  businessType: z.string(),
+  addressStreet: z.string().max(200),
+  addressCity: z.string().max(100),
+  addressPostalCode: z.string().max(20),
+  addressState: z.string().max(100),
+  addressCountry: z.string(),
+});
+
+type CompanySettingsForm = z.infer<typeof companySettingsSchema>;
 
 export function AdminCompanySettingsPage() {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-  const [formData, setFormData] = useState<CompanySettings | null>(null);
-  const [hasChanges, setHasChanges] = useState(false);
+  const { data: settings, isLoading, error } = useCompanySettings();
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['admin', 'company-settings'],
-    staleTime: STALE_TIMES.STATIC, // Settings rarely change
-    queryFn: () => apiClient.get<CompanySettings>(ENDPOINTS.ADMIN.COMPANY_SETTINGS),
-  });
-
-  const saveMutation = useMutation({
-    mutationFn: (data: Partial<CompanySettings>) =>
-      apiClient.patch(ENDPOINTS.ADMIN.COMPANY_SETTINGS, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin', 'company-settings'] });
-      toast({ variant: 'success', title: 'Settings saved', description: 'Company settings have been updated.' });
-      setHasChanges(false);
-    },
-    onError: (error: Error) => {
-      toast({ variant: 'destructive', title: 'Failed to save settings', description: error.message || 'Something went wrong.' });
-    },
-  });
-
-  useEffect(() => {
-    if (data && !formData) {
-      setFormData(data);
-    }
-  }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleChange = (field: keyof CompanySettings, value: string) => {
-    if (formData) {
-      setFormData({ ...formData, [field]: value });
-      setHasChanges(true);
-    }
-  };
-
-  const handleSave = () => {
-    if (!formData || !data) return;
-
-    // Only send fields that actually changed
-    const updates: Partial<CompanySettings> = {};
-    const fields: (keyof CompanySettings)[] = [
-      'companyName', 'timezone', 'industry',
-      'businessRegistrationType', 'businessRegistrationNumber', 'businessType',
-      'addressStreet', 'addressCity', 'addressPostalCode', 'addressState', 'addressCountry',
-    ];
-
-    for (const field of fields) {
-      if (formData[field] !== data[field]) {
-        updates[field] = formData[field];
-      }
-    }
-
-    if (Object.keys(updates).length === 0) {
-      toast({ title: 'No changes', description: 'No modifications were detected.' });
-      setHasChanges(false);
-      return;
-    }
-
-    saveMutation.mutate(updates);
-  };
-
-  if (!formData && !isLoading) {
+  if (!settings && !isLoading) {
     return <ErrorMessage message="Failed to load settings" />;
   }
 
   return (
     <PageLoader isLoading={isLoading} error={error} skeleton="form">
-    {formData && (
+      {settings && <CompanySettingsForm settings={settings} />}
+    </PageLoader>
+  );
+}
+
+interface CompanySettingsFormProps {
+  settings: CompanySettings;
+}
+
+function CompanySettingsForm({ settings }: CompanySettingsFormProps) {
+  const updateSettings = useUpdateCompanySettings();
+  const { toast } = useToast();
+
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    formState: { errors, isSubmitting, isDirty },
+  } = useForm<CompanySettingsForm>({
+    resolver: zodResolver(companySettingsSchema),
+    defaultValues: {
+      companyName: settings.companyName,
+      timezone: settings.timezone,
+      industry: settings.industry,
+      businessRegistrationType: settings.businessRegistrationType,
+      businessRegistrationNumber: settings.businessRegistrationNumber,
+      businessType: settings.businessType,
+      addressStreet: settings.addressStreet,
+      addressCity: settings.addressCity,
+      addressPostalCode: settings.addressPostalCode,
+      addressState: settings.addressState,
+      addressCountry: settings.addressCountry,
+    },
+  });
+
+  const selectedTimezone = watch('timezone');
+  const selectedIndustry = watch('industry');
+  const selectedRegType = watch('businessRegistrationType');
+  const selectedBizType = watch('businessType');
+  const selectedCountry = watch('addressCountry');
+
+  const onSubmit = async (data: CompanySettingsForm) => {
+    // Only send fields that actually changed
+    const updates: Record<string, string> = {};
+    const fields = [
+      'companyName', 'timezone', 'industry',
+      'businessRegistrationType', 'businessRegistrationNumber', 'businessType',
+      'addressStreet', 'addressCity', 'addressPostalCode', 'addressState', 'addressCountry',
+    ] as const;
+
+    for (const field of fields) {
+      if (data[field] !== settings[field]) {
+        updates[field] = data[field];
+      }
+    }
+
+    if (Object.keys(updates).length === 0) {
+      toast({ title: 'No changes', description: 'No modifications were detected.' });
+      return;
+    }
+
+    try {
+      await updateSettings.mutateAsync(updates);
+      toast({
+        variant: 'success',
+        title: 'Settings saved',
+        description: 'Company settings have been updated.',
+      });
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Failed to save settings',
+        description: error instanceof Error ? error.message : 'Something went wrong.',
+      });
+    }
+  };
+
+  return (
     <div className="space-y-6">
       <PageHeader
         title="Company Settings"
         description="Configure company-wide settings"
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Company Profile Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Building2 className="h-5 w-5" />
-              Company Profile
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label>Company Name</Label>
-              <Input
-                value={formData.companyName}
-                onChange={(e) => handleChange('companyName', e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Company Code</Label>
-              <Input
-                value={formData.companyCode}
-                disabled
-                className="bg-muted"
-              />
-              <p className="text-xs text-muted-foreground">Company code cannot be changed</p>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
+      <form onSubmit={handleSubmit(onSubmit)}>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Company Profile Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Building2 className="h-5 w-5" />
+                Company Profile
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label>Registration ID Type</Label>
+                <Label htmlFor="companyName">Company Name</Label>
+                <Input
+                  id="companyName"
+                  {...register('companyName')}
+                />
+                {errors.companyName && (
+                  <p className="text-sm text-destructive">{errors.companyName.message}</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label>Company Code</Label>
+                <Input
+                  value={settings.companyCode}
+                  disabled
+                  className="bg-muted"
+                />
+                <p className="text-xs text-muted-foreground">Company code cannot be changed</p>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Registration ID Type</Label>
+                  <Select
+                    value={selectedRegType || undefined}
+                    onValueChange={(value) => setValue('businessRegistrationType', value, { shouldDirty: true })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {BUSINESS_REGISTRATION_TYPES.map((type) => (
+                        <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="businessRegistrationNumber">Registration Number</Label>
+                  <Input
+                    id="businessRegistrationNumber"
+                    placeholder="e.g. 12 345 678 901"
+                    {...register('businessRegistrationNumber')}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Business Type</Label>
+                  <Select
+                    value={selectedBizType || undefined}
+                    onValueChange={(value) => setValue('businessType', value, { shouldDirty: true })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {BUSINESS_TYPES.map((type) => (
+                        <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Industry</Label>
+                  <Select
+                    value={selectedIndustry || undefined}
+                    onValueChange={(value) => setValue('industry', value, { shouldDirty: true })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select industry" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {INDUSTRIES.map((ind) => (
+                        <SelectItem key={ind.value} value={ind.value}>{ind.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Timezone</Label>
                 <Select
-                  value={formData.businessRegistrationType || undefined}
-                  onValueChange={(value) => handleChange('businessRegistrationType', value)}
+                  value={selectedTimezone}
+                  onValueChange={(value) => setValue('timezone', value, { shouldDirty: true })}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select type" />
+                    <SelectValue placeholder="Select timezone" />
                   </SelectTrigger>
                   <SelectContent>
-                    {BUSINESS_REGISTRATION_TYPES.map((type) => (
-                      <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
+                    {TIMEZONES.map((tz) => (
+                      <SelectItem key={tz.value} value={tz.value}>{tz.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {errors.timezone && (
+                  <p className="text-sm text-destructive">{errors.timezone.message}</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Business Physical Address Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <MapPin className="h-5 w-5" />
+                Business Physical Address
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="addressStreet">Street Address</Label>
+                <Input
+                  id="addressStreet"
+                  placeholder="e.g. Unit 13/11-21 Waterloo St"
+                  {...register('addressStreet')}
+                />
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="col-span-2 space-y-2">
+                  <Label htmlFor="addressCity">City</Label>
+                  <Input
+                    id="addressCity"
+                    placeholder="e.g. Narrabeen"
+                    {...register('addressCity')}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="addressPostalCode">Postal/Zip Code</Label>
+                  <Input
+                    id="addressPostalCode"
+                    placeholder="e.g. 2101"
+                    {...register('addressPostalCode')}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="addressState">State / Prov / Region</Label>
+                <Input
+                  id="addressState"
+                  placeholder="e.g. NSW"
+                  {...register('addressState')}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Country</Label>
+                <Select
+                  value={selectedCountry || undefined}
+                  onValueChange={(value) => setValue('addressCountry', value, { shouldDirty: true })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select country" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {COUNTRIES.map((country) => (
+                      <SelectItem key={country.value} value={country.value}>{country.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label>Registration Number</Label>
-                <Input
-                  value={formData.businessRegistrationNumber}
-                  onChange={(e) => handleChange('businessRegistrationNumber', e.target.value)}
-                  placeholder="e.g. 12 345 678 901"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Business Type</Label>
-                <Select
-                  value={formData.businessType || undefined}
-                  onValueChange={(value) => handleChange('businessType', value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {BUSINESS_TYPES.map((type) => (
-                      <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Industry</Label>
-                <Select
-                  value={formData.industry || undefined}
-                  onValueChange={(value) => handleChange('industry', value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select industry" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {INDUSTRIES.map((ind) => (
-                      <SelectItem key={ind.value} value={ind.value}>{ind.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Timezone</Label>
-              <Select
-                value={formData.timezone}
-                onValueChange={(value) => handleChange('timezone', value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select timezone" />
-                </SelectTrigger>
-                <SelectContent>
-                  {TIMEZONES.map((tz) => (
-                    <SelectItem key={tz.value} value={tz.value}>{tz.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </div>
 
-        {/* Business Physical Address Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <MapPin className="h-5 w-5" />
-              Business Physical Address
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label>Street Address</Label>
-              <Input
-                value={formData.addressStreet}
-                onChange={(e) => handleChange('addressStreet', e.target.value)}
-                placeholder="e.g. Unit 13/11-21 Waterloo St"
-              />
-            </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="col-span-2 space-y-2">
-                <Label>City</Label>
-                <Input
-                  value={formData.addressCity}
-                  onChange={(e) => handleChange('addressCity', e.target.value)}
-                  placeholder="e.g. Narrabeen"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Postal/Zip Code</Label>
-                <Input
-                  value={formData.addressPostalCode}
-                  onChange={(e) => handleChange('addressPostalCode', e.target.value)}
-                  placeholder="e.g. 2101"
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>State / Prov / Region</Label>
-              <Input
-                value={formData.addressState}
-                onChange={(e) => handleChange('addressState', e.target.value)}
-                placeholder="e.g. NSW"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Country</Label>
-              <Select
-                value={formData.addressCountry || undefined}
-                onValueChange={(value) => handleChange('addressCountry', value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select country" />
-                </SelectTrigger>
-                <SelectContent>
-                  {COUNTRIES.map((country) => (
-                    <SelectItem key={country.value} value={country.value}>{country.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
-
-      </div>
-
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={!hasChanges || saveMutation.isPending}>
-          <Save className="h-4 w-4 mr-2" />
-          {saveMutation.isPending ? 'Saving...' : 'Save Settings'}
-        </Button>
-      </div>
+        <div className="flex justify-end mt-6">
+          <Button type="submit" disabled={!isDirty || isSubmitting || updateSettings.isPending}>
+            <Save className="h-4 w-4 mr-2" />
+            {updateSettings.isPending ? 'Saving...' : 'Save Settings'}
+          </Button>
+        </div>
+      </form>
     </div>
-    )}
-    </PageLoader>
   );
 }

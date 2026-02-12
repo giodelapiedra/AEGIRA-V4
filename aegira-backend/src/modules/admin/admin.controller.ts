@@ -1,88 +1,64 @@
 // Admin Controller - Request Handling
 import type { Context } from 'hono';
-import type { Prisma } from '@prisma/client';
 import { prisma } from '../../config/database';
 import { AppError } from '../../shared/errors';
-import { paginate, calculateSkip, parsePagination } from '../../shared/utils';
+import { parsePagination } from '../../shared/utils';
 import { logAudit } from '../../shared/audit';
-import type { AuthenticatedUser } from '../../types/api.types';
 import type { UpdateSettingsData, UpdateHolidayData, UpdateUserRoleData } from './admin.validator';
+import type { Role, Company } from '@prisma/client';
+import { AdminRepository } from './admin.repository';
+
+/** Map Company entity to frontend-expected camelCase format */
+function toCompanySettingsResponse(company: Company) {
+  return {
+    id: company.id,
+    companyName: company.name,
+    companyCode: company.slug,
+    timezone: company.timezone,
+    industry: company.industry || '',
+    businessRegistrationType: company.business_registration_type || '',
+    businessRegistrationNumber: company.business_registration_number || '',
+    businessType: company.business_type || '',
+    addressStreet: company.address_street || '',
+    addressCity: company.address_city || '',
+    addressPostalCode: company.address_postal_code || '',
+    addressState: company.address_state || '',
+    addressCountry: company.address_country || '',
+  };
+}
 
 // Company Settings
 export async function getCompanySettings(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
+  const repository = new AdminRepository(prisma, companyId);
 
-  const company = await prisma.company.findUnique({
-    where: { id: companyId },
-    select: {
-      id: true,
-      name: true,
-      slug: true,
-      timezone: true,
-      industry: true,
-      business_registration_type: true,
-      business_registration_number: true,
-      business_type: true,
-      address_street: true,
-      address_city: true,
-      address_postal_code: true,
-      address_state: true,
-      address_country: true,
-      is_active: true,
-      created_at: true,
-    },
-  });
+  const company = await repository.findCompanyById();
 
   if (!company) {
     throw new AppError('NOT_FOUND', 'Company not found', 404);
   }
 
-  // Return in format expected by frontend
-  return c.json({
-    success: true,
-    data: {
-      id: company.id,
-      companyName: company.name,
-      companyCode: company.slug,
-      timezone: company.timezone,
-      industry: company.industry || '',
-      businessRegistrationType: company.business_registration_type || '',
-      businessRegistrationNumber: company.business_registration_number || '',
-      businessType: company.business_type || '',
-      addressStreet: company.address_street || '',
-      addressCity: company.address_city || '',
-      addressPostalCode: company.address_postal_code || '',
-      addressState: company.address_state || '',
-      addressCountry: company.address_country || '',
-      // Default settings (could be stored in a separate settings table in future)
-      checkInWindowStart: '06:00',
-      checkInWindowEnd: '10:00',
-      reminderTime: '07:00',
-    },
-  });
+  return c.json({ success: true, data: toCompanySettingsResponse(company) });
 }
 
 export async function updateCompanySettings(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const userId = c.get('userId') as string;
-  const data = await c.req.json() as UpdateSettingsData;
+  const data = c.req.valid('json' as never) as UpdateSettingsData;
+  const repository = new AdminRepository(prisma, companyId);
 
-  const updateData: Prisma.CompanyUpdateInput = {};
-  if (data.companyName) updateData.name = data.companyName;
-  if (data.timezone) updateData.timezone = data.timezone;
-  if (data.industry !== undefined) updateData.industry = data.industry || null;
-  if (data.businessRegistrationType !== undefined) updateData.business_registration_type = data.businessRegistrationType;
-  if (data.businessRegistrationNumber !== undefined) updateData.business_registration_number = data.businessRegistrationNumber;
-  if (data.businessType !== undefined) updateData.business_type = data.businessType;
-  if (data.addressStreet !== undefined) updateData.address_street = data.addressStreet;
-  if (data.addressCity !== undefined) updateData.address_city = data.addressCity;
-  if (data.addressPostalCode !== undefined) updateData.address_postal_code = data.addressPostalCode;
-  if (data.addressState !== undefined) updateData.address_state = data.addressState;
-  if (data.addressCountry !== undefined) updateData.address_country = data.addressCountry;
-
-  const company = await prisma.company.update({
-    where: { id: companyId },
-    data: updateData,
+  const company = await repository.updateCompany({
+    name: data.companyName,
+    timezone: data.timezone,
+    industry: data.industry,
+    businessRegistrationType: data.businessRegistrationType,
+    businessRegistrationNumber: data.businessRegistrationNumber,
+    businessType: data.businessType,
+    addressStreet: data.addressStreet,
+    addressCity: data.addressCity,
+    addressPostalCode: data.addressPostalCode,
+    addressState: data.addressState,
+    addressCountry: data.addressCountry,
   });
 
   // Audit settings update (non-blocking)
@@ -95,47 +71,16 @@ export async function updateCompanySettings(c: Context): Promise<Response> {
     details: data as Record<string, unknown>,
   });
 
-  // Note: Other settings like check-in windows, notifications preferences, etc.
-  // would be stored in a separate CompanySettings table in a full implementation
-  // For now, we return the updated company data in the expected format
-  return c.json({
-    success: true,
-    data: {
-      id: company.id,
-      companyName: company.name,
-      companyCode: company.slug,
-      timezone: company.timezone,
-      industry: company.industry || '',
-      businessRegistrationType: company.business_registration_type || '',
-      businessRegistrationNumber: company.business_registration_number || '',
-      businessType: company.business_type || '',
-      addressStreet: company.address_street || '',
-      addressCity: company.address_city || '',
-      addressPostalCode: company.address_postal_code || '',
-      addressState: company.address_state || '',
-      addressCountry: company.address_country || '',
-      checkInWindowStart: data.checkInWindowStart || '06:00',
-      checkInWindowEnd: data.checkInWindowEnd || '10:00',
-      reminderTime: data.reminderTime || '07:00',
-    },
-  });
+  return c.json({ success: true, data: toCompanySettingsResponse(company) });
 }
 
 // Holidays
 export async function listHolidays(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
+  const repository = new AdminRepository(prisma, companyId);
   const year = c.req.query('year') || new Date().getFullYear().toString();
 
-  const holidays = await prisma.holiday.findMany({
-    where: {
-      company_id: companyId,
-      date: {
-        gte: new Date(`${year}-01-01`),
-        lte: new Date(`${year}-12-31`),
-      },
-    },
-    orderBy: { date: 'asc' },
-  });
+  const holidays = await repository.listHolidays(year);
 
   // Transform to match frontend expected format
   const transformedHolidays = holidays.map((h) => ({
@@ -152,15 +97,13 @@ export async function listHolidays(c: Context): Promise<Response> {
 export async function createHoliday(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const userId = c.get('userId') as string;
+  const repository = new AdminRepository(prisma, companyId);
   const data = await c.req.json();
 
-  const holiday = await prisma.holiday.create({
-    data: {
-      company_id: companyId,
-      name: data.name,
-      date: new Date(data.date),
-      is_recurring: data.recurring ?? data.is_recurring ?? false,
-    },
+  const holiday = await repository.createHoliday({
+    name: data.name,
+    date: new Date(data.date),
+    isRecurring: data.recurring ?? data.is_recurring ?? false,
   });
 
   // Audit holiday creation (non-blocking)
@@ -188,21 +131,18 @@ export async function createHoliday(c: Context): Promise<Response> {
 export async function updateHoliday(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const userId = c.get('userId') as string;
+  const repository = new AdminRepository(prisma, companyId);
   const id = c.req.param('id');
   const data = await c.req.json() as UpdateHolidayData;
 
-  const updateData: Prisma.HolidayUpdateManyMutationInput = {};
-  if (data.name) updateData.name = data.name;
-  if (data.date) updateData.date = new Date(data.date);
-  if (data.recurring !== undefined) updateData.is_recurring = data.recurring;
-  if (data.is_recurring !== undefined) updateData.is_recurring = data.is_recurring;
-
-  const holiday = await prisma.holiday.updateMany({
-    where: { id, company_id: companyId },
-    data: updateData,
+  // Update holiday with company_id filtering (returns null if not found or not owned)
+  const holiday = await repository.updateHoliday(id, {
+    name: data.name,
+    date: data.date ? new Date(data.date) : undefined,
+    isRecurring: data.recurring ?? data.is_recurring,
   });
 
-  if (holiday.count === 0) {
+  if (!holiday) {
     throw new AppError('NOT_FOUND', 'Holiday not found', 404);
   }
 
@@ -216,19 +156,28 @@ export async function updateHoliday(c: Context): Promise<Response> {
     details: data as Record<string, unknown>,
   });
 
-  return c.json({ success: true, data: { message: 'Holiday updated' } });
+  return c.json({
+    success: true,
+    data: {
+      id: holiday.id,
+      name: holiday.name,
+      date: holiday.date.toISOString().split('T')[0],
+      recurring: holiday.is_recurring,
+      createdAt: holiday.created_at.toISOString(),
+    },
+  });
 }
 
 export async function deleteHoliday(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const userId = c.get('userId') as string;
+  const repository = new AdminRepository(prisma, companyId);
   const id = c.req.param('id');
 
-  const result = await prisma.holiday.deleteMany({
-    where: { id, company_id: companyId },
-  });
+  // Delete holiday with company_id filtering (returns false if not found or not owned)
+  const deleted = await repository.deleteHoliday(id);
 
-  if (result.count === 0) {
+  if (!deleted) {
     throw new AppError('NOT_FOUND', 'Holiday not found', 404);
   }
 
@@ -247,43 +196,18 @@ export async function deleteHoliday(c: Context): Promise<Response> {
 // Audit Logs
 export async function listAuditLogs(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
+  const repository = new AdminRepository(prisma, companyId);
   const { page, limit } = parsePagination(c.req.query('page'), c.req.query('limit'), 50);
   const type = c.req.query('type');
   const search = c.req.query('search');
   const dateFilter = c.req.query('date');
 
-  const where: Prisma.AuditLogWhereInput = { company_id: companyId };
-  if (type) where.action = type;
-  if (dateFilter) {
-    const date = new Date(dateFilter);
-    const nextDay = new Date(date);
-    nextDay.setDate(nextDay.getDate() + 1);
-    where.created_at = { gte: date, lt: nextDay };
-  }
-  if (search) {
-    where.person = {
-      OR: [
-        { first_name: { startsWith: search, mode: 'insensitive' } },
-        { last_name: { startsWith: search, mode: 'insensitive' } },
-        { email: { contains: search, mode: 'insensitive' } },
-      ],
-    };
-  }
+  const paginatedData = await repository.listAuditLogs(
+    { page, limit },
+    { type, search, dateFilter }
+  );
 
-  const [items, total] = await Promise.all([
-    prisma.auditLog.findMany({
-      where,
-      skip: calculateSkip({ page, limit }),
-      take: limit,
-      orderBy: { created_at: 'desc' },
-      include: {
-        person: {
-          select: { email: true, first_name: true, last_name: true, role: true },
-        },
-      },
-    }),
-    prisma.auditLog.count({ where }),
-  ]);
+  const items = paginatedData.items;
 
   // Transform to match frontend expected format
   const transformedItems = items.map((item) => ({
@@ -300,265 +224,44 @@ export async function listAuditLogs(c: Context): Promise<Response> {
 
   return c.json({
     success: true,
-    data: paginate(transformedItems, total, { page, limit }),
-  });
-}
-
-// System Health
-export async function getSystemHealth(c: Context): Promise<Response> {
-  const companyId = c.get('companyId') as string;
-
-  // Get various stats
-  const [
-    totalWorkers,
-    activeUsers,
-    checkInsToday,
-    totalTeams,
-  ] = await Promise.all([
-    prisma.person.count({ where: { company_id: companyId, role: 'WORKER' } }),
-    prisma.person.count({ where: { company_id: companyId, is_active: true } }),
-    prisma.checkIn.count({
-      where: {
-        company_id: companyId,
-        check_in_date: new Date(new Date().toISOString().split('T')[0]!),
-      },
-    }),
-    prisma.team.count({ where: { company_id: companyId, is_active: true } }),
-  ]);
-
-  // Calculate uptime as percentage (assume 100% for now, could track in future)
-  const uptimeSeconds = process.uptime();
-  const uptimePercentage = '99.9%';
-  const avgResponseTime = '45ms'; // Could be tracked via middleware in future
-
-  return c.json({
-    success: true,
-    data: {
-      status: 'healthy',
-      services: {
-        database: 'healthy',
-        api: 'healthy',
-        notifications: 'healthy',
-        scheduler: 'healthy',
-      },
-      metrics: {
-        uptime: uptimePercentage,
-        avgResponseTime,
-        activeUsers,
-        checkInsToday,
-        totalWorkers,
-        totalTeams,
-      },
-      recentEvents: [
-        {
-          type: 'success',
-          message: 'System started successfully',
-          timestamp: new Date(Date.now() - uptimeSeconds * 1000).toISOString(),
-        },
-      ],
-    },
-  });
-}
-
-// Amendments
-export async function listAmendments(c: Context): Promise<Response> {
-  const companyId = c.get('companyId') as string;
-  const { page, limit } = parsePagination(c.req.query('page'), c.req.query('limit'));
-
-  // Get start of current month
-  const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
-  const [items, pending, approvedThisMonth, rejectedThisMonth] = await Promise.all([
-    prisma.amendment.findMany({
-      where: { company_id: companyId },
-      skip: calculateSkip({ page, limit }),
-      take: limit,
-      orderBy: { created_at: 'desc' },
-      include: {
-        person: {
-          select: { first_name: true, last_name: true, email: true },
-        },
-        check_in: {
-          select: { check_in_date: true },
-        },
-      },
-    }),
-    prisma.amendment.count({ where: { company_id: companyId, status: 'PENDING' } }),
-    prisma.amendment.count({
-      where: {
-        company_id: companyId,
-        status: 'APPROVED',
-        reviewed_at: { gte: startOfMonth },
-      },
-    }),
-    prisma.amendment.count({
-      where: {
-        company_id: companyId,
-        status: 'REJECTED',
-        reviewed_at: { gte: startOfMonth },
-      },
-    }),
-  ]);
-
-  // Transform items to match frontend expected format
-  const transformedItems = items.map((item) => ({
-    id: item.id,
-    checkInId: item.check_in_id,
-    personId: item.person_id,
-    workerName: `${item.person.first_name} ${item.person.last_name}`,
-    workerEmail: item.person.email,
-    checkInDate: item.check_in.check_in_date.toISOString().split('T')[0],
-    fieldName: item.field_name,
-    oldValue: item.old_value,
-    newValue: item.new_value,
-    reason: item.reason,
-    status: item.status,
-    reviewedBy: item.reviewed_by,
-    reviewedAt: item.reviewed_at?.toISOString() || null,
-    createdAt: item.created_at.toISOString(),
-  }));
-
-  return c.json({
-    success: true,
     data: {
       items: transformedItems,
-      stats: {
-        pending,
-        approvedThisMonth,
-        rejectedThisMonth,
-      },
+      pagination: paginatedData.pagination,
     },
   });
-}
-
-export async function approveAmendment(c: Context): Promise<Response> {
-  const companyId = c.get('companyId') as string;
-  const id = c.req.param('id');
-  const user = c.get('user') as AuthenticatedUser;
-
-  const ALLOWED_FIELDS = ['hours_slept', 'sleep_quality', 'stress_level', 'physical_condition', 'pain_level'];
-
-  // Atomic transaction: approve amendment + apply to check-in
-  await prisma.$transaction(async (tx) => {
-    // Find the pending amendment (scoped to company)
-    const amendment = await tx.amendment.findFirst({
-      where: { id, company_id: companyId, status: 'PENDING' },
-      select: { id: true, check_in_id: true, field_name: true, new_value: true },
-    });
-
-    if (!amendment) {
-      throw new AppError('NOT_FOUND', 'Amendment not found or already processed', 404);
-    }
-
-    // Validate field name to prevent injection
-    if (!ALLOWED_FIELDS.includes(amendment.field_name)) {
-      throw new AppError('INVALID_FIELD', `Invalid field name: ${amendment.field_name}`, 400);
-    }
-
-    // Verify check-in belongs to company before updating
-    const checkIn = await tx.checkIn.findFirst({
-      where: { id: amendment.check_in_id, company_id: companyId },
-      select: { id: true },
-    });
-
-    if (!checkIn) {
-      throw new AppError('NOT_FOUND', 'Check-in not found or does not belong to your company', 404);
-    }
-
-    // Approve the amendment
-    await tx.amendment.update({
-      where: { id: amendment.id },
-      data: {
-        status: 'APPROVED',
-        reviewed_by: user.id,
-        reviewed_at: new Date(),
-      },
-    });
-
-    // Apply the amendment to the check-in
-    await tx.checkIn.update({
-      where: { id: amendment.check_in_id, company_id: companyId },
-      data: { [amendment.field_name]: parseFloat(amendment.new_value) },
-    });
-  });
-
-  return c.json({ success: true, data: { message: 'Amendment approved' } });
-}
-
-export async function rejectAmendment(c: Context): Promise<Response> {
-  const companyId = c.get('companyId') as string;
-  const id = c.req.param('id');
-  const user = c.get('user') as AuthenticatedUser;
-  const data = await c.req.json() as { reason: string };
-
-  const amendment = await prisma.amendment.updateMany({
-    where: { id, company_id: companyId, status: 'PENDING' },
-    data: {
-      status: 'REJECTED',
-      reviewed_by: user.id,
-      reviewed_at: new Date(),
-      rejection_reason: data.reason,
-    },
-  });
-
-  if (amendment.count === 0) {
-    throw new AppError('NOT_FOUND', 'Amendment not found or already processed', 404);
-  }
-
-  return c.json({ success: true, data: { message: 'Amendment rejected' } });
 }
 
 // User Roles
 export async function listUserRoles(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
+  const repository = new AdminRepository(prisma, companyId);
   const { page, limit } = parsePagination(c.req.query('page'), c.req.query('limit'), 50);
   const search = c.req.query('search')?.trim();
 
-  const where: Prisma.PersonWhereInput = {
-    company_id: companyId,
-    ...(search && {
-      OR: [
-        { first_name: { startsWith: search, mode: 'insensitive' as const } },
-        { last_name: { startsWith: search, mode: 'insensitive' as const } },
-        { email: { contains: search, mode: 'insensitive' as const } },
-      ],
-    }),
-  };
+  const paginatedData = await repository.listPersons(
+    { page, limit },
+    { search }
+  );
 
-  const [items, total] = await Promise.all([
-    prisma.person.findMany({
-      where,
-      skip: calculateSkip({ page, limit }),
-      take: limit,
-      orderBy: { first_name: 'asc' },
-      select: {
-        id: true,
-        email: true,
-        first_name: true,
-        last_name: true,
-        role: true,
-        is_active: true,
-      },
-    }),
-    prisma.person.count({ where }),
-  ]);
-
-  return c.json({ success: true, data: paginate(items, total, { page, limit }) });
+  return c.json({ success: true, data: paginatedData });
 }
 
 export async function updateUserRole(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const userId = c.get('userId') as string;
+  const repository = new AdminRepository(prisma, companyId);
   const id = c.req.param('id');
   const data = await c.req.json() as UpdateUserRoleData;
 
-  const person = await prisma.person.updateMany({
-    where: { id, company_id: companyId },
-    data: { role: data.role },
-  });
+  // Prevent self-demotion
+  if (id === userId) {
+    throw new AppError('FORBIDDEN', 'You cannot change your own role', 403);
+  }
 
-  if (person.count === 0) {
+  // Update person role with company_id filtering (returns null if not found or not owned)
+  const person = await repository.updatePersonRole(id, data.role as Role);
+
+  if (!person) {
     throw new AppError('NOT_FOUND', 'Person not found', 404);
   }
 
@@ -572,5 +275,15 @@ export async function updateUserRole(c: Context): Promise<Response> {
     details: { newRole: data.role },
   });
 
-  return c.json({ success: true, data: { message: 'Role updated' } });
+  return c.json({
+    success: true,
+    data: {
+      id: person.id,
+      email: person.email,
+      firstName: person.first_name,
+      lastName: person.last_name,
+      role: person.role,
+      isActive: person.is_active,
+    },
+  });
 }

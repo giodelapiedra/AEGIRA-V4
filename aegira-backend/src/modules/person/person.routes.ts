@@ -33,8 +33,8 @@ router.get('/', adminSupervisorOrWhs, controller.listPersons);
 // POST /api/v1/persons - Create person (ADMIN only)
 router.post('/', adminOnly, zValidator('json', createPersonSchema), controller.createPerson);
 
-// GET /api/v1/persons/:id - Get person by ID (ADMIN/SUPERVISOR only)
-router.get('/:id', adminOrSupervisor, controller.getPersonById);
+// GET /api/v1/persons/:id - Get person by ID (ADMIN/SUPERVISOR/WHS)
+router.get('/:id', adminSupervisorOrWhs, controller.getPersonById);
 
 // PATCH /api/v1/persons/:id - Update person (ADMIN only)
 router.patch('/:id', adminOnly, zValidator('json', updatePersonSchema), controller.updatePerson);

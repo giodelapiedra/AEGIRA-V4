@@ -112,6 +112,7 @@ export function useUpdateTeam() {
       queryClient.invalidateQueries({ queryKey: ['teams'] });
       queryClient.invalidateQueries({ queryKey: ['team', teamId] });
       queryClient.invalidateQueries({ queryKey: ['team', 'my-members'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     },
   });
 }

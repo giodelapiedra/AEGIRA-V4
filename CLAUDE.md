@@ -8,11 +8,34 @@ AEGIRA is a **multi-tenant workforce readiness and check-in management system**.
 D:\AEGIRA V5\
 ├── aegira-backend/    → Hono API + Prisma + PostgreSQL
 ├── aegira-frontend/   → React + Vite + TanStack Query
-├── package.json       → Root scripts (sync-context)
-└── sync-context.js    → Context sync utility
+├── .ai/               → Pattern library (source of truth for AI tools)
+│   ├── patterns/      → ~25 atomic coding pattern files
+│   ├── skills/        → 9 skill templates with @pattern markers
+│   ├── rules/         → 3 rule templates
+│   └── sync.config.json
+├── .claude/           → AUTO-GENERATED (Claude Code reads from here)
+├── .cursor/           → AUTO-GENERATED (Cursor reads from here)
+├── docs/              → Human documentation (guides, architecture, audits)
+├── sync-patterns.js   → Pattern-aware build/watch/validate script
+└── package.json       → Root scripts
 ```
 
 See `aegira-backend/CLAUDE.md` and `aegira-frontend/CLAUDE.md` for module-specific rules.
+
+## Pattern Library
+
+All coding patterns live in `.ai/patterns/` as atomic markdown files. Skills and rules reference these patterns via `<!-- @pattern: category/name -->` markers. The `sync-patterns.js` script resolves markers and generates `.claude/` and `.cursor/` output.
+
+**DO NOT** edit `.claude/skills/` or `.claude/rules/` directly — edit `.ai/` and run `npm run ai:build`.
+
+| Command | Purpose |
+|---------|---------|
+| `npm run ai:build` | Build all skills + rules from templates |
+| `npm run ai:watch` | Watch `.ai/` and auto-rebuild on changes |
+| `npm run ai:validate` | Check references, detect drift, find orphans |
+| `npm run ai:diff` | Dry run showing what would change |
+
+See `docs/guides/HOW-TO-SYNC-PATTERNS.md` for full documentation.
 
 ## Tech Stack
 
@@ -99,6 +122,40 @@ The frontend `apiClient` unwraps `response.data` automatically — hooks receive
 - `npm run test:run` — Run tests once
 - `npm run lint` — ESLint
 - `npm run format` — Prettier
+
+## Feature Creation Workflow
+
+When the user asks to create a new feature or module, **ALWAYS invoke the matching skill** before writing any code. This ensures all generated code follows the established patterns.
+
+### Skill Selection Matrix
+
+| User Request | Skill to Invoke | What It Generates |
+|---|---|---|
+| "Create backend module/feature X" | `/backend-crud-module` | routes, controller, repository, validator |
+| "Add business logic/service for X" | `/backend-service` | service layer with complex logic |
+| "Create list/table page for X" | `/data-table-page` | paginated DataTable page + query hook |
+| "Create form/create/edit page for X" | `/form-component` | React Hook Form + Zod form page |
+| "Create dashboard page for X role" | `/dashboard-page` | StatCards + sub-components dashboard |
+| "Create analytics/chart page for X" | `/analytics-page` | Recharts + period selector page |
+| "Create query hook for X" | `/query-hooks` | TanStack Query useQuery hook |
+| "Create mutation hook for X" | `/mutation-hooks` | TanStack Query useMutation hook |
+
+### Full-Stack Feature Flow
+
+When asked to create a **complete feature** (e.g., "add schedule feature"), follow this order:
+
+1. **Database** — Add/update Prisma schema if needed, run `npm run db:migrate` in `aegira-backend/`
+2. **Backend** — Invoke `/backend-crud-module` (+ `/backend-service` if complex logic needed)
+3. **Frontend hooks** — Invoke `/query-hooks` and `/mutation-hooks`
+4. **Frontend pages** — Invoke `/data-table-page` for list, `/form-component` for create/edit
+5. **Routes** — Register backend routes in `app.ts`, frontend routes in `routes/index.tsx` + `routes.config.ts`
+6. **Navigation** — Add to Sidebar if needed
+
+### Rules
+- ALWAYS invoke the skill BEFORE writing code — the skill contains the exact patterns to follow
+- If a request spans multiple skills (e.g., "full CRUD feature"), invoke them sequentially in the order above
+- After generating code, verify it follows the patterns by checking against the nearest existing module
+- If the user specifies a pattern that conflicts with a skill's pattern, follow the user's instruction
 
 ## General Rules
 

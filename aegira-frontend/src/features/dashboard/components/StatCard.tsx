@@ -7,7 +7,7 @@ interface StatCardProps {
   icon?: React.ReactNode;
   description?: string;
   className?: string;
-  iconBgColor?: 'blue' | 'green' | 'purple' | 'orange';
+  iconBgColor?: 'blue' | 'green' | 'purple' | 'orange' | 'red';
 }
 
 export function StatCard({ 
@@ -24,6 +24,7 @@ export function StatCard({
     green: 'bg-green-500/10 text-green-600 dark:bg-green-500/20 dark:text-green-400',
     purple: 'bg-purple-500/10 text-purple-600 dark:bg-purple-500/20 dark:text-purple-400',
     orange: 'bg-orange-500/10 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400',
+    red: 'bg-red-500/10 text-red-600 dark:bg-red-500/20 dark:text-red-400',
   };
 
   return (

@@ -15,13 +15,16 @@ import {
   formatTime12h,
 } from '../shared/utils';
 import { isHoliday, buildHolidayDateSet } from '../shared/holiday.utils';
+import { isWorkDay, getEffectiveSchedule } from '../shared/schedule.utils';
 
 /**
  * Add minutes to a time string (HH:mm).
  * Handles hour overflow (e.g., 10:59 + 2 = 11:01).
  */
 function addMinutesToTime(time: string, minutes: number): string {
-  const [hours, mins] = time.split(':').map(Number);
+  const parts = time.split(':').map(Number);
+  const hours = parts[0] ?? 0;
+  const mins = parts[1] ?? 0;
   const totalMinutes = hours * 60 + mins + minutes;
   const newHours = Math.floor(totalMinutes / 60) % 24;
   const newMins = totalMinutes % 60;
@@ -47,9 +50,9 @@ let isRunning = false;
  *   1. Get current time in company timezone
  *   2. Check if today is a company holiday → skip if yes
  *   3. Get today's day-of-week in company timezone
- *   4. Find teams where today is a work day AND check_in_end + buffer <= current time
- *   5. Find active workers on those teams who were assigned before today
- *      and do NOT have a CheckIn record for today
+ *   4. Find active workers on active teams who were assigned before today
+ *   5. Filter workers whose effective schedule (override → team fallback)
+ *      has today as a work day AND check_in_end + buffer <= current time
  *   6. Insert MissedCheckIn records (skipDuplicates for idempotency)
  *   7. Send notifications for newly detected records
  */
@@ -120,32 +123,28 @@ async function processCompany(companyId: string, timezone: string): Promise<numb
       check_in_start: true,
       check_in_end: true,
       work_days: true,
+      leader: {
+        select: { id: true, first_name: true, last_name: true },
+      },
     },
   });
 
-  // Filter to teams where today is a work day and window has closed (with buffer)
-  const eligibleTeams = teams.filter((team) => {
-    const workDays = team.work_days?.split(',') || ['1', '2', '3', '4', '5'];
-    if (!workDays.includes(todayDow)) return false;
+  // Pre-filter teams that have ANY chance of being past their window.
+  // We still need all teams for lookup, but skip teams whose window
+  // hasn't closed even without overrides (optimization: earliest possible end is team end).
+  // The actual per-worker window check happens below using getEffectiveSchedule().
+  const teamMap = new Map(teams.map((t) => [t.id, t]));
+  const activeTeamIds = teams.map((t) => t.id);
 
-    // Only process teams whose check-in window has closed + buffer time
-    // Buffer prevents false positives from in-flight check-ins at window boundary
-    const endTime = team.check_in_end || '10:00';
-    const endWithBuffer = addMinutesToTime(endTime, WINDOW_BUFFER_MINUTES);
-    return currentTime >= endWithBuffer;
-  });
+  if (activeTeamIds.length === 0) return 0;
 
-  if (eligibleTeams.length === 0) return 0;
-
-  const eligibleTeamIds = eligibleTeams.map((t) => t.id);
-
-  // Find active workers on eligible teams who were assigned BEFORE today
+  // Find active workers on active teams who were assigned BEFORE today
   const workers = await prisma.person.findMany({
     where: {
       company_id: companyId,
       role: 'WORKER',
       is_active: true,
-      team_id: { in: eligibleTeamIds },
+      team_id: { in: activeTeamIds },
       team_assigned_at: { not: null },
     },
     select: {
@@ -153,14 +152,41 @@ async function processCompany(companyId: string, timezone: string): Promise<numb
       team_id: true,
       team_assigned_at: true,
       role: true, // Needed for state snapshot
+      // Worker schedule override fields
+      work_days: true,
+      check_in_start: true,
+      check_in_end: true,
+      // Team schedule for fallback
+      team: {
+        select: {
+          work_days: true,
+          check_in_start: true,
+          check_in_end: true,
+        },
+      },
     },
   });
 
-  // Filter to workers assigned BEFORE today (same day = just assigned, not required)
+  // Filter workers by: assigned before today, today is their work day,
+  // AND their effective check-in window has closed (with buffer).
+  // This uses the worker's override schedule if set, otherwise team defaults.
   const eligibleWorkers = workers.filter((w) => {
-    if (!w.team_assigned_at) return false;
+    if (!w.team_assigned_at || !w.team) return false;
+
+    // Check if assigned before today (same day = just assigned, not required)
     const assignedDateStr = formatDateInTimezone(new Date(w.team_assigned_at), timezone);
-    return assignedDateStr < todayStr;
+    if (assignedDateStr >= todayStr) return false;
+
+    const personSchedule = { work_days: w.work_days, check_in_start: w.check_in_start, check_in_end: w.check_in_end };
+    const teamSchedule = { work_days: w.team.work_days, check_in_start: w.team.check_in_start, check_in_end: w.team.check_in_end };
+
+    // Check if today is a work day for this worker (uses override OR team default)
+    if (!isWorkDay(todayDow, personSchedule, teamSchedule)) return false;
+
+    // Check if the worker's effective check-in window has closed + buffer
+    const effective = getEffectiveSchedule(personSchedule, teamSchedule);
+    const endWithBuffer = addMinutesToTime(effective.checkInEnd, WINDOW_BUFFER_MINUTES);
+    return currentTime >= endWithBuffer;
   });
 
   if (eligibleWorkers.length === 0) return 0;
@@ -184,9 +210,6 @@ async function processCompany(companyId: string, timezone: string): Promise<numb
 
   if (missingWorkers.length === 0) return 0;
 
-  // Build a map of team_id → team for schedule_window lookup
-  const teamMap = new Map(eligibleTeams.map((t) => [t.id, t]));
-
   // Check which workers already have a MissedCheckIn record for today
   // (to know which ones are truly new for notifications)
   const missedRepo = new MissedCheckInRepository(prisma, companyId);
@@ -208,13 +231,21 @@ async function processCompany(companyId: string, timezone: string): Promise<numb
   const snapshotService = new MissedCheckInSnapshotService(prisma, companyId, timezone);
 
   const workerContexts = newMissing.map((w) => {
-    const team = teamMap.get(w.team_id!);
     return {
       personId: w.id,
       teamId: w.team_id!,
       role: w.role,
       teamAssignedAt: w.team_assigned_at,
-      workDays: team?.work_days?.split(',') || ['1', '2', '3', '4', '5'],
+      // Worker schedule override fields
+      workDays: w.work_days,
+      checkInStart: w.check_in_start,
+      checkInEnd: w.check_in_end,
+      // Team schedule for fallback
+      team: {
+        work_days: w.team!.work_days,
+        check_in_start: w.team!.check_in_start,
+        check_in_end: w.team!.check_in_end,
+      },
     };
   });
 
@@ -223,15 +254,27 @@ async function processCompany(companyId: string, timezone: string): Promise<numb
   // Build records for insertion with state snapshots
   const records = newMissing.map((w) => {
     const team = teamMap.get(w.team_id!);
-    const start = team?.check_in_start || '06:00';
-    const end = team?.check_in_end || '10:00';
+    // Use worker's effective schedule (override → team fallback) for accurate window
+    const effective = getEffectiveSchedule(
+      { work_days: w.work_days, check_in_start: w.check_in_start, check_in_end: w.check_in_end },
+      { work_days: w.team!.work_days, check_in_start: w.team!.check_in_start, check_in_end: w.team!.check_in_end }
+    );
     const snapshot = snapshots.get(w.id);
+
+    // Capture team leader snapshot at time of miss
+    const teamLeaderIdAtMiss = team?.leader?.id ?? null;
+    const teamLeaderNameAtMiss = team?.leader
+      ? `${team.leader.first_name} ${team.leader.last_name}`
+      : null;
 
     return {
       personId: w.id,
       teamId: w.team_id!,
       missedDate: todayDate,
-      scheduleWindow: `${formatTime12h(start)} - ${formatTime12h(end)}`,
+      scheduleWindow: `${formatTime12h(effective.checkInStart)} - ${formatTime12h(effective.checkInEnd)}`,
+      // Team leader snapshot
+      teamLeaderIdAtMiss,
+      teamLeaderNameAtMiss,
       // Include state snapshot
       ...(snapshot && {
         workerRoleAtMiss: snapshot.workerRoleAtMiss,
@@ -275,7 +318,7 @@ async function processCompany(companyId: string, timezone: string): Promise<numb
   }
 
   logger.info(
-    { companyId, detected: inserted, teams: eligibleTeams.length },
+    { companyId, detected: inserted, teams: teams.length },
     'Detected missed check-ins for company'
   );
 

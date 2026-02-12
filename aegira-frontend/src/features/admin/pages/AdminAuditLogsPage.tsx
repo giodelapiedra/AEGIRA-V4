@@ -1,5 +1,5 @@
-import { useState, useDeferredValue } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -167,28 +167,35 @@ function AuditLogsContent() {
   });
   const { toast } = useToast();
   const [dateFilter, setDateFilter] = useState('');
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
-  const deferredSearch = useDeferredValue(search);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['admin', 'audit-logs', pagination.pageIndex, pagination.pageSize, dateFilter, deferredSearch],
+    queryKey: ['admin', 'audit-logs', pagination.pageIndex, pagination.pageSize, dateFilter, search],
     staleTime: STALE_TIMES.IMMUTABLE,
+    placeholderData: keepPreviousData, // Smooth pagination transitions
     queryFn: () => {
       const params = new URLSearchParams({
         page: String(pagination.pageIndex + 1),
         limit: String(pagination.pageSize),
       });
       if (dateFilter) params.set('date', dateFilter);
-      if (deferredSearch) params.set('search', deferredSearch);
+      if (search) params.set('search', search);
       return apiClient.get<PaginatedResponse<AuditLog>>(
         `${ENDPOINTS.ADMIN.AUDIT_LOGS}?${params.toString()}`
       );
     },
   });
 
-  const handleSearchChange = (value: string) => {
-    setSearch(value);
+  const handleSearch = () => {
+    setSearch(searchInput.trim());
     setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSearch();
+    }
   };
 
   const handleExport = async () => {
@@ -243,14 +250,18 @@ function AuditLogsContent() {
         <CardContent>
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row gap-4">
-              <div className="relative w-full sm:max-w-xs">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <div className="flex items-center gap-2">
                 <Input
                   placeholder="Search by user name or email..."
-                  value={search}
-                  onChange={(e) => handleSearchChange(e.target.value)}
-                  className="pl-9 h-9"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  className="max-w-sm"
                 />
+                <Button onClick={handleSearch} variant="secondary" size="sm">
+                  <Search className="h-4 w-4 mr-1" />
+                  Search
+                </Button>
               </div>
               <div className="flex gap-2">
                 <Input

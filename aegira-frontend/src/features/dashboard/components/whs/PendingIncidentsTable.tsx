@@ -111,6 +111,7 @@ export function PendingIncidentsTable({ incidents }: PendingIncidentsTableProps)
                         onClick={() =>
                           navigate(ROUTES.ADMIN_INCIDENT_DETAIL.replace(':id', incident.id))
                         }
+                        aria-label={`View incident ${incident.incidentNumber}`}
                       >
                         <Eye className="h-4 w-4" />
                       </Button>
@@ -119,6 +120,7 @@ export function PendingIncidentsTable({ incidents }: PendingIncidentsTableProps)
                         size="sm"
                         className="text-green-600 hover:text-green-700 hover:bg-green-50"
                         onClick={() => setApproveTarget(incident.id)}
+                        aria-label={`Approve incident ${incident.incidentNumber}`}
                       >
                         <ThumbsUp className="h-4 w-4" />
                       </Button>
@@ -127,6 +129,7 @@ export function PendingIncidentsTable({ incidents }: PendingIncidentsTableProps)
                         size="sm"
                         className="text-red-600 hover:text-red-700 hover:bg-red-50"
                         onClick={() => setRejectTarget(incident.id)}
+                        aria-label={`Reject incident ${incident.incidentNumber}`}
                       >
                         <ThumbsDown className="h-4 w-4" />
                       </Button>

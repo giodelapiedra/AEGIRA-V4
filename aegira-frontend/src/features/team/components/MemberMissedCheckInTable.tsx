@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { ColumnDef, PaginationState } from '@tanstack/react-table';
 import { AlertTriangle, Eye, Flame, TrendingUp, TrendingDown, Calendar, AlertCircle, Target } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -7,28 +7,13 @@ import { Button } from '@/components/ui/button';
 import { DataTable, SortableHeader } from '@/components/ui/data-table';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Separator } from '@/components/ui/separator';
+import { formatDate } from '@/lib/utils/date.utils';
+import { DAY_NAMES } from '@/lib/constants';
 import { useWorkerMissedCheckIns, type MissedCheckInRecord } from '../hooks/useWorkerMissedCheckIns';
 
 interface MemberMissedCheckInTableProps {
   personId: string;
 }
-
-const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-
-const getStatusBadge = (status: string) => {
-  switch (status) {
-    case 'OPEN':
-      return <Badge variant="destructive">Open</Badge>;
-    case 'INVESTIGATING':
-      return <Badge variant="warning">Investigating</Badge>;
-    case 'EXCUSED':
-      return <Badge variant="outline">Excused</Badge>;
-    case 'RESOLVED':
-      return <Badge variant="success">Resolved</Badge>;
-    default:
-      return <Badge>{status}</Badge>;
-  }
-};
 
 const getColumns = (onView: (record: MissedCheckInRecord) => void): ColumnDef<MissedCheckInRecord>[] => [
   {
@@ -36,11 +21,7 @@ const getColumns = (onView: (record: MissedCheckInRecord) => void): ColumnDef<Mi
     header: ({ column }) => <SortableHeader column={column}>Date</SortableHeader>,
     cell: ({ row }) => (
       <span className="font-medium">
-        {new Date(row.original.date).toLocaleDateString('en-US', {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric',
-        })}
+        {formatDate(row.original.date, 'MMM d, yyyy')}
       </span>
     ),
   },
@@ -50,11 +31,6 @@ const getColumns = (onView: (record: MissedCheckInRecord) => void): ColumnDef<Mi
     cell: ({ row }) => (
       <span className="text-muted-foreground">{row.original.scheduleWindow}</span>
     ),
-  },
-  {
-    accessorKey: 'status',
-    header: 'Status',
-    cell: ({ row }) => getStatusBadge(row.original.status),
   },
   {
     id: 'actions',
@@ -82,14 +58,14 @@ export function MemberMissedCheckInTable({ personId }: MemberMissedCheckInTableP
   const { data, isLoading } = useWorkerMissedCheckIns({
     personId,
     page: pagination.pageIndex + 1,
-    pageSize: pagination.pageSize,
+    limit: pagination.pageSize,
   });
 
   const items = data?.items ?? [];
   const total = data?.pagination?.total ?? 0;
   const pageCount = data?.pagination?.totalPages ?? 0;
 
-  const columns = getColumns(setSelectedRecord);
+  const columns = useMemo(() => getColumns(setSelectedRecord), [setSelectedRecord]);
   const snapshot = selectedRecord?.stateSnapshot;
 
   return (
@@ -126,7 +102,7 @@ export function MemberMissedCheckInTable({ personId }: MemberMissedCheckInTableP
           <SheetHeader>
             <SheetTitle>Missed Check-in Details</SheetTitle>
             <SheetDescription>
-              {selectedRecord && new Date(selectedRecord.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+              {selectedRecord && formatDate(selectedRecord.date, 'MMMM d, yyyy')}
             </SheetDescription>
           </SheetHeader>
 
@@ -136,16 +112,16 @@ export function MemberMissedCheckInTable({ personId }: MemberMissedCheckInTableP
               <h4 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Basic Info</h4>
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
+                  <p className="text-muted-foreground">Team Leader</p>
+                  <p className="font-medium">{selectedRecord?.teamLeaderName || 'Not assigned'}</p>
+                </div>
+                <div>
                   <p className="text-muted-foreground">Schedule</p>
                   <p className="font-medium">{selectedRecord?.scheduleWindow}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground">Day</p>
                   <p className="font-medium">{snapshot?.dayOfWeek != null ? DAY_NAMES[snapshot.dayOfWeek] : '-'}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Status</p>
-                  <div className="mt-0.5">{selectedRecord && getStatusBadge(selectedRecord.status)}</div>
                 </div>
               </div>
             </div>
@@ -270,16 +246,6 @@ export function MemberMissedCheckInTable({ personId }: MemberMissedCheckInTableP
               )}
             </div>
 
-            {/* Notes */}
-            {selectedRecord?.notes && (
-              <>
-                <Separator />
-                <div className="space-y-2">
-                  <h4 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Notes</h4>
-                  <p className="text-sm">{selectedRecord.notes}</p>
-                </div>
-              </>
-            )}
           </div>
         </SheetContent>
       </Sheet>

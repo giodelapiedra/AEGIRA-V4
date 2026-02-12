@@ -126,23 +126,3 @@ export function ReadinessIndicator({
     </div>
   );
 }
-
-// Simple badge version for tables/lists
-interface ReadinessBadgeProps {
-  category: ReadinessCategory;
-}
-
-export function ReadinessBadge({ category }: ReadinessBadgeProps) {
-  const config = categoryConfig[category];
-
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white',
-        config.bgColor
-      )}
-    >
-      {config.label}
-    </span>
-  );
-}

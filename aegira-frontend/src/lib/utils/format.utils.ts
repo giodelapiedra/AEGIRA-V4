@@ -169,6 +169,23 @@ export function formatDuration(hours: number | null): string {
   return `${(hours / 24).toFixed(1)} days`;
 }
 
+/**
+ * Compare HH:mm times — returns true if end is after start
+ */
+export function isEndTimeAfterStart(start: string, end: string): boolean {
+  const startParts = start.split(':').map(Number);
+  const endParts = end.split(':').map(Number);
+  const startMinutes = (startParts[0] ?? 0) * 60 + (startParts[1] ?? 0);
+  const endMinutes = (endParts[0] ?? 0) * 60 + (endParts[1] ?? 0);
+  return endMinutes > startMinutes;
+}
+
+/** Time format regex (HH:MM, zero-padded hours) */
+export const TIME_REGEX = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
+
+/** Work days CSV regex (0-6) */
+export const WORK_DAYS_REGEX = /^[0-6](,[0-6])*$/;
+
 export function formatRejectionReason(reason: string): string {
   const labels: Record<string, string> = {
     DUPLICATE_REPORT: 'Duplicate Report',

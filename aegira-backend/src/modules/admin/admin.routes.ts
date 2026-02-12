@@ -5,7 +5,7 @@ import { authMiddleware } from '../../middleware/auth';
 import { tenantMiddleware } from '../../middleware/tenant';
 import { roleMiddleware } from '../../middleware/role';
 import * as controller from './admin.controller';
-import { createHolidaySchema, updateHolidaySchema, updateSettingsSchema, rejectAmendmentSchema, updateUserRoleSchema } from './admin.validator';
+import { createHolidaySchema, updateHolidaySchema, updateSettingsSchema, updateUserRoleSchema } from './admin.validator';
 
 const router = new Hono();
 
@@ -25,14 +25,6 @@ router.delete('/holidays/:id', controller.deleteHoliday);
 
 // Audit Logs
 router.get('/audit-logs', controller.listAuditLogs);
-
-// System Health
-router.get('/system/health', controller.getSystemHealth);
-
-// Amendments
-router.get('/amendments', controller.listAmendments);
-router.post('/amendments/:id/approve', controller.approveAmendment);
-router.post('/amendments/:id/reject', zValidator('json', rejectAmendmentSchema), controller.rejectAmendment);
 
 // User Roles
 router.get('/users/roles', controller.listUserRoles);

@@ -12,6 +12,7 @@ export function useCreateIncident() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['my-incidents'] });
       queryClient.invalidateQueries({ queryKey: ['incidents'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] }); // Dashboard shows incident counts
     },
   });
 }

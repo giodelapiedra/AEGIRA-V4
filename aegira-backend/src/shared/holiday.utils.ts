@@ -75,6 +75,9 @@ export async function isHoliday(
  * Build a Set of holiday date strings ("YYYY-MM-DD") for a given date range.
  * Used by dashboard calculations (streak, completion rate) that need to check
  * multiple dates at once without repeated DB queries.
+ *
+ * PERFORMANCE: Uses separate queries for exact-date vs recurring holidays,
+ * and pre-computes month/day lookup map to avoid O(n*m) nested loops.
  */
 export async function buildHolidayDateSet(
   prisma: PrismaClient,
@@ -83,32 +86,47 @@ export async function buildHolidayDateSet(
   endDate: Date,
   timezone: string,
 ): Promise<Set<string>> {
-  const holidays = await prisma.holiday.findMany({
-    where: { company_id: companyId },
-    select: { date: true, is_recurring: true },
-  });
+  // Fetch holidays in parallel: exact dates within range + all recurring
+  const [exactHolidays, recurringHolidays] = await Promise.all([
+    prisma.holiday.findMany({
+      where: {
+        company_id: companyId,
+        is_recurring: false,
+        date: { gte: startDate, lte: endDate },
+      },
+      select: { date: true },
+    }),
+    prisma.holiday.findMany({
+      where: {
+        company_id: companyId,
+        is_recurring: true,
+      },
+      select: { date: true },
+    }),
+  ]);
 
   const holidaySet = new Set<string>();
 
-  for (let d = new Date(startDate); d <= endDate; d = new Date(d.getTime() + 24 * 60 * 60 * 1000)) {
-    const dStr = formatDateInTimezone(d, timezone);
-    // Extract month/day in company timezone (not UTC) for recurring holiday comparison
-    const dDt = DateTime.fromJSDate(d).setZone(timezone);
-    const dMonth = dDt.month;  // 1-12
-    const dDay = dDt.day;
+  // Add exact-date holidays directly (already filtered by date range)
+  for (const h of exactHolidays) {
+    holidaySet.add(formatDateInTimezone(new Date(h.date), timezone));
+  }
 
-    for (const h of holidays) {
-      const hDate = new Date(h.date);
-      if (h.is_recurring) {
-        // Recurring holidays match by month/day regardless of year
-        const hDt = DateTime.fromJSDate(hDate).setZone(timezone);
-        if (hDt.month === dMonth && hDt.day === dDay) {
-          holidaySet.add(dStr);
-        }
-      } else {
-        if (formatDateInTimezone(hDate, timezone) === dStr) {
-          holidaySet.add(dStr);
-        }
+  // Pre-compute recurring holiday month/day pairs as "MM-DD" for O(1) lookup
+  const recurringMonthDays = new Set<string>();
+  for (const h of recurringHolidays) {
+    const hDt = DateTime.fromJSDate(new Date(h.date)).setZone(timezone);
+    recurringMonthDays.add(`${String(hDt.month).padStart(2, '0')}-${String(hDt.day).padStart(2, '0')}`);
+  }
+
+  // Only check recurring if there are any
+  if (recurringMonthDays.size > 0) {
+    for (let d = new Date(startDate); d <= endDate; d = new Date(d.getTime() + 24 * 60 * 60 * 1000)) {
+      const dDt = DateTime.fromJSDate(d).setZone(timezone);
+      const monthDay = `${String(dDt.month).padStart(2, '0')}-${String(dDt.day).padStart(2, '0')}`;
+
+      if (recurringMonthDays.has(monthDay)) {
+        holidaySet.add(formatDateInTimezone(d, timezone));
       }
     }
   }

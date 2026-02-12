@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import {
   Bell,
   CheckCheck,
@@ -7,45 +7,72 @@ import {
   Inbox,
   Loader2,
 } from 'lucide-react';
+import { useToast } from '@/lib/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageLoader } from '@/components/common/PageLoader';
 import { PageHeader } from '@/components/common/PageHeader';
 import { EmptyState } from '@/components/common/EmptyState';
 import { NotificationItem } from '../components/NotificationItem';
-import { useNotifications, useUnreadCount, useMarkAsRead, useMarkAllAsRead } from '../hooks/useNotifications';
+import { useNotifications, useUnreadCount, useMarkAsRead, useMarkAllAsRead, type Notification } from '../hooks/useNotifications';
 
 type NotificationTab = 'all' | 'unread' | 'read';
 
 export function NotificationsPage() {
   const [tab, setTab] = useState<NotificationTab>('all');
   const [page, setPage] = useState(1);
-  const pageSize = 20;
+  const limit = 20;
+  const { toast } = useToast();
+
+  // Accumulate items across pages for load-more behavior
+  const accumulatedRef = useRef<Map<string, Notification[][]>>(new Map());
 
   const { data, isLoading, error, isFetching } = useNotifications({
     page,
-    pageSize,
+    limit,
     filter: tab,
   });
   const { data: unreadData } = useUnreadCount();
   const markAsRead = useMarkAsRead();
   const markAllAsRead = useMarkAllAsRead();
 
-  const notifications = data?.items || [];
+  // Build accumulated list: store items per page, flatten for display
+  const cacheKey = tab;
+  if (data?.items && data.items.length > 0) {
+    if (!accumulatedRef.current.has(cacheKey)) {
+      accumulatedRef.current.set(cacheKey, []);
+    }
+    const pages = accumulatedRef.current.get(cacheKey)!;
+    // Store items at the correct page index (0-based)
+    pages[page - 1] = data.items;
+  }
+
+  const accumulatedPages = accumulatedRef.current.get(cacheKey) ?? [];
+  const notifications: Notification[] = accumulatedPages.flat();
   const total = data?.pagination?.total ?? 0;
-  const hasMore = page * pageSize < total;
+  const hasMore = page * limit < total;
   const unreadCount = unreadData?.count ?? 0;
 
   const handleTabChange = (value: string) => {
     setTab(value as NotificationTab);
     setPage(1);
+    // Reset accumulated data for new tab
+    accumulatedRef.current.delete(value);
   };
 
-  const handleNotificationClick = (notificationId: string, isRead: boolean) => {
+  const handleNotificationClick = useCallback(async (notificationId: string, isRead: boolean) => {
     if (!isRead) {
-      markAsRead.mutate(notificationId);
+      try {
+        await markAsRead.mutateAsync(notificationId);
+      } catch (err) {
+        toast({
+          title: 'Error',
+          description: err instanceof Error ? err.message : 'Failed to mark as read',
+          variant: 'destructive',
+        });
+      }
     }
-  };
+  }, [markAsRead.mutateAsync, toast]);
 
   const handleLoadMore = () => {
     setPage((p) => p + 1);
@@ -73,7 +100,7 @@ export function NotificationsPage() {
   const empty = emptyStates[tab];
 
   return (
-    <PageLoader isLoading={isLoading} error={error} skeleton="cards">
+    <PageLoader isLoading={isLoading && page === 1} error={error} skeleton="cards">
       <div className="max-w-2xl mx-auto space-y-6">
         <PageHeader
           title="Notifications"
@@ -83,7 +110,18 @@ export function NotificationsPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => markAllAsRead.mutate()}
+                onClick={async () => {
+                  try {
+                    await markAllAsRead.mutateAsync();
+                    toast({ title: 'All notifications marked as read' });
+                  } catch (err) {
+                    toast({
+                      title: 'Error',
+                      description: err instanceof Error ? err.message : 'Failed to mark all as read',
+                      variant: 'destructive',
+                    });
+                  }
+                }}
                 disabled={markAllAsRead.isPending}
                 className="text-primary"
               >
@@ -140,7 +178,7 @@ export function NotificationsPage() {
               icon={empty.icon}
             />
           ) : (
-            // Notification list
+            // Notification list - accumulated across pages
             <div className="divide-y">
               {notifications.map((notification) => (
                 <NotificationItem
@@ -169,7 +207,7 @@ export function NotificationsPage() {
                     Loading...
                   </>
                 ) : (
-                  `Load more (${total - page * pageSize} remaining)`
+                  `Load more (${Math.max(0, total - page * limit)} remaining)`
                 )}
               </Button>
             </div>

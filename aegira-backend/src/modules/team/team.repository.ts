@@ -97,11 +97,10 @@ export class TeamRepository extends BaseRepository {
   }
 
   async findAll(params: PaginationParams & { includeInactive?: boolean; search?: string }): Promise<PaginatedResponse<Team & { leader?: { id: string; first_name: string; last_name: string } }>> {
-    const where: Prisma.TeamWhereInput = {
-      company_id: this.companyId,
+    const where: Prisma.TeamWhereInput = this.where({
       ...(params.includeInactive ? {} : { is_active: true }),
       ...(params.search ? { name: { startsWith: params.search, mode: 'insensitive' as const } } : {}),
-    };
+    });
 
     const [items, total] = await Promise.all([
       this.prisma.team.findMany({
@@ -142,14 +141,14 @@ export class TeamRepository extends BaseRepository {
         company_id: this.companyId, // ✅ CRITICAL: Scope by company_id for multi-tenant security
       },
       data: {
-        ...(data.name && { name: data.name }),
+        ...(data.name !== undefined && { name: data.name }),
         ...(data.description !== undefined && { description: data.description }),
         ...(data.leaderId !== undefined && { leader_id: data.leaderId }),
         ...(data.supervisorId !== undefined && { supervisor_id: data.supervisorId }),
         ...(data.isActive !== undefined && { is_active: data.isActive }),
-        ...(data.checkInStart && { check_in_start: data.checkInStart }),
-        ...(data.checkInEnd && { check_in_end: data.checkInEnd }),
-        ...(data.workDays && { work_days: data.workDays }),
+        ...(data.checkInStart !== undefined && { check_in_start: data.checkInStart }),
+        ...(data.checkInEnd !== undefined && { check_in_end: data.checkInEnd }),
+        ...(data.workDays !== undefined && { work_days: data.workDays }),
       },
     });
   }

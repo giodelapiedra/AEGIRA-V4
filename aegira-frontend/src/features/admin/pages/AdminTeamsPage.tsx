@@ -1,12 +1,12 @@
-import { useState, useDeferredValue } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ColumnDef, PaginationState } from '@tanstack/react-table';
-import { Users, Plus, MoreHorizontal, Eye, Edit, Search } from 'lucide-react';
+import { Users, Plus, MoreHorizontal, Eye, Edit } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
+import { TableSearch } from '@/components/common/TableSearch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -42,7 +42,7 @@ const columns: ColumnDef<Team>[] = [
     accessorKey: 'is_active',
     header: 'Status',
     cell: ({ row }) => (
-      <Badge variant={row.original.is_active ? 'success' : 'destructive'}>
+      <Badge variant={row.original.is_active ? 'success' : 'secondary'}>
         {row.original.is_active ? 'Active' : 'Inactive'}
       </Badge>
     ),
@@ -81,18 +81,18 @@ export function AdminTeamsPage() {
     pageIndex: 0,
     pageSize: 10,
   });
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
-  const deferredSearch = useDeferredValue(search);
 
   const { data: teamsData, isLoading, error } = useTeams(
     pagination.pageIndex + 1,
     pagination.pageSize,
     true, // includeInactive for admin view
-    deferredSearch
+    search
   );
 
-  const handleSearchChange = (value: string) => {
-    setSearch(value);
+  const handleSearch = () => {
+    setSearch(searchInput.trim());
     setPagination((prev) => ({ ...prev, pageIndex: 0 }));
   };
 
@@ -126,15 +126,12 @@ export function AdminTeamsPage() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            <div className="relative w-full sm:max-w-xs">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by team name..."
-                value={search}
-                onChange={(e) => handleSearchChange(e.target.value)}
-                className="pl-9 h-9"
-              />
-            </div>
+            <TableSearch
+              placeholder="Search by team name..."
+              value={searchInput}
+              onChange={setSearchInput}
+              onSearch={handleSearch}
+            />
             <DataTable
               columns={columns}
               data={teams}

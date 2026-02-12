@@ -11,6 +11,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { EmptyState } from '@/components/common/EmptyState';
 import { TrendingUp } from 'lucide-react';
 import { STATUS_COLORS } from './chartConfig';
+import { MONTH_NAMES_SHORT } from '@/lib/constants';
 import type { IncidentTrendPoint } from '@/types/whs-analytics.types';
 
 interface IncidentTrendChartProps {
@@ -60,8 +61,7 @@ export function IncidentTrendChart({ data }: IncidentTrendChartProps) {
                 tickFormatter={(val: string) => {
                   const d = new Date(val);
                   const day = d.getDate();
-                  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-                  return `${day} ${months[d.getMonth()]}`;
+                  return `${day} ${MONTH_NAMES_SHORT[d.getMonth()]}`;
                 }}
               />
               <YAxis

@@ -1,0 +1,62 @@
+---
+description: AEGIRA Backend Rules - Hono + Prisma + PostgreSQL
+globs: ["aegira-backend/**/*.ts"]
+alwaysApply: false
+---
+# Backend Rules
+
+## Module Structure
+```
+src/modules/<feature>/
+├── <feature>.routes.ts      # Route definitions + middleware
+├── <feature>.controller.ts  # Request handling + response formatting
+├── <feature>.service.ts     # Business logic (optional - see decision tree)
+├── <feature>.repository.ts  # Database operations (extends BaseRepository)
+└── <feature>.validator.ts   # Zod schemas + type exports
+```
+
+## Quick Reference
+
+### Middleware Chain
+`authMiddleware` → `tenantMiddleware` → `roleMiddleware` → `zValidator` → `controller`
+
+### Multi-Tenant Isolation (CRITICAL)
+```typescript
+// ALWAYS use where() helper from BaseRepository
+where: this.where({ id: teamId })  // Injects company_id automatically
+
+// NEVER query without company_id
+where: { id: teamId }  // SECURITY VULNERABILITY
+```
+
+### Error Handling
+```typescript
+throw new AppError('TEAM_NOT_FOUND', 'Team not found', 404);
+throw Errors.notFound('Team');
+throw Errors.forbidden('Access denied');
+```
+
+### Fire-and-Forget Audit
+```typescript
+logAudit({ ... });  // NEVER await, NEVER .catch (handles errors internally)
+```
+
+### Pagination
+```typescript
+const { page, limit } = parsePagination(c.req.query('page'), c.req.query('limit'));
+return c.json({ success: true, data: paginate(items, total, page, limit) });
+```
+
+### Key Rules
+- Specific routes BEFORE dynamic `/:id` routes
+- Validate ALL inputs with `zValidator`
+- Use `findUnique` for PK lookups (not `findFirst`)
+- Timezone: `c.get('companyTimezone')` — never query DB
+- Response format: `{ success: true, data: { ... } }`
+- NEVER hard delete — use `is_active: false`
+
+### When to Add Service Layer
+- Complex calculations
+- Multi-step operations
+- Transactions needed
+- Reusable business logic

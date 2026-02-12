@@ -3,6 +3,7 @@ import { Users, CheckCircle, AlertCircle, TrendingUp, Clock, UserPlus, XCircle, 
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { PageLoader } from '@/components/common/PageLoader';
+import { ReadinessCategoryBadge } from '@/components/common/badge-utils';
 import { PageHeader } from '@/components/common/PageHeader';
 import { DataTable, SortableHeader } from '@/components/ui/data-table';
 import { StatCard } from '../components/StatCard';
@@ -18,24 +19,6 @@ const DAY_LABELS: Record<string, string> = {
 };
 
 const ALL_DAYS = ['0', '1', '2', '3', '4', '5', '6'];
-
-// Helper to get readiness badge
-const getReadinessBadge = (category?: string) => {
-  if (!category) return <Badge variant="outline">-</Badge>;
-
-  switch (category) {
-    case 'ready':
-      return <Badge variant="success">Ready</Badge>;
-    case 'modified_duty':
-      return <Badge variant="warning">Modified Duty</Badge>;
-    case 'needs_attention':
-      return <Badge className="border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-800 dark:bg-orange-950 dark:text-orange-400">Needs Attention</Badge>;
-    case 'not_ready':
-      return <Badge variant="destructive">Not Ready</Badge>;
-    default:
-      return <Badge variant="outline">{category}</Badge>;
-  }
-};
 
 // Get status badge based on member check-in status
 const getStatusBadge = (member: TeamMemberStatus) => {
@@ -103,7 +86,7 @@ const columns: ColumnDef<TeamMemberStatus>[] = [
   {
     accessorKey: 'readinessCategory',
     header: 'Readiness',
-    cell: ({ row }) => getReadinessBadge(row.original.readinessCategory),
+    cell: ({ row }) => <ReadinessCategoryBadge category={row.original.readinessCategory} />,
   },
   {
     accessorKey: 'readinessScore',

@@ -13,6 +13,7 @@ import {
   parseDateInTimezone,
 } from '../../shared/utils';
 import { checkHolidayForDate } from '../../shared/holiday.utils';
+import { getEffectiveSchedule } from '../../shared/schedule.utils';
 
 // Check-in status for worker
 export interface CheckInStatus {
@@ -64,37 +65,45 @@ export class CheckInService {
       );
     }
 
-    // Validate against team schedule
+    // Validate against worker schedule (or team schedule if no override)
     // If the worker is assigned today but the check-in window is still open,
     // they are allowed to submit. The time window check below handles eligibility.
     const person = await this.repository.getPersonWithTeam(personId);
     if (person?.team) {
       const team = person.team;
 
-      // Check if today is a work day (using company timezone)
-      if (team.work_days) {
-        const dayOfWeek = getDayOfWeekInTimezone(this.timezone).toString();
-        const workDays = team.work_days.split(',');
-        if (!workDays.includes(dayOfWeek)) {
-          throw new AppError(
-            'NOT_WORK_DAY',
-            'Today is not a scheduled work day for your team',
-            400
-          );
+      // Get effective schedule (worker override OR team default)
+      const schedule = getEffectiveSchedule(
+        {
+          work_days: person.work_days,
+          check_in_start: person.check_in_start,
+          check_in_end: person.check_in_end,
+        },
+        {
+          work_days: team.work_days,
+          check_in_start: team.check_in_start,
+          check_in_end: team.check_in_end,
         }
+      );
+
+      // Check if today is a work day (using company timezone)
+      const dayOfWeek = getDayOfWeekInTimezone(this.timezone).toString();
+      if (!schedule.workDays.includes(dayOfWeek)) {
+        throw new AppError(
+          'NOT_WORK_DAY',
+          'Today is not a scheduled work day for you',
+          400
+        );
       }
 
       // Check if within check-in window (using company timezone)
-      if (team.check_in_start && team.check_in_end) {
-        const currentTime = getCurrentTimeInTimezone(this.timezone);
-
-        if (!isTimeWithinWindow(currentTime, team.check_in_start, team.check_in_end)) {
-          throw new AppError(
-            'OUTSIDE_CHECK_IN_WINDOW',
-            `Check-in is only allowed between ${team.check_in_start} and ${team.check_in_end}`,
-            400
-          );
-        }
+      const currentTime = getCurrentTimeInTimezone(this.timezone);
+      if (!isTimeWithinWindow(currentTime, schedule.checkInStart, schedule.checkInEnd)) {
+        throw new AppError(
+          'OUTSIDE_CHECK_IN_WINDOW',
+          `Check-in is only allowed between ${schedule.checkInStart} and ${schedule.checkInEnd}`,
+          400
+        );
       }
     }
 
@@ -239,18 +248,29 @@ export class CheckInService {
 
     const team = person.team;
 
+    // Get effective schedule (worker override OR team default)
+    const schedule = getEffectiveSchedule(
+      {
+        work_days: person.work_days,
+        check_in_start: person.check_in_start,
+        check_in_end: person.check_in_end,
+      },
+      {
+        work_days: team.work_days,
+        check_in_start: team.check_in_start,
+        check_in_end: team.check_in_end,
+      }
+    );
+
     // Get current day and time in company timezone
     const dayOfWeek = getDayOfWeekInTimezone(this.timezone).toString();
     const currentTime = getCurrentTimeInTimezone(this.timezone);
 
-    // Parse work days
-    const workDays = team.work_days ? team.work_days.split(',') : ['1', '2', '3', '4', '5']; // Default Mon-Fri
-    const isWorkDay = workDays.includes(dayOfWeek);
+    // Check if today is a work day
+    const isWorkDay = schedule.workDays.includes(dayOfWeek);
 
     // Check time window
-    const checkInStart = team.check_in_start || '06:00';
-    const checkInEnd = team.check_in_end || '10:00';
-    const isWithinWindow = isTimeWithinWindow(currentTime, checkInStart, checkInEnd);
+    const isWithinWindow = isTimeWithinWindow(currentTime, schedule.checkInStart, schedule.checkInEnd);
 
     // Workers assigned today CAN check in if the window is still open
     const canCheckIn = isWorkDay && !holidayCheck.isHoliday && isWithinWindow && !hasCheckedInToday;
@@ -262,12 +282,12 @@ export class CheckInService {
     } else if (holidayCheck.isHoliday) {
       message = `Today is a holiday: ${holidayCheck.holidayName}`;
     } else if (!isWorkDay) {
-      message = 'Today is not a scheduled work day for your team';
+      message = 'Today is not a scheduled work day for you';
     } else if (!isWithinWindow) {
-      if (currentTime < checkInStart) {
-        message = `Check-in window opens at ${checkInStart}`;
+      if (currentTime < schedule.checkInStart) {
+        message = `Check-in window opens at ${schedule.checkInStart}`;
       } else {
-        message = `Check-in window closed at ${checkInEnd}`;
+        message = `Check-in window closed at ${schedule.checkInEnd}`;
       }
     } else {
       message = 'You can check in now';
@@ -281,9 +301,9 @@ export class CheckInService {
       canCheckIn,
       hasCheckedInToday,
       schedule: {
-        checkInStart,
-        checkInEnd,
-        workDays,
+        checkInStart: schedule.checkInStart,
+        checkInEnd: schedule.checkInEnd,
+        workDays: schedule.workDays,
       },
       team: {
         id: team.id,
@@ -297,8 +317,8 @@ export class CheckInService {
     // Sleep score (0-100)
     const sleepScore = this.calculateSleepScore(input.hoursSlept, input.sleepQuality);
 
-    // Stress score (inverse - lower stress = higher score)
-    const stressScore = Math.round((10 - input.stressLevel + 1) * 10);
+    // Stress score (inverse - lower stress = higher score, 0-100 range)
+    const stressScore = (10 - input.stressLevel) * 10;
 
     // Physical condition score
     const physicalScore = input.physicalCondition * 10;

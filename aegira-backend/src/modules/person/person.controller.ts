@@ -6,11 +6,13 @@ import { NotificationRepository } from '../notification/notification.repository'
 import { prisma } from '../../config/database';
 import { AppError } from '../../shared/errors';
 import { hashPassword } from '../../shared/password';
-import { parsePagination } from '../../shared/utils';
+import { parsePagination, getCurrentTimeInTimezone, getDayOfWeekInTimezone } from '../../shared/utils';
+import { getEffectiveSchedule } from '../../shared/schedule.utils';
 import { validateImageFile, uploadFile, deleteFile, buildAvatarKey, extractKeyFromUrl } from '../../shared/storage';
 import { logger } from '../../config/logger';
 import { logAudit } from '../../shared/audit';
 import type { AuthenticatedUser } from '../../types/api.types';
+import type { CreatePersonInput, UpdatePersonInput, UpdateProfileInput } from './person.validator';
 
 function getRepository(companyId: string): PersonRepository {
   return new PersonRepository(prisma, companyId);
@@ -33,7 +35,10 @@ async function notifyWorkerTeamAssignment(
     const personRepo = new PersonRepository(prisma, companyId);
     const notificationRepo = new NotificationRepository(prisma, companyId);
 
-    const team = await teamRepo.findById(teamId);
+    const [team, person] = await Promise.all([
+      teamRepo.findById(teamId),
+      personRepo.findById(personId),
+    ]);
     if (!team) return;
 
     // Get team leader name
@@ -45,17 +50,18 @@ async function notifyWorkerTeamAssignment(
       }
     }
 
-    // Determine when first check-in is required
-    const checkInStart = team.check_in_start || '06:00';
-    const checkInEnd = team.check_in_end || '10:00';
-    const workDays = team.work_days?.split(',') || ['1', '2', '3', '4', '5'];
+    // Resolve effective schedule (person override → team default)
+    const schedule = getEffectiveSchedule(
+      { work_days: person?.work_days, check_in_start: person?.check_in_start, check_in_end: person?.check_in_end },
+      { work_days: team.work_days ?? '1,2,3,4,5', check_in_start: team.check_in_start ?? '06:00', check_in_end: team.check_in_end ?? '10:00' }
+    );
+    const checkInStart = schedule.checkInStart;
+    const checkInEnd = schedule.checkInEnd;
+    const workDays = schedule.workDays;
 
-    // Get current time in company timezone
-    const now = new Date();
-    const currentTime = now.toLocaleTimeString('en-US', { timeZone: timezone, hour12: false, hour: '2-digit', minute: '2-digit' });
-    const currentDayOfWeek = now.toLocaleDateString('en-US', { timeZone: timezone, weekday: 'short' });
-    const dayMap: Record<string, string> = { 'Sun': '0', 'Mon': '1', 'Tue': '2', 'Wed': '3', 'Thu': '4', 'Fri': '5', 'Sat': '6' };
-    const currentDayNum = dayMap[currentDayOfWeek] || '1';
+    // Get current time and day in company timezone (using centralized Luxon utilities)
+    const currentTime = getCurrentTimeInTimezone(timezone);
+    const currentDayNum = getDayOfWeekInTimezone(timezone).toString();
 
     // Check if today is a work day and check-in window is still open
     const isTodayWorkDay = workDays.includes(currentDayNum);
@@ -91,14 +97,26 @@ async function notifyWorkerTeamAssignment(
   }
 }
 
+const VALID_ROLES = ['ADMIN', 'WHS', 'SUPERVISOR', 'TEAM_LEAD', 'WORKER'] as const;
+type ValidRole = typeof VALID_ROLES[number];
+
 export async function listPersons(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const { page, limit } = parsePagination(c.req.query('page'), c.req.query('limit'));
   const includeInactive = c.req.query('includeInactive') === 'true';
   const availableOnly = c.req.query('availableOnly') === 'true';
   const excludeTeamId = c.req.query('excludeTeamId') as string | undefined;
-  const role = c.req.query('role') as 'ADMIN' | 'SUPERVISOR' | 'TEAM_LEAD' | 'WORKER' | undefined;
+  const roleParam = c.req.query('role');
   const search = c.req.query('search')?.trim();
+
+  // Validate role query param at runtime
+  let role: ValidRole | undefined;
+  if (roleParam) {
+    if (!VALID_ROLES.includes(roleParam as ValidRole)) {
+      throw new AppError('VALIDATION_ERROR', `Invalid role filter: ${roleParam}`, 400);
+    }
+    role = roleParam as ValidRole;
+  }
 
   const repository = getRepository(companyId);
   const result = await repository.findAll({ page, limit, includeInactive, role, availableOnly, excludeTeamId, search });
@@ -109,7 +127,7 @@ export async function listPersons(c: Context): Promise<Response> {
 export async function createPerson(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const userId = c.get('userId') as string;
-  const data = await c.req.json();
+  const data = c.req.valid('json' as never) as CreatePersonInput;
 
   const repository = getRepository(companyId);
 
@@ -145,30 +163,24 @@ export async function createPerson(c: Context): Promise<Response> {
     dateOfBirth: data.dateOfBirth,
   };
 
-  try {
-    const result = await repository.create(personData);
+  const result = await repository.create(personData);
 
-    // Send notification if worker was assigned to a team (non-blocking)
-    if (data.teamId && result.id) {
-      notifyWorkerTeamAssignment(companyId, result.id, data.teamId, true, c.get('companyTimezone') as string);
-    }
-
-    // Audit person creation (non-blocking)
-    logAudit({
-      companyId,
-      personId: userId,
-      action: 'CREATE_PERSON',
-      entityType: 'PERSON',
-      entityId: result.id,
-      details: { email: data.email, role: data.role },
-    });
-
-    return c.json({ success: true, data: result }, 201);
-  } catch (error) {
-    // Repository now throws AppError directly for FK violations
-    if (error instanceof AppError) throw error;
-    throw error;
+  // Send notification if worker was assigned to a team (non-blocking)
+  if (data.teamId && result.id) {
+    notifyWorkerTeamAssignment(companyId, result.id, data.teamId, true, c.get('companyTimezone') as string);
   }
+
+  // Audit person creation (non-blocking)
+  logAudit({
+    companyId,
+    personId: userId,
+    action: 'CREATE_PERSON',
+    entityType: 'PERSON',
+    entityId: result.id,
+    details: { email: data.email, role: data.role },
+  });
+
+  return c.json({ success: true, data: result }, 201);
 }
 
 export async function getPersonById(c: Context): Promise<Response> {
@@ -193,7 +205,7 @@ export async function updatePerson(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const userId = c.get('userId') as string;
   const id = c.req.param('id');
-  const data = await c.req.json();
+  const data = c.req.valid('json' as never) as UpdatePersonInput;
 
   if (!id) {
     throw new AppError('VALIDATION_ERROR', 'Person ID is required', 400);
@@ -207,6 +219,36 @@ export async function updatePerson(c: Context): Promise<Response> {
     throw new AppError('NOT_FOUND', 'Person not found', 404);
   }
 
+  // Prevent self-demotion or self-deactivation
+  if (id === userId) {
+    if (data.role !== undefined && data.role !== existing.role) {
+      throw new AppError('FORBIDDEN', 'You cannot change your own role', 403);
+    }
+    if (data.isActive === false) {
+      throw new AppError('FORBIDDEN', 'You cannot deactivate your own account', 403);
+    }
+  }
+
+  // Determine the effective role after this update
+  const effectiveRole = data.role ?? existing.role;
+
+  // Workers must be assigned to a team
+  if (effectiveRole === 'WORKER') {
+    const effectiveTeamId = data.teamId !== undefined ? data.teamId : existing.team_id;
+    if (!effectiveTeamId) {
+      throw new AppError('TEAM_REQUIRED', 'Team is required for workers', 400);
+    }
+  }
+
+  // Validate team exists if teamId is being changed
+  if (data.teamId !== undefined && data.teamId !== null && data.teamId !== existing.team_id) {
+    const teamRepository = new TeamRepository(prisma, companyId);
+    const team = await teamRepository.findById(data.teamId);
+    if (!team) {
+      throw new AppError('INVALID_TEAM', 'Team not found', 400);
+    }
+  }
+
   // Check if team is being changed
   const teamChanged = data.teamId !== undefined && data.teamId !== existing.team_id;
   const isNewAssignment = !existing.team_id;
@@ -218,6 +260,13 @@ export async function updatePerson(c: Context): Promise<Response> {
     delete updateData.teamId;
   }
 
+  // Clear schedule overrides when role changes away from WORKER
+  if (data.role !== undefined && data.role !== 'WORKER' && existing.role === 'WORKER') {
+    updateData.workDays = null;
+    updateData.checkInStart = null;
+    updateData.checkInEnd = null;
+  }
+
   const result = await repository.update(id, updateData);
 
   // Send notification if worker was assigned to a new team (non-blocking)
@@ -225,14 +274,21 @@ export async function updatePerson(c: Context): Promise<Response> {
     notifyWorkerTeamAssignment(companyId, id, data.teamId, isNewAssignment, c.get('companyTimezone') as string);
   }
 
-  // Audit person update (non-blocking)
+  // Audit person update (non-blocking) — only log changed fields
+  const auditDetails: Record<string, unknown> = {};
+  if (data.firstName !== undefined) auditDetails.firstName = data.firstName;
+  if (data.lastName !== undefined) auditDetails.lastName = data.lastName;
+  if (data.role !== undefined) auditDetails.role = data.role;
+  if (data.teamId !== undefined) auditDetails.teamId = data.teamId;
+  if (data.isActive !== undefined) auditDetails.isActive = data.isActive;
+
   logAudit({
     companyId,
     personId: userId,
     action: 'UPDATE_PERSON',
     entityType: 'PERSON',
     entityId: id,
-    details: data,
+    details: auditDetails,
   });
 
   return c.json({ success: true, data: result });
@@ -255,7 +311,7 @@ export async function getCurrentProfile(c: Context): Promise<Response> {
 export async function updateProfile(c: Context): Promise<Response> {
   const user = c.get('user') as AuthenticatedUser;
   const companyId = c.get('companyId') as string;
-  const data = await c.req.json();
+  const data = c.req.valid('json' as never) as UpdateProfileInput;
 
   const repository = getRepository(companyId);
 

@@ -10,6 +10,7 @@ import {
   getDayOfWeekInTimezone,
 } from '../../shared/utils';
 import { checkHolidayForDate, buildHolidayDateSet } from '../../shared/holiday.utils';
+import { getEffectiveSchedule } from '../../shared/schedule.utils';
 
 // Helper to convert readiness level to category
 function levelToCategory(level: string): 'ready' | 'modified_duty' | 'needs_attention' | 'not_ready' {
@@ -37,11 +38,14 @@ export class DashboardService {
     const todayStr = getTodayInTimezone(timezone);
     const today = parseDateInTimezone(todayStr, timezone);
 
-    // Get worker's assignment date and team schedule
-    const person = await prisma.person.findUnique({
-      where: { id: personId },
+    // Get worker's assignment date, personal overrides, and team schedule
+    const person = await prisma.person.findFirst({
+      where: { id: personId, company_id: this.companyId },
       select: {
         team_assigned_at: true,
+        work_days: true,
+        check_in_start: true,
+        check_in_end: true,
         team: { select: { work_days: true, check_in_start: true, check_in_end: true } },
       },
     });
@@ -49,11 +53,14 @@ export class DashboardService {
     const teamAssignedAt = person?.team_assigned_at
       ? parseDateInTimezone(formatDateInTimezone(new Date(person.team_assigned_at), timezone), timezone)
       : null;
-    const workDays = person?.team?.work_days
-      ? person.team.work_days.split(',').map(Number)
-      : [1, 2, 3, 4, 5]; // Default Mon-Fri
-    const checkInStart = person?.team?.check_in_start || '06:00';
-    const checkInEnd = person?.team?.check_in_end || '10:00';
+    // Resolve effective schedule: person override → team default → hardcoded fallback
+    const effectiveSchedule = getEffectiveSchedule(
+      { work_days: person?.work_days, check_in_start: person?.check_in_start, check_in_end: person?.check_in_end },
+      { work_days: person?.team?.work_days ?? '1,2,3,4,5', check_in_start: person?.team?.check_in_start ?? '06:00', check_in_end: person?.team?.check_in_end ?? '10:00' }
+    );
+    const workDays = effectiveSchedule.workDays.map(Number);
+    const checkInStart = effectiveSchedule.checkInStart;
+    const checkInEnd = effectiveSchedule.checkInEnd;
 
     // Determine today's schedule context
     const currentTime = getCurrentTimeInTimezone(timezone);
@@ -69,6 +76,7 @@ export class DashboardService {
     const windowClosed = isWorkDay && currentTime > checkInEnd;
 
     // Get all check-ins for last 30 days in one query (for streak + weekly trend)
+    // Select only fields used downstream — skips 10 unused columns per row
     const recentCheckIns = await prisma.checkIn.findMany({
       where: {
         company_id: this.companyId,
@@ -76,6 +84,17 @@ export class DashboardService {
         check_in_date: {
           gte: new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000),
         },
+      },
+      select: {
+        id: true,
+        check_in_date: true,
+        readiness_score: true,
+        readiness_level: true,
+        hours_slept: true,
+        sleep_quality: true,
+        physical_condition: true,
+        stress_level: true,
+        created_at: true,
       },
       orderBy: { check_in_date: 'desc' },
     });
@@ -124,11 +143,12 @@ export class DashboardService {
       c => formatDateInTimezone(c.check_in_date, timezone) === todayStr
     );
 
-    // Calculate streak - count consecutive days backwards from today
-    // Holidays and non-work days don't break the streak (they are skipped)
+    // Calculate streak - count consecutive work days with check-ins backwards
+    // Start from yesterday (i=1), then optionally add today if checked in.
+    // This avoids the inconsistency where today counts only if already checked in.
+    // Holidays and non-work days don't break the streak (they are skipped).
     let streak = 0;
-    let streakStarted = false;
-    for (let i = 0; i < 30; i++) {
+    for (let i = 1; i <= 30; i++) {
       const checkDate = new Date(today.getTime() - i * 24 * 60 * 60 * 1000);
       const dateStr = formatDateInTimezone(checkDate, timezone);
       const dow = getDayOfWeekInTimezone(timezone, dateStr);
@@ -140,10 +160,14 @@ export class DashboardService {
 
       if (checkInDates.has(dateStr)) {
         streak++;
-        streakStarted = true;
-      } else if (streakStarted) {
+      } else {
         break; // Streak broken on a required day with no check-in
       }
+    }
+
+    // Add today to streak if worker already checked in today
+    if (checkInDates.has(todayStr)) {
+      streak++;
     }
 
     // Weekly trend - only show days from assignment date onwards
@@ -273,6 +297,7 @@ export class DashboardService {
     // Run independent queries in parallel for better performance
     const [teamMembers, teamCheckIns, holidayCheck] = await Promise.all([
       // Get WORKER members of the team (supervisors don't check-in)
+      // Include schedule override fields to determine per-worker effective schedule
       prisma.person.findMany({
         where: {
           company_id: this.companyId,
@@ -280,16 +305,25 @@ export class DashboardService {
           role: 'WORKER',
           is_active: true,
         },
-        select: { id: true, first_name: true, last_name: true, email: true, team_assigned_at: true },
+        select: {
+          id: true, first_name: true, last_name: true, email: true, team_assigned_at: true,
+          work_days: true, check_in_start: true, check_in_end: true,
+        },
       }),
       // Get today's check-ins for team workers
+      // Member info comes from teamMembers query — no person include needed
       prisma.checkIn.findMany({
         where: {
           company_id: this.companyId,
           check_in_date: today,
           person: { team_id: ledTeam.id, role: 'WORKER' },
         },
-        include: { person: { select: { id: true, first_name: true, last_name: true } } },
+        select: {
+          person_id: true,
+          readiness_score: true,
+          readiness_level: true,
+          created_at: true,
+        },
       }),
       // Check if today is a company holiday
       checkHolidayForDate(prisma, this.companyId, todayStr),
@@ -305,16 +339,13 @@ export class DashboardService {
       return assignedStr === todayStr;
     };
 
-    // Determine if check-in window is closed (for missed status)
+    // Current time context (shared across all workers)
     const currentTime = getCurrentTimeInTimezone(timezone);
-    const checkInEnd = ledTeam.check_in_end || '10:00';
-    const workDays = ledTeam.work_days ? ledTeam.work_days.split(',') : ['1', '2', '3', '4', '5'];
     const dayOfWeek = getDayOfWeekInTimezone(timezone).toString();
-    const isWorkDay = workDays.includes(dayOfWeek) && !holidayCheck.isHoliday;
-    const windowClosed = currentTime > checkInEnd;
 
-    // Build member statuses with proper status handling
+    // Build member statuses with per-worker schedule overrides
     let newlyAssignedCount = 0;
+    let notRequiredCount = 0;
     let actualPending = 0;
     let missedCount = 0;
 
@@ -322,19 +353,30 @@ export class DashboardService {
       const checkIn = checkInMap.get(member.id);
       const assignedToday = isAssignedToday(member.team_assigned_at);
 
+      // Per-worker effective schedule (person override → team default)
+      const memberSchedule = getEffectiveSchedule(
+        { work_days: member.work_days, check_in_start: member.check_in_start, check_in_end: member.check_in_end },
+        { work_days: ledTeam.work_days ?? '1,2,3,4,5', check_in_start: ledTeam.check_in_start ?? '06:00', check_in_end: ledTeam.check_in_end ?? '10:00' }
+      );
+      const memberIsWorkDay = memberSchedule.workDays.includes(dayOfWeek) && !holidayCheck.isHoliday;
+      const memberWindowClosed = currentTime > memberSchedule.checkInEnd;
+
       // Determine status: submitted > not_required (holiday/new/day off) > missed (window closed) > pending
       let status: 'submitted' | 'pending' | 'not_required' | 'missed';
       if (checkIn) {
         status = 'submitted';
       } else if (holidayCheck.isHoliday) {
         status = 'not_required';
-      } else if (assignedToday && windowClosed) {
+        notRequiredCount++;
+      } else if (assignedToday && memberWindowClosed) {
         // Assigned today but window already closed - not penalized
         status = 'not_required';
         newlyAssignedCount++;
-      } else if (!isWorkDay) {
+        notRequiredCount++;
+      } else if (!memberIsWorkDay) {
         status = 'not_required';
-      } else if (windowClosed) {
+        notRequiredCount++;
+      } else if (memberWindowClosed) {
         status = 'missed';
         missedCount++;
       } else {
@@ -359,8 +401,8 @@ export class DashboardService {
       ? Math.round(teamCheckIns.reduce((sum, c) => sum + c.readiness_score, 0) / teamCheckIns.length)
       : 0;
 
-    // Expected check-ins = team size minus newly assigned (who aren't required today)
-    const expectedCheckIns = teamMembers.length - newlyAssignedCount;
+    // Expected check-ins = team size minus workers not required today (day off, holiday, newly assigned)
+    const expectedCheckIns = teamMembers.length - notRequiredCount;
 
     // Compliance rate: submitted / expected (avoid division by zero)
     const complianceRate = expectedCheckIns > 0
@@ -504,8 +546,9 @@ export class DashboardService {
     const totalWorkers = teamSummaries.reduce((sum, t) => sum + t.workerCount, 0);
     const totalCheckIns = teamSummaries.reduce((sum, t) => sum + t.todayCheckIns, 0);
     const totalPending = teamSummaries.reduce((sum, t) => sum + t.pendingCheckIns, 0);
-    const overallAvgReadiness = teamSummaries.length > 0
-      ? Math.round(teamSummaries.reduce((sum, t) => sum + t.avgReadiness, 0) / teamSummaries.length)
+    // Weighted average: use raw check-in scores (not average-of-averages)
+    const overallAvgReadiness = checkInsByPerson.length > 0
+      ? Math.round(checkInsByPerson.reduce((sum, ci) => sum + ci.readiness_score, 0) / checkInsByPerson.length)
       : 0;
 
     return {
@@ -522,33 +565,29 @@ export class DashboardService {
   async getSummary(): Promise<AdminDashboardSummary> {
     const companyFilter = { company_id: this.companyId };
 
-    const [
-      activeTeams,
-      inactiveTeams,
-      totalWorkers,
-      totalTeamLeads,
-      totalSupervisors,
-      unassignedWorkers,
-    ] = await Promise.all([
-      prisma.team.count({
+    // 3 queries instead of 6 — groupBy consolidates teams by is_active and persons by role
+    const [teamCounts, roleCounts, unassignedWorkers] = await Promise.all([
+      prisma.team.groupBy({
+        by: ['is_active'],
+        where: companyFilter,
+        _count: { id: true },
+      }),
+      prisma.person.groupBy({
+        by: ['role'],
         where: { ...companyFilter, is_active: true },
+        _count: { id: true },
       }),
-      prisma.team.count({
-        where: { ...companyFilter, is_active: false },
-      }),
-      prisma.person.count({
-        where: { ...companyFilter, role: 'WORKER', is_active: true },
-      }),
-      prisma.person.count({
-        where: { ...companyFilter, role: 'TEAM_LEAD', is_active: true },
-      }),
-      prisma.person.count({
-        where: { ...companyFilter, role: 'SUPERVISOR', is_active: true },
-      }),
+      // Kept separate — unassigned has extra team_id IS NULL condition
       prisma.person.count({
         where: { ...companyFilter, role: 'WORKER', is_active: true, team_id: null },
       }),
     ]);
+
+    const activeTeams = teamCounts.find(t => t.is_active)?._count.id ?? 0;
+    const inactiveTeams = teamCounts.find(t => !t.is_active)?._count.id ?? 0;
+    const totalWorkers = roleCounts.find(r => r.role === 'WORKER')?._count.id ?? 0;
+    const totalTeamLeads = roleCounts.find(r => r.role === 'TEAM_LEAD')?._count.id ?? 0;
+    const totalSupervisors = roleCounts.find(r => r.role === 'SUPERVISOR')?._count.id ?? 0;
 
     return {
       totalTeams: activeTeams + inactiveTeams,
@@ -577,69 +616,49 @@ export class DashboardService {
       throw new AppError('NOT_FOUND', 'Team not found', 404);
     }
 
-    const [
-      memberCount,
-      checkedInCount,
-      greenCount,
-      yellowCount,
-      redCount,
-    ] = await Promise.all([
+    // 2 queries instead of 6 — groupBy consolidates counts + avg in one scan
+    const [memberCount, readinessGroups] = await Promise.all([
       prisma.person.count({
         where: { company_id: this.companyId, team_id: teamId, is_active: true },
       }),
-      prisma.checkIn.count({
+      prisma.checkIn.groupBy({
+        by: ['readiness_level'],
         where: {
           company_id: this.companyId,
           check_in_date: today,
           person: { team_id: teamId },
         },
-      }),
-      prisma.checkIn.count({
-        where: {
-          company_id: this.companyId,
-          check_in_date: today,
-          person: { team_id: teamId },
-          readiness_level: 'GREEN',
-        },
-      }),
-      prisma.checkIn.count({
-        where: {
-          company_id: this.companyId,
-          check_in_date: today,
-          person: { team_id: teamId },
-          readiness_level: 'YELLOW',
-        },
-      }),
-      prisma.checkIn.count({
-        where: {
-          company_id: this.companyId,
-          check_in_date: today,
-          person: { team_id: teamId },
-          readiness_level: 'RED',
-        },
+        _count: { id: true },
+        _avg: { readiness_score: true },
       }),
     ]);
 
-    const avgResult = await prisma.checkIn.aggregate({
-      where: {
-        company_id: this.companyId,
-        check_in_date: today,
-        person: { team_id: teamId },
-      },
-      _avg: { readiness_score: true },
-    });
+    // Derive totals from the single groupBy result
+    let checkedInCount = 0;
+    let weightedScoreSum = 0;
+    const readinessDistribution = { green: 0, yellow: 0, red: 0 };
+
+    for (const group of readinessGroups) {
+      const count = group._count.id;
+      checkedInCount += count;
+      weightedScoreSum += (group._avg.readiness_score ?? 0) * count;
+
+      if (group.readiness_level === 'GREEN') readinessDistribution.green = count;
+      else if (group.readiness_level === 'YELLOW') readinessDistribution.yellow = count;
+      else if (group.readiness_level === 'RED') readinessDistribution.red = count;
+    }
+
+    const averageReadiness = checkedInCount > 0
+      ? Math.round(weightedScoreSum / checkedInCount)
+      : 0;
 
     return {
       teamId: team.id,
       teamName: team.name,
       memberCount,
       checkedInCount,
-      averageReadiness: Math.round(avgResult._avg.readiness_score ?? 0),
-      readinessDistribution: {
-        green: greenCount,
-        yellow: yellowCount,
-        red: redCount,
-      },
+      averageReadiness,
+      readinessDistribution,
     };
   }
 

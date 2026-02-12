@@ -1,7 +1,14 @@
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { EmptyState } from '@/components/common/EmptyState';
 import { Users } from 'lucide-react';
-import { SEVERITY_COLORS } from './chartConfig';
 import type { TeamIncidentBreakdown } from '@/types/whs-analytics.types';
 
 interface TeamIncidentChartProps {
@@ -11,11 +18,18 @@ interface TeamIncidentChartProps {
 const COLUMNS = [
   { key: 'teamName', label: 'TEAM', align: 'left' as const },
   { key: 'count', label: 'TOTAL', align: 'right' as const },
-  { key: 'low', label: 'LOW', align: 'right' as const, color: SEVERITY_COLORS.LOW },
-  { key: 'medium', label: 'MEDIUM', align: 'right' as const, color: SEVERITY_COLORS.MEDIUM },
-  { key: 'high', label: 'HIGH', align: 'right' as const, color: SEVERITY_COLORS.HIGH },
-  { key: 'critical', label: 'CRITICAL', align: 'right' as const, color: SEVERITY_COLORS.CRITICAL },
+  { key: 'low', label: 'LOW', align: 'right' as const, severity: 'low' as const },
+  { key: 'medium', label: 'MEDIUM', align: 'right' as const, severity: 'medium' as const },
+  { key: 'high', label: 'HIGH', align: 'right' as const, severity: 'high' as const },
+  { key: 'critical', label: 'CRITICAL', align: 'right' as const, severity: 'critical' as const },
 ];
+
+const SEVERITY_DOT_CLASS: Record<'low' | 'medium' | 'high' | 'critical', string> = {
+  low: 'bg-blue-300',
+  medium: 'bg-amber-300',
+  high: 'bg-orange-300',
+  critical: 'bg-red-300',
+};
 
 export function TeamIncidentChart({ data }: TeamIncidentChartProps) {
   const hasData = data.length > 0;
@@ -40,55 +54,53 @@ export function TeamIncidentChart({ data }: TeamIncidentChartProps) {
             icon={<Users className="h-10 w-10" />}
           />
         ) : (
-          <div className="overflow-x-auto -mx-6">
-            <table className="w-full min-w-[500px]">
-              <thead>
-                <tr className="border-b border-border">
+          <div className="-mx-6 overflow-x-auto">
+            <Table className="min-w-[500px]">
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
                   {COLUMNS.map((col) => (
-                    <th
+                    <TableHead
                       key={col.key}
-                      className={`px-6 py-2.5 text-xs font-semibold tracking-wider text-muted-foreground uppercase ${
-                        col.align === 'right' ? 'text-right' : 'text-left'
-                      }`}
+                      className={col.align === 'right' ? 'text-right' : 'text-left'}
                     >
-                      {col.color ? (
+                      {col.severity ? (
                         <span className="inline-flex items-center gap-1.5">
                           <span
-                            className="inline-block h-2 w-2 rounded-full"
-                            style={{ backgroundColor: col.color }}
+                            className={`inline-block h-2 w-2 rounded-full ${SEVERITY_DOT_CLASS[col.severity]}`}
+                            aria-hidden="true"
                           />
                           {col.label}
                         </span>
                       ) : (
                         col.label
                       )}
-                    </th>
+                    </TableHead>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {data.map((team) => (
-                  <tr key={team.teamId} className="border-b border-border/50 last:border-0">
-                    <td className="px-6 py-3 text-sm font-medium">{team.teamName}</td>
-                    <td className="px-6 py-3 text-sm font-semibold tabular-nums text-right">
+                  <TableRow key={team.teamId}>
+                    <TableCell className="text-sm font-medium">{team.teamName}</TableCell>
+                    <TableCell className="text-right text-sm font-semibold tabular-nums">
                       {team.count}
-                    </td>
-                    <td className="px-6 py-3 text-sm tabular-nums text-right text-muted-foreground">
+                    </TableCell>
+                    <TableCell className="text-right text-sm text-muted-foreground tabular-nums">
                       {team.severityBreakdown.low}
-                    </td>
-                    <td className="px-6 py-3 text-sm tabular-nums text-right text-muted-foreground">
+                    </TableCell>
+                    <TableCell className="text-right text-sm text-muted-foreground tabular-nums">
                       {team.severityBreakdown.medium}
-                    </td>
-                    <td className="px-6 py-3 text-sm tabular-nums text-right text-muted-foreground">
+                    </TableCell>
+                    <TableCell className="text-right text-sm text-muted-foreground tabular-nums">
                       {team.severityBreakdown.high}
-                    </td>
-                    <td className="px-6 py-3 text-sm tabular-nums text-right text-muted-foreground">
+                    </TableCell>
+                    <TableCell className="text-right text-sm text-muted-foreground tabular-nums">
                       {team.severityBreakdown.critical}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         )}
       </CardContent>

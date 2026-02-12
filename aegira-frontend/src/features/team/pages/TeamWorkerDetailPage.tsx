@@ -4,10 +4,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/common/PageHeader';
-import { ErrorMessage } from '@/components/common/ErrorMessage';
+import { PageLoader } from '@/components/common/PageLoader';
 import { MemberInfoCard } from '../components/MemberInfoCard';
 import { MemberCheckInTable } from '../components/MemberCheckInTable';
 import { MemberMissedCheckInTable } from '../components/MemberMissedCheckInTable';
+import { usePerson } from '@/features/person/hooks/usePersons';
 import type { Person } from '@/types/person.types';
 import type { PaginatedResponse } from '@/types/common.types';
 
@@ -24,10 +25,19 @@ export function TeamWorkerDetailPage() {
   const cachedData = queryClient.getQueryData<PaginatedResponse<Person>>(['team', 'my-members']);
   const cachedMember = cachedData?.items.find((m) => m.id === workerId);
 
-  const person = stateData ?? cachedMember;
+  // 3. Fallback: fetch from API (for WHS or direct URL access)
+  const { data: fetchedPerson, isLoading, error } = usePerson(
+    !stateData && !cachedMember ? workerId! : ''
+  );
 
-  if (!person) {
-    return <ErrorMessage message="Member not found. Please go back and try again." />;
+  const person = stateData ?? cachedMember ?? fetchedPerson;
+
+  if (isLoading) {
+    return <PageLoader isLoading={true} skeleton="detail"><></></PageLoader>;
+  }
+
+  if (!person || error) {
+    return <PageLoader isLoading={false} error={error || new Error('Member not found')}><></></PageLoader>;
   }
 
   return (

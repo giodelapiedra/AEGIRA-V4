@@ -1,5 +1,5 @@
 // MissedCheckIn Repository - Database Access
-import type { PrismaClient, MissedCheckIn, MissedCheckInStatus, Prisma, Role } from '@prisma/client';
+import type { PrismaClient, MissedCheckIn, Prisma, Role } from '@prisma/client';
 import { BaseRepository } from '../../shared/base.repository';
 import { calculateSkip, paginate } from '../../shared/utils';
 import type { PaginationParams, PaginatedResponse } from '../../types/api.types';
@@ -11,6 +11,8 @@ export interface CreateMissedCheckInData {
   scheduleWindow: string;
   // State snapshot fields (optional for backward compatibility)
   workerRoleAtMiss?: Role | null;
+  teamLeaderIdAtMiss?: string | null;
+  teamLeaderNameAtMiss?: string | null;
   dayOfWeek?: number;
   weekOfMonth?: number;
   daysSinceLastCheckIn?: number | null;
@@ -28,7 +30,6 @@ export interface CreateMissedCheckInData {
 }
 
 export interface MissedCheckInFilters extends PaginationParams {
-  status?: MissedCheckInStatus;
   teamIds?: string[];
   personId?: string;
 }
@@ -60,6 +61,8 @@ export class MissedCheckInRepository extends BaseRepository {
         schedule_window: r.scheduleWindow,
         // State snapshot fields
         worker_role_at_miss: r.workerRoleAtMiss ?? null,
+        team_leader_id_at_miss: r.teamLeaderIdAtMiss ?? null,
+        team_leader_name_at_miss: r.teamLeaderNameAtMiss ?? null,
         day_of_week: r.dayOfWeek ?? null,
         week_of_month: r.weekOfMonth ?? null,
         days_since_last_check_in: r.daysSinceLastCheckIn ?? null,
@@ -88,7 +91,6 @@ export class MissedCheckInRepository extends BaseRepository {
   ): Promise<PaginatedResponse<MissedCheckInWithRelations>> {
     const where: Prisma.MissedCheckInWhereInput = {
       company_id: this.companyId,
-      ...(filters.status && { status: filters.status }),
       ...(filters.teamIds && filters.teamIds.length > 0 && { team_id: { in: filters.teamIds } }),
       ...(filters.personId && { person_id: filters.personId }),
     };
@@ -112,64 +114,6 @@ export class MissedCheckInRepository extends BaseRepository {
     ]);
 
     return paginate(items as MissedCheckInWithRelations[], total, filters);
-  }
-
-  /**
-   * Count records grouped by status, optionally filtered by team.
-   */
-  async countByStatus(teamIds?: string[]): Promise<Record<string, number>> {
-    const where: Prisma.MissedCheckInWhereInput = {
-      company_id: this.companyId,
-      ...(teamIds && teamIds.length > 0 && { team_id: { in: teamIds } }),
-    };
-
-    const counts = await this.prisma.missedCheckIn.groupBy({
-      by: ['status'],
-      where,
-      _count: true,
-    });
-
-    const result: Record<string, number> = {
-      OPEN: 0,
-      INVESTIGATING: 0,
-      EXCUSED: 0,
-      RESOLVED: 0,
-    };
-
-    for (const c of counts) {
-      result[c.status] = c._count;
-    }
-
-    return result;
-  }
-
-  async findById(id: string): Promise<MissedCheckIn | null> {
-    return this.prisma.missedCheckIn.findFirst({
-      where: this.where({ id }),
-    });
-  }
-
-  async updateStatus(
-    id: string,
-    status: MissedCheckInStatus,
-    data: { notes?: string; resolvedBy?: string }
-  ): Promise<MissedCheckIn> {
-    const isTerminal = status === 'EXCUSED' || status === 'RESOLVED';
-
-    return this.prisma.missedCheckIn.update({
-      where: {
-        id,
-        company_id: this.companyId, // ✅ CRITICAL: Scope by company_id for multi-tenant security
-      },
-      data: {
-        status,
-        ...(data.notes !== undefined && { notes: data.notes }),
-        ...(isTerminal && data.resolvedBy && {
-          resolved_by: data.resolvedBy,
-          resolved_at: new Date(),
-        }),
-      },
-    });
   }
 
   /**

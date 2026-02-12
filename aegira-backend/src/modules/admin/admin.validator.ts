@@ -16,36 +16,26 @@ export const updateHolidaySchema = z.object({
 });
 
 export const updateSettingsSchema = z.object({
-  companyName: z.string().min(1).max(100).optional(),
-  timezone: z.string().optional(),
+  companyName: z.string().min(1).max(100).trim().optional(),
+  timezone: z.string().min(1).optional(),
   industry: z.string().optional(),
   businessRegistrationType: z.string().optional(),
   businessRegistrationNumber: z.string().optional(),
   businessType: z.string().optional(),
-  addressStreet: z.string().optional(),
-  addressCity: z.string().optional(),
-  addressPostalCode: z.string().optional(),
-  addressState: z.string().optional(),
-  addressCountry: z.string().optional(),
-  checkInWindowStart: z.string().optional(),
-  checkInWindowEnd: z.string().optional(),
-  reminderTime: z.string().optional(),
-  checkInDataRetentionDays: z.number().min(30).max(730).optional(),
-  auditLogRetentionDays: z.number().min(30).max(365).optional(),
-});
-
-export const rejectAmendmentSchema = z.object({
-  reason: z.string().min(1, 'Rejection reason is required').max(500),
+  addressStreet: z.string().max(200).optional(),
+  addressCity: z.string().max(100).optional(),
+  addressPostalCode: z.string().max(20).optional(),
+  addressState: z.string().max(100).optional(),
+  addressCountry: z.string().max(10).optional(),
 });
 
 export const updateUserRoleSchema = z.object({
-  role: z.enum(['WORKER', 'TEAM_LEAD', 'SUPERVISOR', 'ADMIN'], {
-    errorMap: () => ({ message: 'Role must be WORKER, TEAM_LEAD, SUPERVISOR, or ADMIN' }),
+  role: z.enum(['WORKER', 'TEAM_LEAD', 'SUPERVISOR', 'WHS', 'ADMIN'], {
+    errorMap: () => ({ message: 'Role must be WORKER, TEAM_LEAD, SUPERVISOR, WHS, or ADMIN' }),
   }),
 });
 
 export type CreateHolidayData = z.infer<typeof createHolidaySchema>;
 export type UpdateHolidayData = z.infer<typeof updateHolidaySchema>;
 export type UpdateSettingsData = z.infer<typeof updateSettingsSchema>;
-export type RejectAmendmentData = z.infer<typeof rejectAmendmentSchema>;
 export type UpdateUserRoleData = z.infer<typeof updateUserRoleSchema>;

@@ -11,6 +11,9 @@ const envSchema = z.object({
   // CORS
   CORS_ORIGINS: z.string().default('http://localhost:5173,http://localhost:3000'),
 
+  // Scheduler
+  ENABLE_SCHEDULER: z.coerce.boolean().default(true),
+
   // Cloudflare R2 Storage (defaults for dev, validated for production below)
   R2_ACCOUNT_ID: z.string().default(''),
   R2_ACCESS_KEY_ID: z.string().default(''),

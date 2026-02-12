@@ -37,7 +37,9 @@ import {
   ArrowUp,
   ArrowDown,
   Search,
+  Inbox,
 } from 'lucide-react';
+import { PAGINATION } from '@/lib/constants';
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -106,6 +108,7 @@ export function DataTable<TData, TValue>({
   });
 
   const displayTotal = totalCount ?? table.getFilteredRowModel().rows.length;
+  const rowCount = table.getRowModel().rows.length;
 
   return (
     <div className="space-y-4">
@@ -120,64 +123,80 @@ export function DataTable<TData, TValue>({
               onChange={(e) =>
                 table.getColumn(searchColumn)?.setFilterValue(e.target.value)
               }
-              className="pl-9 h-9"
+              className="h-9 border-border/70 pl-9"
+              aria-label="Search table records"
             />
           </div>
         </div>
       )}
 
       {/* Table with horizontal scroll on mobile */}
-      <div className="rounded-lg border bg-card overflow-hidden">
+      <div className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               {table.getHeaderGroups().map((headerGroup) => (
                 <TableRow key={headerGroup.id} className="hover:bg-transparent">
-                  {headerGroup.headers.map((header) => (
-                    <TableHead key={header.id} className="whitespace-nowrap">
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext()
-                          )}
-                    </TableHead>
-                  ))}
+                  {headerGroup.headers.map((header) => {
+                    const meta = header.column.columnDef.meta as { className?: string } | undefined;
+                    return (
+                      <TableHead
+                        key={header.id}
+                        className={`whitespace-nowrap ${meta?.className || ''}`}
+                      >
+                        {header.isPlaceholder
+                          ? null
+                          : flexRender(
+                              header.column.columnDef.header,
+                              header.getContext()
+                            )}
+                      </TableHead>
+                    );
+                  })}
                 </TableRow>
               ))}
             </TableHeader>
-            <TableBody>
+            <TableBody className="[&_tr:nth-child(even)]:bg-muted/[0.18]">
               {isLoading ? (
                 // Loading skeleton rows
                 Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={i} className="hover:bg-transparent">
                     {columns.map((_, j) => (
                       <TableCell key={j}>
-                        <div className="h-4 w-full max-w-[200px] animate-pulse rounded bg-muted" />
+                        <div className="h-4 w-full max-w-[200px] animate-pulse rounded bg-muted/70" />
                       </TableCell>
                     ))}
                   </TableRow>
                 ))
-              ) : table.getRowModel().rows?.length ? (
+              ) : rowCount ? (
                 table.getRowModel().rows.map((row) => (
                   <TableRow
                     key={row.id}
                     data-state={row.getIsSelected() && 'selected'}
                   >
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </TableCell>
-                    ))}
+                    {row.getVisibleCells().map((cell) => {
+                      const meta = cell.column.columnDef.meta as { className?: string } | undefined;
+                      return (
+                        <TableCell key={cell.id} className={meta?.className || ''}>
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </TableCell>
+                      );
+                    })}
                   </TableRow>
                 ))
               ) : (
                 <TableRow className="hover:bg-transparent">
                   <TableCell
                     colSpan={columns.length}
-                    className="h-32 text-center text-muted-foreground"
+                    className="h-40 py-10 text-center"
                   >
-                    {emptyMessage}
+                    <div className="mx-auto flex max-w-sm flex-col items-center gap-2 text-muted-foreground">
+                      <div className="rounded-full bg-muted p-2.5">
+                        <Inbox className="h-4 w-4" aria-hidden="true" />
+                      </div>
+                      <p className="text-sm font-medium text-foreground">{emptyMessage}</p>
+                      <p className="text-xs">Try adjusting your search or filters.</p>
+                    </div>
                   </TableCell>
                 </TableRow>
               )}
@@ -207,7 +226,8 @@ export function SortableHeader<TData>({
       variant="ghost"
       size="sm"
       onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-      className="-ml-3 h-8 font-medium text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground whitespace-nowrap"
+      className="-ml-3 h-8 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground focus-visible:ring-1"
+      aria-label={`Sort by ${String(children)}`}
     >
       {children}
       {sorted === 'asc' ? (
@@ -266,11 +286,11 @@ function DataTablePagination<TData>({
             value={String(pageSize)}
             onValueChange={(value) => table.setPageSize(Number(value))}
           >
-            <SelectTrigger className="h-8 w-[70px]">
+            <SelectTrigger className="h-8 w-[74px] border-border/70">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {[10, 20, 30, 50, 100].map((size) => (
+              {PAGINATION.PAGE_SIZE_OPTIONS.map((size) => (
                 <SelectItem key={size} value={String(size)}>
                   {size}
                 </SelectItem>
@@ -280,26 +300,28 @@ function DataTablePagination<TData>({
         </div>
 
         {/* Page navigation - centered on mobile */}
-        <div className="flex items-center justify-center gap-1">
+        <div className="flex items-center justify-center gap-1.5">
           <Button
             variant="outline"
             size="icon"
-            className="h-8 w-8"
+            className="h-9 w-9 sm:h-8 sm:w-8 border-border/70"
             onClick={() => table.setPageIndex(0)}
             disabled={!table.getCanPreviousPage()}
+            aria-label="Go to first page"
           >
             <ChevronsLeft className="h-4 w-4" />
           </Button>
           <Button
             variant="outline"
             size="icon"
-            className="h-8 w-8"
+            className="h-9 w-9 sm:h-8 sm:w-8 border-border/70"
             onClick={() => table.previousPage()}
             disabled={!table.getCanPreviousPage()}
+            aria-label="Go to previous page"
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <div className="flex items-center gap-1 px-2 min-w-[100px] justify-center">
+          <div className="flex min-w-[110px] items-center justify-center gap-1 rounded-md border border-border/70 bg-muted/40 px-2 py-1">
             <span className="text-sm font-medium">{pageIndex + 1}</span>
             <span className="text-sm text-muted-foreground">/</span>
             <span className="text-sm font-medium">{pageCount || 1}</span>
@@ -307,18 +329,20 @@ function DataTablePagination<TData>({
           <Button
             variant="outline"
             size="icon"
-            className="h-8 w-8"
+            className="h-9 w-9 sm:h-8 sm:w-8 border-border/70"
             onClick={() => table.nextPage()}
             disabled={!table.getCanNextPage()}
+            aria-label="Go to next page"
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
           <Button
             variant="outline"
             size="icon"
-            className="h-8 w-8"
+            className="h-9 w-9 sm:h-8 sm:w-8 border-border/70"
             onClick={() => table.setPageIndex(table.getPageCount() - 1)}
             disabled={!table.getCanNextPage()}
+            aria-label="Go to last page"
           >
             <ChevronsRight className="h-4 w-4" />
           </Button>

@@ -215,7 +215,7 @@ export function CaseDetailPage() {
                     variant="outline"
                     size="sm"
                     className="w-full"
-                    onClick={() => navigate(`/admin/incidents/${caseData.incident.id}`)}
+                    onClick={() => navigate(ROUTES.ADMIN_INCIDENT_DETAIL.replace(':id', caseData.incident.id))}
                   >
                     <ExternalLink className="h-4 w-4 mr-1" />
                     View Incident {formatIncidentNumber(caseData.incident.incidentNumber, caseData.createdAt)}

@@ -1,4 +1,6 @@
 // Prisma Client Configuration
+// Connection pool + query timeout: configure via DATABASE_URL query params:
+//   ?connection_limit=10&pool_timeout=10&statement_cache_size=100
 import { PrismaClient } from '@prisma/client';
 import { env } from './env';
 

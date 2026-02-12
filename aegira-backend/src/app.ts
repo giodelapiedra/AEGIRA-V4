@@ -1,6 +1,7 @@
 // AEGIRA Backend - Hono App Configuration
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { secureHeaders } from 'hono/secure-headers';
 import { loggerMiddleware } from './middleware/logger';
 import { AppError } from './shared/errors';
 import { logger } from './config/logger';
@@ -61,6 +62,7 @@ app.onError((err, c) => {
 });
 
 // Global middleware
+app.use('*', secureHeaders());
 app.use('*', cors({
   origin: env.CORS_ORIGINS.split(',').map((o) => o.trim()),
   credentials: true,

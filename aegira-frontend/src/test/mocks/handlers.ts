@@ -333,7 +333,6 @@ export const handlers = [
         totalWorkers: 25,
         activeToday: 20,
         avgReadiness: 78,
-        pendingAmendments: 3,
         checkInRate: 80,
         teamStats: [
           { teamId: 'team-1', teamName: 'Team Alpha', checkInRate: 90, avgReadiness: 82 },

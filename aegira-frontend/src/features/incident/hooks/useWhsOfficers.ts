@@ -11,16 +11,20 @@ import type { Person } from '@/types/person.types';
  */
 export function useWhsOfficers() {
   return useQuery({
-    queryKey: ['persons', 'whs-officers'],
+    queryKey: ['persons', 'whs-officers', 'WHS', 'ADMIN'],
     staleTime: STALE_TIMES.STANDARD,
     queryFn: async () => {
+      // Build query params properly
+      const whsParams = new URLSearchParams({ role: 'WHS', limit: '100' });
+      const adminParams = new URLSearchParams({ role: 'ADMIN', limit: '100' });
+
       // Fetch WHS and ADMIN users in parallel
       const [whsRes, adminRes] = await Promise.all([
         apiClient.get<PaginatedResponse<Person>>(
-          `${ENDPOINTS.PERSON.LIST}?role=WHS&limit=100`
+          `${ENDPOINTS.PERSON.LIST}?${whsParams.toString()}`
         ),
         apiClient.get<PaginatedResponse<Person>>(
-          `${ENDPOINTS.PERSON.LIST}?role=ADMIN&limit=100`
+          `${ENDPOINTS.PERSON.LIST}?${adminParams.toString()}`
         ),
       ]);
       // Merge and deduplicate by id

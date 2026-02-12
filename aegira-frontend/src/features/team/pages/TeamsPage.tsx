@@ -1,10 +1,9 @@
-import { useState, useDeferredValue, useEffect, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ColumnDef, PaginationState } from '@tanstack/react-table';
-import { Users, Plus, Search, MoreVertical } from 'lucide-react';
+import { Users, Plus, MoreVertical } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
@@ -15,6 +14,7 @@ import {
 import { DataTable, SortableHeader } from '@/components/ui/data-table';
 import { PageLoader } from '@/components/common/PageLoader';
 import { PageHeader } from '@/components/common/PageHeader';
+import { TableSearch } from '@/components/common/TableSearch';
 import { useTeams, type Team } from '@/features/team/hooks/useTeams';
 import { ROUTES } from '@/config/routes.config';
 import { buildRoute } from '@/lib/utils/route.utils';
@@ -49,7 +49,7 @@ const getColumns = (
     accessorKey: 'is_active',
     header: 'Status',
     cell: ({ row }) => (
-      <Badge variant={row.original.is_active ? 'success' : 'destructive'}>
+      <Badge variant={row.original.is_active ? 'success' : 'secondary'}>
         {row.original.is_active ? 'Active' : 'Inactive'}
       </Badge>
     ),
@@ -60,7 +60,7 @@ const getColumns = (
     cell: ({ row }) => (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon">
+          <Button variant="ghost" size="icon" aria-label="Team actions menu">
             <MoreVertical className="h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
@@ -89,24 +89,20 @@ export function TeamsPage() {
     pageIndex: 0,
     pageSize: 20,
   });
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
-  const deferredSearch = useDeferredValue(search);
 
   // Server-side pagination and search
   const { data, isLoading, error } = useTeams(
     pagination.pageIndex + 1, // API uses 1-based index
     pagination.pageSize,
     false, // includeInactive
-    deferredSearch
+    search
   );
 
-  // Reset pagination when deferred search changes
-  useEffect(() => {
+  const handleSearch = () => {
+    setSearch(searchInput.trim());
     setPagination((prev) => ({ ...prev, pageIndex: 0 }));
-  }, [deferredSearch]);
-
-  const handleSearchChange = (value: string) => {
-    setSearch(value);
   };
 
   // Memoize to prevent unnecessary re-renders
@@ -147,15 +143,12 @@ export function TeamsPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              <div className="relative w-full sm:max-w-xs">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search teams..."
-                  value={search}
-                  onChange={(e) => handleSearchChange(e.target.value)}
-                  className="pl-9 h-9"
-                />
-              </div>
+              <TableSearch
+                placeholder="Search teams..."
+                value={searchInput}
+                onChange={setSearchInput}
+                onSearch={handleSearch}
+              />
               <DataTable
                 columns={columns}
                 data={teams}

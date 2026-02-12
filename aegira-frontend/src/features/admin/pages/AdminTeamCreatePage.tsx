@@ -23,15 +23,37 @@ import { useToast } from '@/lib/hooks/use-toast';
 import { ROUTES } from '@/config/routes.config';
 import { WORK_DAYS_OPTIONS } from '@/types/team.types';
 
-const createTeamSchema = z.object({
-  name: z.string().min(1, 'Team name is required').max(100),
-  description: z.string().max(500).optional(),
-  leaderId: z.string().min(1, 'Team leader is required'),
-  supervisorId: z.string().optional().or(z.literal('')),
-  checkInStart: z.string().regex(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Invalid time format'),
-  checkInEnd: z.string().regex(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Invalid time format'),
-  workDays: z.array(z.string()).min(1, 'Select at least one work day'),
-});
+// Helper to compare HH:mm times
+function isEndTimeAfterStart(start: string, end: string): boolean {
+  const [startH, startM] = start.split(':').map(Number);
+  const [endH, endM] = end.split(':').map(Number);
+  return endH * 60 + endM > startH * 60 + startM;
+}
+
+const timeRegex = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
+
+const createTeamSchema = z
+  .object({
+    name: z.string().min(1, 'Team name is required').max(100),
+    description: z.string().max(500).optional(),
+    leaderId: z.string().min(1, 'Team leader is required'),
+    supervisorId: z.string().optional().or(z.literal('')),
+    checkInStart: z.string().regex(timeRegex, 'Invalid time format (HH:MM)'),
+    checkInEnd: z.string().regex(timeRegex, 'Invalid time format (HH:MM)'),
+    workDays: z.array(z.string()).min(1, 'Select at least one work day'),
+  })
+  .refine(
+    (data) => {
+      if (data.checkInStart && data.checkInEnd) {
+        return isEndTimeAfterStart(data.checkInStart, data.checkInEnd);
+      }
+      return true;
+    },
+    {
+      message: 'Check-in end time must be after start time',
+      path: ['checkInEnd'],
+    }
+  );
 
 type CreateTeamFormData = z.infer<typeof createTeamSchema>;
 
@@ -70,9 +92,9 @@ export function AdminTeamCreatePage() {
   const toggleWorkDay = (day: string) => {
     const current = selectedWorkDays;
     if (current.includes(day)) {
-      setValue('workDays', current.filter((d) => d !== day));
+      setValue('workDays', current.filter((d) => d !== day), { shouldValidate: true });
     } else {
-      setValue('workDays', [...current, day].sort());
+      setValue('workDays', [...current, day].sort(), { shouldValidate: true });
     }
   };
 

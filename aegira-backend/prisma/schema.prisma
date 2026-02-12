@@ -57,6 +57,14 @@ model Person {
   role                Role      @default(WORKER)
   team_id             String?
   team_assigned_at    DateTime? // When worker was assigned to current team
+
+  // Worker-level schedule override (optional)
+  // If set, overrides team schedule. If null, uses team schedule.
+  // Times and days interpreted in company timezone (same as team).
+  work_days           String? // CSV: 0=Sun, 1=Mon, ..., 6=Sat (e.g., "1,3,5")
+  check_in_start      String? // HH:mm format (e.g., "06:00")
+  check_in_end        String? // HH:mm format (e.g., "10:00")
+
   is_active           Boolean   @default(true)
   created_at          DateTime  @default(now())
   updated_at          DateTime  @updatedAt
@@ -158,6 +166,7 @@ model CheckIn {
   @@unique([person_id, check_in_date])
   @@index([company_id, check_in_date])
   @@index([company_id, person_id, check_in_date])
+  @@index([company_id, readiness_level, check_in_date]) // Analytics groupBy on readiness_level
   @@map("check_ins")
 }
 
@@ -166,18 +175,16 @@ model MissedCheckIn {
   company_id      String
   person_id       String
   team_id         String
-  missed_date     DateTime            @db.Date
-  status          MissedCheckInStatus @default(OPEN)
+  missed_date     DateTime @db.Date
   schedule_window String // e.g. "06:00 - 10:00"
-  notes           String?
-  resolved_by     String? // person_id of resolver
-  resolved_at     DateTime?
-  created_at      DateTime            @default(now())
+  created_at      DateTime @default(now())
   updated_at      DateTime            @updatedAt
 
   // ===== STATE SNAPSHOT FIELDS =====
   // Contextual snapshot - captured at detection time for analytics
   worker_role_at_miss      Role? // Worker's role (can change later)
+  team_leader_id_at_miss   String? // Team leader's person_id at time of miss
+  team_leader_name_at_miss String? // Team leader's full name snapshot
   day_of_week              Int? // 0=Sun, 6=Sat
   week_of_month            Int? // 1-5
   days_since_last_check_in Int? // null if first ever
@@ -202,10 +209,8 @@ model MissedCheckIn {
   team   Team   @relation(fields: [team_id], references: [id], onDelete: Cascade)
 
   @@unique([person_id, missed_date])
-  @@index([company_id, status])
   @@index([company_id, missed_date])
   @@index([team_id])
-  @@index([company_id, status, missed_date])
   @@map("missed_check_ins")
 }
 
@@ -223,6 +228,15 @@ model Event {
   payload     Json // Event data
   created_at  DateTime  @default(now())
 
+  // Event-time tracking (Phase 1)
+  event_time     DateTime // When event actually occurred (in worker's timezone)
+  ingested_at    DateTime // When server received it (UTC)
+  event_timezone String   // Timezone of event (e.g., "Asia/Manila")
+
+  // Late submission tracking (Phase 1)
+  is_late         Boolean @default(false) // Submitted after window closed
+  late_by_minutes Int?                    // Minutes after window close (null if on-time)
+
   // Relations
   company  Company  @relation(fields: [company_id], references: [id], onDelete: Cascade)
   person   Person?  @relation("PersonEvents", fields: [person_id], references: [id], onDelete: SetNull)
@@ -230,6 +244,9 @@ model Event {
 
   @@index([person_id]) // FK: onDelete SetNull — required for cascade
   @@index([company_id, entity_type, entity_id, created_at])
+  @@index([company_id, person_id, created_at]) // Person event history queries
+  @@index([company_id, event_time]) // Query by event time
+  @@index([company_id, person_id, event_time]) // Person event history by event time
   @@map("events")
 }
 
@@ -271,7 +288,9 @@ model Holiday {
   created_at   DateTime @default(now())
   updated_at   DateTime @updatedAt
 
-  @@index([company_id, date])
+  @@unique([company_id, date]) // Prevents duplicate holidays on same date per company
+  @@index([company_id, is_recurring]) // For recurring holiday queries
+  @@index([company_id, date]) // For date range queries
   @@map("holidays")
 }
 
@@ -324,9 +343,10 @@ model AuditLog {
   // Relations
   person Person? @relation(fields: [person_id], references: [id], onDelete: SetNull)
 
-  @@index([person_id]) // FK: onDelete SetNull — required for cascade
+  @@index([person_id])                          // FK: onDelete SetNull — required for cascade
   @@index([company_id, created_at])
   @@index([company_id, action])
+  @@index([company_id, entity_type, entity_id]) // Entity history lookup
   @@map("audit_logs")
 }
 
@@ -353,13 +373,6 @@ enum ReadinessLevel {
   RED
 }
 
-enum MissedCheckInStatus {
-  OPEN
-  INVESTIGATING
-  EXCUSED
-  RESOLVED
-}
-
 enum EventType {
   CHECK_IN_SUBMITTED
   CHECK_IN_UPDATED
@@ -375,6 +388,8 @@ enum EventType {
   CASE_CREATED
   CASE_UPDATED
   CASE_RESOLVED
+  MISSED_CHECK_IN_DETECTED
+  MISSED_CHECK_IN_RESOLVED
 }
 
 enum NotificationType {
@@ -459,11 +474,13 @@ model Incident {
 
   @@unique([company_id, incident_number])
   @@index([company_id, status])
-  @@index([company_id, status, created_at]) // Filtered list by status + sort
+  @@index([company_id, status, created_at])          // Filtered list by status + sort
   @@index([reporter_id])
-  @@index([reviewed_by]) // FK: onDelete SetNull — required for cascade
+  @@index([reviewed_by])                              // FK: onDelete SetNull — required for cascade
   @@index([company_id, created_at])
   @@index([company_id, reporter_id])
+  @@index([company_id, incident_type, created_at])    // Analytics groupBy on incident_type
+  @@index([company_id, severity, created_at])          // Analytics groupBy on severity
   @@map("incidents")
 }
 

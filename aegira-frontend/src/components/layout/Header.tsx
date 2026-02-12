@@ -14,6 +14,7 @@ import { NotificationBell } from '@/features/notifications/components/Notificati
 import { useAuth } from '@/lib/hooks/use-auth';
 import { useLogout } from '@/features/auth/hooks/useLogout';
 import { ROUTES } from '@/config/routes.config';
+import { getInitials } from '@/lib/utils/string.utils';
 
 export function Header() {
   const navigate = useNavigate();
@@ -24,15 +25,6 @@ export function Header() {
     logoutMutation.mutate();
   };
 
-  const getInitials = (name: string) => {
-    return name
-      .split(' ')
-      .map((part) => part[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2);
-  };
-
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center justify-end bg-background/50 backdrop-blur-xl px-6 transition-all duration-200">
       <div className="flex items-center gap-3">
@@ -40,7 +32,7 @@ export function Header() {
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="relative rounded-full">
+            <Button variant="ghost" size="icon" className="relative rounded-full" aria-label="User menu">
               <Avatar className="h-8 w-8">
                 {user?.profilePictureUrl && (
                   <AvatarImage src={user.profilePictureUrl} alt={`${user.firstName} ${user.lastName}`} />

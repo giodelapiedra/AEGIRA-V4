@@ -17,15 +17,8 @@ export function useLogout() {
       // Clear auth state first
       clearAuth();
 
-      // Remove all cached data including session
-      queryClient.removeQueries({ queryKey: ['auth'] });
-      queryClient.removeQueries({ queryKey: ['check-ins'] });
-      queryClient.removeQueries({ queryKey: ['dashboard'] });
-      queryClient.removeQueries({ queryKey: ['notifications'] });
-      queryClient.removeQueries({ queryKey: ['teams'] });
-      queryClient.removeQueries({ queryKey: ['persons'] });
-      queryClient.removeQueries({ queryKey: ['person'] });
-      queryClient.removeQueries({ queryKey: ['admin'] });
+      // Remove ALL cached query data to prevent data leakage between sessions
+      queryClient.removeQueries();
 
       // Navigate to login
       navigate(ROUTES.LOGIN);
@@ -35,7 +28,9 @@ export function useLogout() {
       clearAuth();
       queryClient.removeQueries();
       navigate(ROUTES.LOGIN);
-      console.error('Logout failed:', error);
+      if (import.meta.env.DEV) {
+        console.error('Logout failed:', error);
+      }
     },
   });
 }

@@ -3,6 +3,7 @@
 import type { PrismaClient, Role } from '@prisma/client';
 import { DateTime } from 'luxon';
 import { formatDateInTimezone, getDayOfWeekInTimezone } from '../../shared/utils';
+import { getEffectiveSchedule } from '../../shared/schedule.utils';
 
 /**
  * State snapshot captured at the moment a missed check-in is detected.
@@ -26,13 +27,23 @@ export interface StateSnapshot {
 
 /**
  * Worker context needed for snapshot calculation.
+ * Includes worker schedule override fields with team fallback.
  */
 export interface WorkerContext {
   personId: string;
   teamId: string;
   role: Role;
   teamAssignedAt: Date | null;
-  workDays: string[];
+  // Worker schedule override (optional)
+  workDays?: string | null;
+  checkInStart?: string | null;
+  checkInEnd?: string | null;
+  // Team schedule (for fallback)
+  team: {
+    work_days: string;
+    check_in_start: string;
+    check_in_end: string;
+  };
 }
 
 interface CheckInRecord {
@@ -104,6 +115,16 @@ export class MissedCheckInSnapshotService {
     const today = formatDateInTimezone(missedDate, this.timezone);
     const todayDt = DateTime.fromISO(today, { zone: this.timezone });
 
+    // Get effective schedule (worker override OR team default)
+    const schedule = getEffectiveSchedule(
+      {
+        work_days: worker.workDays,
+        check_in_start: worker.checkInStart,
+        check_in_end: worker.checkInEnd,
+      },
+      worker.team
+    );
+
     // Day of week (0=Sun, 6=Sat)
     const dayOfWeek = todayDt.weekday === 7 ? 0 : todayDt.weekday;
 
@@ -121,7 +142,7 @@ export class MissedCheckInSnapshotService {
     // Calculate streak (consecutive work days with check-ins before today)
     const checkInStreakBefore = this.calculateStreak(
       checkIns,
-      worker.workDays,
+      schedule.workDays,
       holidayDates,
       missedDate
     );
@@ -146,6 +167,7 @@ export class MissedCheckInSnapshotService {
     // Baseline completion rate since assignment
     const baselineCompletionRate = this.calculateCompletionRate(
       worker,
+      schedule.workDays,
       checkIns,
       holidayDates,
       missedDate
@@ -230,6 +252,7 @@ export class MissedCheckInSnapshotService {
    */
   private calculateCompletionRate(
     worker: WorkerContext,
+    workDays: string[],
     checkIns: CheckInRecord[],
     holidayDates: Set<string>,
     missedDate: Date
@@ -254,7 +277,7 @@ export class MissedCheckInSnapshotService {
       const dateStr = formatDateInTimezone(d, this.timezone);
       const dow = getDayOfWeekInTimezone(this.timezone, dateStr).toString();
 
-      if (worker.workDays.includes(dow) && !holidayDates.has(dateStr)) {
+      if (workDays.includes(dow) && !holidayDates.has(dateStr)) {
         requiredDays++;
       }
     }

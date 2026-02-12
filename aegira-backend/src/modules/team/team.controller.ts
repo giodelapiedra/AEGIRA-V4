@@ -1,7 +1,9 @@
 // Team Controller - Request Handling
 import type { Context } from 'hono';
 import { TeamRepository } from './team.repository';
+import { TeamService } from './team.service';
 import { PersonRepository } from '../person/person.repository';
+import { CheckInRepository } from '../check-in/check-in.repository';
 import { NotificationRepository } from '../notification/notification.repository';
 import { prisma } from '../../config/database';
 import { AppError } from '../../shared/errors';
@@ -15,6 +17,7 @@ import {
   formatDateInTimezone,
   parsePagination,
 } from '../../shared/utils';
+import type { CreateTeamInput, UpdateTeamInput } from './team.validator';
 
 /**
  * Send notification when team lead is assigned to a team
@@ -58,7 +61,7 @@ export async function listTeams(c: Context): Promise<Response> {
 export async function createTeam(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const userId = c.get('userId') as string;
-  const data = await c.req.json();
+  const data = c.req.valid('json' as never) as CreateTeamInput;
 
   const repository = getRepository(companyId);
 
@@ -138,7 +141,7 @@ export async function updateTeam(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const userId = c.get('userId') as string;
   const id = c.req.param('id');
-  const data = await c.req.json();
+  const data = c.req.valid('json' as never) as UpdateTeamInput;
 
   if (!id) {
     throw new AppError('VALIDATION_ERROR', 'Team ID is required', 400);
@@ -192,14 +195,23 @@ export async function updateTeam(c: Context): Promise<Response> {
     notifyTeamLeadAssignment(companyId, data.leaderId, result.name);
   }
 
-  // Audit team update (non-blocking)
+  // Audit team update (non-blocking) — only log provided fields
+  const auditDetails: Record<string, unknown> = {};
+  if (data.name !== undefined) auditDetails.name = data.name;
+  if (data.leaderId !== undefined) auditDetails.leaderId = data.leaderId;
+  if (data.supervisorId !== undefined) auditDetails.supervisorId = data.supervisorId;
+  if (data.isActive !== undefined) auditDetails.isActive = data.isActive;
+  if (data.checkInStart !== undefined) auditDetails.checkInStart = data.checkInStart;
+  if (data.checkInEnd !== undefined) auditDetails.checkInEnd = data.checkInEnd;
+  if (data.workDays !== undefined) auditDetails.workDays = data.workDays;
+
   logAudit({
     companyId,
     personId: userId,
     action: 'UPDATE_TEAM',
     entityType: 'TEAM',
     entityId: id,
-    details: data,
+    details: auditDetails,
   });
 
   return c.json({ success: true, data: result });
@@ -247,57 +259,13 @@ export async function getMyTeamMembers(c: Context): Promise<Response> {
   }
 
   // Build filter
-  const teamFilter = teamIds ? { team_id: { in: teamIds } } : {};
-
-  // Get workers (filtered by team for TEAM_LEAD/SUPERVISOR)
-  const [members, total] = await Promise.all([
-    prisma.person.findMany({
-      where: {
-        company_id: companyId,
-        role: 'WORKER',
-        is_active: true,
-        ...teamFilter,
-      },
-      select: {
-        id: true,
-        first_name: true,
-        last_name: true,
-        email: true,
-        role: true,
-        is_active: true,
-        profile_picture_url: true,
-        team: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-      },
-      skip: (page - 1) * limit,
-      take: limit,
-      orderBy: { last_name: 'asc' },
-    }),
-    prisma.person.count({
-      where: {
-        company_id: companyId,
-        role: 'WORKER',
-        is_active: true,
-        ...teamFilter,
-      },
-    }),
-  ]);
+  // Get workers using PersonRepository (filtered by team for TEAM_LEAD/SUPERVISOR)
+  const personRepository = new PersonRepository(prisma, companyId);
+  const result = await personRepository.findWorkers({ page, limit }, teamIds);
 
   return c.json({
     success: true,
-    data: {
-      items: members,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    },
+    data: result,
   });
 }
 
@@ -329,67 +297,18 @@ export async function getCheckInHistory(c: Context): Promise<Response> {
     });
   }
 
-  // Build person filter (team + search) - use AND to combine properly
-  const personConditions: Record<string, unknown>[] = [];
-  if (teamIds) personConditions.push({ team_id: { in: teamIds } });
-  if (search) {
-    personConditions.push({
-      OR: [
-        { first_name: { startsWith: search, mode: 'insensitive' } },
-        { last_name: { startsWith: search, mode: 'insensitive' } },
-        { email: { contains: search, mode: 'insensitive' } },
-      ],
-    });
-  }
+  // Get check-ins using CheckInRepository (filtered by team for TEAM_LEAD/SUPERVISOR)
+  const checkInRepository = new CheckInRepository(prisma, companyId);
+  const { items: checkIns, total, params } = await checkInRepository.findCheckInsWithPerson(
+    { page, limit },
+    {
+      teamIds,
+      personId: workerIdParam,
+      search,
+    }
+  );
 
-  const workerFilter = workerIdParam ? { person_id: workerIdParam } : {};
-  const hasPersonFilter = personConditions.length > 0;
-
-  const where = {
-    company_id: companyId,
-    ...(hasPersonFilter ? { person: { AND: personConditions } } : {}),
-    ...workerFilter,
-  };
-
-  const [checkIns, total] = await Promise.all([
-    prisma.checkIn.findMany({
-      where,
-      select: {
-        id: true,
-        person_id: true,
-        event_id: true,
-        check_in_date: true,
-        hours_slept: true,
-        sleep_quality: true,
-        stress_level: true,
-        physical_condition: true,
-        pain_level: true,
-        pain_location: true,
-        physical_condition_notes: true,
-        notes: true,
-        readiness_score: true,
-        readiness_level: true,
-        sleep_score: true,
-        stress_score: true,
-        physical_score: true,
-        pain_score: true,
-        created_at: true,
-        person: {
-          select: {
-            id: true,
-            first_name: true,
-            last_name: true,
-            email: true,
-          },
-        },
-      },
-      orderBy: { check_in_date: 'desc' },
-      skip: (page - 1) * limit,
-      take: limit,
-    }),
-    prisma.checkIn.count({ where }),
-  ]);
-
+  // Transform to match frontend expected format
   const items = checkIns.map((ci) => ({
     id: ci.id,
     personId: ci.person_id,
@@ -419,10 +338,10 @@ export async function getCheckInHistory(c: Context): Promise<Response> {
     data: {
       items,
       pagination: {
-        page,
-        limit,
+        page: params.page,
+        limit: params.limit,
         total,
-        totalPages: Math.ceil(total / limit),
+        totalPages: Math.ceil(total / params.limit),
       },
     },
   });
@@ -433,201 +352,35 @@ export async function getTeamAnalytics(c: Context): Promise<Response> {
   const userId = c.get('userId') as string;
   const userRole = c.get('userRole') as string;
   const period = c.req.query('period') || '7d';
-  const days = period === '30d' ? 30 : period === '90d' ? 90 : 7;
 
   // Get team context (timezone from middleware + team filter)
   const { timezone, teamIds } = await getTeamContext(companyId, userId, userRole, c.get('companyTimezone') as string);
 
-  // No teams assigned
+  // No teams assigned - return empty analytics
   if (teamIds !== null && teamIds.length === 0) {
     return c.json({
       success: true,
       data: {
         period,
         summary: {
-          totalCheckIns: 0, avgReadiness: 0, workerCount: 0, avgComplianceRate: 0,
+          totalCheckIns: 0,
+          avgReadiness: 0,
+          workerCount: 0,
+          avgComplianceRate: 0,
           readinessDistribution: { green: 0, yellow: 0, red: 0 },
         },
         trends: [],
+        records: [],
       },
     });
   }
 
-  // Get team creation date to cap the analytics range (only for single team)
-  let teamCreatedAt: Date | null = null;
-  if (teamIds && teamIds.length === 1) {
-    const team = await prisma.team.findUnique({
-      where: { id: teamIds[0] },
-      select: { created_at: true },
-    });
-    teamCreatedAt = team?.created_at || null;
-  }
-
-  // Get date range in company timezone
-  const todayStr = getTodayInTimezone(timezone);
-  const endDate = parseDateInTimezone(todayStr, timezone);
-  endDate.setHours(23, 59, 59, 999);
-  let startDate = new Date(endDate.getTime() - days * 24 * 60 * 60 * 1000);
-  startDate.setHours(0, 0, 0, 0);
-
-  // Cap start date to team creation date - don't show data before team existed
-  if (teamCreatedAt && teamCreatedAt > startDate) {
-    startDate = new Date(teamCreatedAt);
-    startDate.setHours(0, 0, 0, 0);
-  }
-
-  // Build filters based on team context
-  const checkInTeamFilter = teamIds ? { person: { team_id: { in: teamIds } } } : {};
-  const workerTeamFilter = teamIds ? { team_id: { in: teamIds } } : {};
-
-  // Get workers with their assignment dates (needed for per-day compliance)
-  const [checkIns, workers] = await Promise.all([
-    prisma.checkIn.findMany({
-      where: {
-        company_id: companyId,
-        check_in_date: { gte: startDate, lte: endDate },
-        ...checkInTeamFilter,
-      },
-      select: {
-        check_in_date: true,
-        readiness_score: true,
-        readiness_level: true,
-        created_at: true,
-        person: {
-          select: {
-            first_name: true,
-            last_name: true,
-          },
-        },
-      },
-      orderBy: [{ check_in_date: 'desc' }, { created_at: 'desc' }],
-    }),
-    prisma.person.findMany({
-      where: {
-        company_id: companyId,
-        role: 'WORKER',
-        is_active: true,
-        ...workerTeamFilter,
-      },
-      select: {
-        team_assigned_at: true,
-        team: {
-          select: { work_days: true },
-        },
-      },
-    }),
-  ]);
-
-  const workerCount = workers.length;
-
-  // Calculate daily stats (including submit times for average)
-  const dailyStats: Record<string, { count: number; totalScore: number; green: number; yellow: number; red: number; submitMinutes: number[] }> = {};
-
-  for (const checkIn of checkIns) {
-    const dateKey = formatDateInTimezone(checkIn.check_in_date, timezone);
-    if (!dailyStats[dateKey]) {
-      dailyStats[dateKey] = { count: 0, totalScore: 0, green: 0, yellow: 0, red: 0, submitMinutes: [] };
-    }
-    dailyStats[dateKey].count++;
-    dailyStats[dateKey].totalScore += checkIn.readiness_score;
-    if (checkIn.readiness_level === 'GREEN') dailyStats[dateKey].green++;
-    else if (checkIn.readiness_level === 'YELLOW') dailyStats[dateKey].yellow++;
-    else dailyStats[dateKey].red++;
-
-    // Track submit time in minutes since midnight (in company timezone)
-    const submitDate = new Date(checkIn.created_at);
-    const submitTimeStr = submitDate.toLocaleTimeString('en-US', { timeZone: timezone, hour12: false, hour: '2-digit', minute: '2-digit' });
-    const parts = submitTimeStr.split(':').map(Number);
-    dailyStats[dateKey].submitMinutes.push((parts[0] ?? 0) * 60 + (parts[1] ?? 0));
-  }
-
-  // Build trends array - iterate from startDate to endDate (capped to team creation)
-  const trends = [];
-  let totalExpected = 0;
-  const actualDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)) + 1;
-
-  for (let i = 0; i < actualDays; i++) {
-    const trendDate = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000);
-    const dateKey = formatDateInTimezone(trendDate, timezone);
-    const dayOfWeek = getDayOfWeekInTimezone(timezone, dateKey).toString();
-    const stats = dailyStats[dateKey] || { count: 0, totalScore: 0, green: 0, yellow: 0, red: 0, submitMinutes: [] as number[] };
-
-    // Count workers who were assigned BEFORE this date and it's their work day
-    // (Same-day assignments are not expected to check-in)
-    const expectedWorkers = workers.filter((w) => {
-      if (!w.team_assigned_at) return false;
-      const assignedDateStr = formatDateInTimezone(new Date(w.team_assigned_at), timezone);
-      if (assignedDateStr >= dateKey) return false; // Must be assigned BEFORE (not same day)
-      const workDays = w.team?.work_days?.split(',') || ['1', '2', '3', '4', '5'];
-      return workDays.includes(dayOfWeek);
-    }).length;
-
-    // Skip days where no workers were expected (no work day / not yet assigned)
-    if (expectedWorkers === 0 && stats.count === 0) continue;
-
-    totalExpected += expectedWorkers;
-
-    // Calculate average submit time (HH:MM format)
-    let submitTime: string | null = null;
-    if (stats.submitMinutes.length > 0) {
-      const avgMinutes = Math.round(stats.submitMinutes.reduce((a: number, b: number) => a + b, 0) / stats.submitMinutes.length);
-      const h = Math.floor(avgMinutes / 60).toString().padStart(2, '0');
-      const m = (avgMinutes % 60).toString().padStart(2, '0');
-      submitTime = `${h}:${m}`;
-    }
-
-    trends.push({
-      date: dateKey,
-      checkIns: stats.count,
-      expectedWorkers,
-      avgReadiness: stats.count > 0 ? Math.round(stats.totalScore / stats.count) : 0,
-      complianceRate: expectedWorkers > 0 ? Math.round((stats.count / expectedWorkers) * 100) : 0,
-      submitTime,
-      green: stats.green,
-      yellow: stats.yellow,
-      red: stats.red,
-    });
-  }
-
-  // Calculate overall stats
-  const totalCheckIns = checkIns.length;
-  const avgReadiness = totalCheckIns > 0
-    ? Math.round(checkIns.reduce((sum, c) => sum + c.readiness_score, 0) / totalCheckIns)
-    : 0;
-  const greenCount = checkIns.filter(c => c.readiness_level === 'GREEN').length;
-  const yellowCount = checkIns.filter(c => c.readiness_level === 'YELLOW').length;
-  const redCount = checkIns.filter(c => c.readiness_level === 'RED').length;
-
-  // Build individual check-in records with person names
-  const records = checkIns.map((checkIn) => {
-    const dateKey = formatDateInTimezone(checkIn.check_in_date, timezone);
-    const submitDate = new Date(checkIn.created_at);
-    const submitTimeStr = submitDate.toLocaleTimeString('en-US', { timeZone: timezone, hour12: false, hour: '2-digit', minute: '2-digit' });
-
-    return {
-      name: `${checkIn.person.first_name} ${checkIn.person.last_name}`,
-      date: dateKey,
-      readinessScore: checkIn.readiness_score,
-      readinessLevel: checkIn.readiness_level,
-      submitTime: submitTimeStr,
-    };
-  });
+  // Get team analytics using TeamService
+  const teamService = new TeamService(prisma, companyId);
+  const analytics = await teamService.getTeamAnalytics(period, timezone, teamIds);
 
   return c.json({
     success: true,
-    data: {
-      period,
-      summary: {
-        totalCheckIns,
-        avgReadiness,
-        workerCount,
-        avgComplianceRate: totalExpected > 0
-          ? Math.round((totalCheckIns / totalExpected) * 100)
-          : 0,
-        readinessDistribution: { green: greenCount, yellow: yellowCount, red: redCount },
-      },
-      trends,
-      records,
-    },
+    data: analytics,
   });
 }

@@ -191,4 +191,81 @@ export class CheckInRepository extends BaseRepository {
       },
     });
   }
+
+  /**
+   * Find check-ins with person information and team filtering
+   * Used by team management endpoints to get check-in history
+   */
+  async findCheckInsWithPerson(
+    params: PaginationParams,
+    filters: {
+      teamIds?: string[] | null;
+      personId?: string;
+      search?: string;
+    }
+  ) {
+    // Build person filter (team + search)
+    const personConditions: Record<string, unknown>[] = [];
+    if (filters.teamIds) {
+      personConditions.push({ team_id: { in: filters.teamIds } });
+    }
+    if (filters.search) {
+      personConditions.push({
+        OR: [
+          { first_name: { startsWith: filters.search, mode: 'insensitive' } },
+          { last_name: { startsWith: filters.search, mode: 'insensitive' } },
+          { email: { contains: filters.search, mode: 'insensitive' } },
+        ],
+      });
+    }
+
+    const workerFilter = filters.personId ? { person_id: filters.personId } : {};
+    const hasPersonFilter = personConditions.length > 0;
+
+    const where = this.where({
+      ...(hasPersonFilter ? { person: { AND: personConditions } } : {}),
+      ...workerFilter,
+    });
+
+    const [items, total] = await Promise.all([
+      this.prisma.checkIn.findMany({
+        where,
+        select: {
+          id: true,
+          person_id: true,
+          event_id: true,
+          check_in_date: true,
+          hours_slept: true,
+          sleep_quality: true,
+          stress_level: true,
+          physical_condition: true,
+          pain_level: true,
+          pain_location: true,
+          physical_condition_notes: true,
+          notes: true,
+          readiness_score: true,
+          readiness_level: true,
+          sleep_score: true,
+          stress_score: true,
+          physical_score: true,
+          pain_score: true,
+          created_at: true,
+          person: {
+            select: {
+              id: true,
+              first_name: true,
+              last_name: true,
+              email: true,
+            },
+          },
+        },
+        orderBy: { check_in_date: 'desc' },
+        skip: (params.page - 1) * params.limit,
+        take: params.limit,
+      }),
+      this.prisma.checkIn.count({ where }),
+    ]);
+
+    return { items, total, params };
+  }
 }
