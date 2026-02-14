@@ -255,7 +255,7 @@ JWT_SECRET=your-super-secret-jwt-key-minimum-32-characters-long-for-security
 JWT_EXPIRES_IN=7d
 
 # CORS - your frontend domain(s)
-CORS_ORIGINS=https://aegira.yourdomain.com,https://app.aegira.com
+CORS_ORIGINS=https://aegira.health,https://www.aegira.health,https://sample.aegira.health,http://localhost:5173,http://localhost:3000
 
 # Cloudflare R2 Storage (for avatar uploads)
 R2_ACCOUNT_ID=your-r2-account-id
