@@ -27,6 +27,7 @@ dist-ssr
 .env
 .env.local
 .env.*.local
+!.env.production  # Allow .env.production to be committed for Cloudflare Pages
 
 # Testing
 coverage
