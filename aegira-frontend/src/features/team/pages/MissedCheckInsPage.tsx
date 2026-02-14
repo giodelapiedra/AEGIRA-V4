@@ -3,6 +3,7 @@ import { ColumnDef, PaginationState } from '@tanstack/react-table';
 import { Eye } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Badge } from '@/components/ui/badge';
+import { MissedCheckInStatusBadge } from '@/components/common/badge-utils';
 import { Button } from '@/components/ui/button';
 import { DataTable, SortableHeader } from '@/components/ui/data-table';
 import { PageLoader } from '@/components/common/PageLoader';
@@ -15,7 +16,6 @@ import {
 } from '@/components/ui/sheet';
 import { Separator } from '@/components/ui/separator';
 import { formatDate } from '@/lib/utils/date.utils';
-import { DAY_NAMES } from '@/lib/constants';
 import {
   useMissedCheckIns,
   type MissedCheckIn,
@@ -46,6 +46,13 @@ const getColumns = (
   {
     accessorKey: 'scheduleWindow',
     header: 'Schedule',
+  },
+  {
+    id: 'resolutionStatus',
+    header: 'Status',
+    cell: ({ row }) => (
+      <MissedCheckInStatusBadge resolvedAt={row.original.resolvedAt} />
+    ),
   },
   {
     id: 'actions',
@@ -131,6 +138,10 @@ export function MissedCheckInsPage() {
           </SheetHeader>
 
           <div className="mt-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Resolution</span>
+              <MissedCheckInStatusBadge resolvedAt={selectedRecord?.resolvedAt} />
+            </div>
             <DetailRow label="Team" value={selectedRecord?.teamName} />
             <DetailRow label="Team Leader" value={selectedRecord?.teamLeaderName} fallback="Not assigned" />
             <DetailRow label="Schedule" value={selectedRecord?.scheduleWindow} />
