@@ -28,6 +28,9 @@ export interface MissedCheckIn {
   date: string;
   scheduleWindow: string;
   createdAt: string;
+  // Resolution tracking (Phase 2)
+  resolvedByCheckInId: string | null;
+  resolvedAt: string | null;
   stateSnapshot?: MissedCheckInStateSnapshot;
 }
 

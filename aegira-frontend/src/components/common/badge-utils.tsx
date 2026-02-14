@@ -1,6 +1,9 @@
 /**
  * Centralized badge utilities for consistent status displays
  * Single source of truth for badge variants and labels
+ *
+ * Note: Incident-specific badges (IncidentStatusBadge, SeverityBadge, CaseStatusBadge)
+ * live in features/incident/components/ — do not duplicate here.
  */
 
 import { Badge } from '@/components/ui/badge';
@@ -42,59 +45,20 @@ export function ReadinessCategoryBadge({ category }: { category?: string }) {
 }
 
 /**
- * Active/Inactive Status Badge
+ * Missed Check-In Resolution Status Badge
  */
-export function ActiveStatusBadge({ isActive }: { isActive: boolean }) {
-  return (
-    <Badge variant={isActive ? 'success' : 'secondary'}>
-      {isActive ? 'Active' : 'Inactive'}
-    </Badge>
-  );
+export function MissedCheckInStatusBadge({ resolvedAt }: { resolvedAt?: string | null }) {
+  if (resolvedAt) {
+    return <Badge className="border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400">Resolved (Late)</Badge>;
+  }
+  return <Badge variant="destructive">Unresolved</Badge>;
 }
 
 /**
- * Incident Status Badge
+ * Submission Status Badge (On Time / Late)
  */
-export function IncidentStatusBadge({ status }: { status: 'PENDING' | 'APPROVED' | 'REJECTED' }) {
-  const config = {
-    PENDING: { variant: 'warning' as const, label: 'Pending' },
-    APPROVED: { variant: 'success' as const, label: 'Approved' },
-    REJECTED: { variant: 'destructive' as const, label: 'Rejected' },
-  };
-
-  const { variant, label } = config[status] || { variant: 'secondary' as const, label: status };
-
-  return <Badge variant={variant}>{label}</Badge>;
-}
-
-/**
- * Severity Badge
- */
-export function SeverityBadge({ severity }: { severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' }) {
-  const config = {
-    LOW: { variant: 'info' as const, label: 'Low' },
-    MEDIUM: { variant: 'warning' as const, label: 'Medium' },
-    HIGH: { variant: 'warning' as const, label: 'High' },
-    CRITICAL: { variant: 'destructive' as const, label: 'Critical' },
-  };
-
-  const { variant, label} = config[severity] || { variant: 'secondary' as const, label: severity };
-
-  return <Badge variant={variant}>{label}</Badge>;
-}
-
-/**
- * Case Status Badge
- */
-export function CaseStatusBadge({ status }: { status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED' }) {
-  const config = {
-    OPEN: { variant: 'warning' as const, label: 'Open' },
-    IN_PROGRESS: { variant: 'info' as const, label: 'In Progress' },
-    RESOLVED: { variant: 'success' as const, label: 'Resolved' },
-    CLOSED: { variant: 'secondary' as const, label: 'Closed' },
-  };
-
-  const { variant, label } = config[status] || { variant: 'secondary' as const, label: status };
-
-  return <Badge variant={variant}>{label}</Badge>;
+export function SubmissionStatusBadge({ isLate }: { isLate?: boolean }) {
+  if (isLate === undefined) return <Badge variant="outline">--</Badge>;
+  if (!isLate) return <Badge variant="success">On Time</Badge>;
+  return <Badge variant="warning">Late</Badge>;
 }
