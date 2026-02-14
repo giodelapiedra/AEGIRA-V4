@@ -3,6 +3,7 @@ const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api/v1';
 if (typeof window !== 'undefined') {
   console.log('[API Config] VITE_API_URL:', import.meta.env.VITE_API_URL);
   console.log('[API Config] Using baseURL:', apiUrl);
+  console.log('[API Config] Environment:', import.meta.env.MODE);
 }
 
 export const API_CONFIG = {
