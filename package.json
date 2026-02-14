@@ -6,6 +6,7 @@
     "ai:build": "node sync-patterns.js build",
     "ai:watch": "node sync-patterns.js watch",
     "ai:validate": "node sync-patterns.js validate",
-    "ai:diff": "node sync-patterns.js diff"
+    "ai:diff": "node sync-patterns.js diff",
+    "build": "cd aegira-frontend && npm run build"
   }
 }
