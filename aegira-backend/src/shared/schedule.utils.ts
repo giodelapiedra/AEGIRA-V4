@@ -79,7 +79,9 @@ export function getEffectiveSchedule(
   person: PersonSchedule,
   team: TeamSchedule
 ): EffectiveSchedule {
-  // Use worker override if set, otherwise fallback to team
+  // Use worker override if set, otherwise fallback to team.
+  // Each field falls back independently — partial overrides are supported
+  // (e.g., worker overrides only work_days but keeps team's check-in times).
   const workDaysStr = person.work_days ?? team.work_days;
   const checkInStart = person.check_in_start ?? team.check_in_start;
   const checkInEnd = person.check_in_end ?? team.check_in_end;
@@ -87,6 +89,17 @@ export function getEffectiveSchedule(
   // Parse work_days CSV string to array
   // Default to Mon-Fri if somehow both are null (defensive)
   const workDays = workDaysStr?.split(',').filter(Boolean) || ['1', '2', '3', '4', '5'];
+
+  // Runtime guard: if partial overrides created an inverted window (start >= end),
+  // fall back to team's window to prevent broken check-in logic.
+  // This can happen when a worker overrides only check_in_start or check_in_end.
+  if (!isEndTimeAfterStart(checkInStart, checkInEnd)) {
+    return {
+      workDays,
+      checkInStart: team.check_in_start,
+      checkInEnd: team.check_in_end,
+    };
+  }
 
   return {
     workDays,

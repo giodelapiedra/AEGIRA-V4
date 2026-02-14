@@ -32,11 +32,13 @@ export interface CreateMissedCheckInData {
 export interface MissedCheckInFilters extends PaginationParams {
   teamIds?: string[];
   personId?: string;
+  resolved?: boolean; // true = resolved only, false = unresolved only, undefined = all
 }
 
 type MissedCheckInWithRelations = MissedCheckIn & {
   person: { id: string; first_name: string; last_name: string; email: string };
   team: { id: string; name: string };
+  resolved_check_in: { id: string; created_at: Date } | null;
 };
 
 export class MissedCheckInRepository extends BaseRepository {
@@ -93,17 +95,47 @@ export class MissedCheckInRepository extends BaseRepository {
       company_id: this.companyId,
       ...(filters.teamIds && filters.teamIds.length > 0 && { team_id: { in: filters.teamIds } }),
       ...(filters.personId && { person_id: filters.personId }),
+      ...(filters.resolved === true && { resolved_at: { not: null } }),
+      ...(filters.resolved === false && { resolved_at: null }),
     };
 
     const [items, total] = await Promise.all([
       this.prisma.missedCheckIn.findMany({
         where,
-        include: {
+        select: {
+          id: true,
+          company_id: true,
+          person_id: true,
+          team_id: true,
+          missed_date: true,
+          schedule_window: true,
+          created_at: true,
+          // Snapshot fields used by controller transform
+          team_leader_id_at_miss: true,
+          team_leader_name_at_miss: true,
+          day_of_week: true,
+          check_in_streak_before: true,
+          recent_readiness_avg: true,
+          days_since_last_check_in: true,
+          days_since_last_miss: true,
+          misses_in_last_30d: true,
+          misses_in_last_60d: true,
+          misses_in_last_90d: true,
+          baseline_completion_rate: true,
+          is_first_miss_in_30d: true,
+          is_increasing_frequency: true,
+          // Resolution tracking
+          resolved_by_check_in_id: true,
+          resolved_at: true,
+          // Relations (selective)
           person: {
             select: { id: true, first_name: true, last_name: true, email: true },
           },
           team: {
             select: { id: true, name: true },
+          },
+          resolved_check_in: {
+            select: { id: true, created_at: true },
           },
         },
         orderBy: { missed_date: 'desc' },

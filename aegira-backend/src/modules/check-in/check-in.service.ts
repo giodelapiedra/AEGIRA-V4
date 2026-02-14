@@ -1,6 +1,6 @@
 // Check-In Service - Business Logic
 import { Prisma, type CheckIn } from '@prisma/client';
-import { CheckInRepository, CreateCheckInData } from './check-in.repository';
+import { CheckInRepository } from './check-in.repository';
 import { AppError } from '../../shared/errors';
 import type { CheckInInput, ReadinessScore, ReadinessLevel } from '../../types/domain.types';
 import type { PaginationParams, PaginatedResponse } from '../../types/api.types';
@@ -9,11 +9,12 @@ import {
   getTodayInTimezone,
   getCurrentTimeInTimezone,
   getDayOfWeekInTimezone,
-  isTimeWithinWindow,
   parseDateInTimezone,
 } from '../../shared/utils';
 import { checkHolidayForDate } from '../../shared/holiday.utils';
 import { getEffectiveSchedule } from '../../shared/schedule.utils';
+import { buildEventData, emitEvent } from '../event/event.service';
+import { logger } from '../../config/logger';
 
 // Check-in status for worker
 export interface CheckInStatus {
@@ -55,8 +56,12 @@ export class CheckInService {
     // is the single source of truth. A pre-check would create a TOCTOU
     // race window between the SELECT and INSERT.
 
-    // Check if today is a company holiday
-    const holidayCheck = await checkHolidayForDate(prisma, companyId, todayStr);
+    // Holiday check and person+team fetch are independent — run in parallel
+    const [holidayCheck, person] = await Promise.all([
+      checkHolidayForDate(prisma, companyId, todayStr),
+      this.repository.getPersonWithTeam(personId),
+    ]);
+
     if (holidayCheck.isHoliday) {
       throw new AppError(
         'HOLIDAY',
@@ -65,11 +70,39 @@ export class CheckInService {
       );
     }
 
-    // Validate against worker schedule (or team schedule if no override)
-    // If the worker is assigned today but the check-in window is still open,
-    // they are allowed to submit. The time window check below handles eligibility.
-    const person = await this.repository.getPersonWithTeam(personId);
-    if (person?.team) {
+    // Guard: worker must be active (getPersonWithTeam filters by is_active)
+    if (!person) {
+      throw new AppError(
+        'ACCOUNT_INACTIVE',
+        'Your account is inactive. Contact your administrator.',
+        403
+      );
+    }
+
+    // Guard: worker must be assigned to an active team
+    if (!person.team) {
+      throw new AppError(
+        'NO_TEAM_ASSIGNED',
+        'You are not assigned to a team. Contact your administrator.',
+        400
+      );
+    }
+
+    if (!person.team.is_active) {
+      throw new AppError(
+        'TEAM_INACTIVE',
+        'Your team has been deactivated. Contact your administrator.',
+        400
+      );
+    }
+
+    // Validate against worker's CURRENT team schedule (or personal override).
+    // DESIGN: If a transfer is effective today but the transfer-processor hasn't run yet,
+    // the worker still validates against their current team's schedule. This is intentional —
+    // the worker remains on their current team until the processor executes the transfer.
+    // The transfer-processor runs every 15 minutes, so this race window is brief.
+    let scheduleWindow: { start: string; end: string } | undefined;
+    {
       const team = person.team;
 
       // Get effective schedule (worker override OR team default)
@@ -86,6 +119,9 @@ export class CheckInService {
         }
       );
 
+      // Capture schedule window for late detection in EventService
+      scheduleWindow = { start: schedule.checkInStart, end: schedule.checkInEnd };
+
       // Check if today is a work day (using company timezone)
       const dayOfWeek = getDayOfWeekInTimezone(this.timezone).toString();
       if (!schedule.workDays.includes(dayOfWeek)) {
@@ -96,12 +132,16 @@ export class CheckInService {
         );
       }
 
-      // Check if within check-in window (using company timezone)
+      // Check if before check-in window opens (using company timezone).
+      // DESIGN: Late submissions (after window closes) are intentionally allowed at any time
+      // of day. They are flagged as late via EventService with late_by_minutes, and can
+      // auto-resolve missed check-in records. No upper-bound cutoff is enforced — if a
+      // business requirement for maximum lateness arises, add a configurable deadline here.
       const currentTime = getCurrentTimeInTimezone(this.timezone);
-      if (!isTimeWithinWindow(currentTime, schedule.checkInStart, schedule.checkInEnd)) {
+      if (currentTime < schedule.checkInStart) {
         throw new AppError(
           'OUTSIDE_CHECK_IN_WINDOW',
-          `Check-in is only allowed between ${schedule.checkInStart} and ${schedule.checkInEnd}`,
+          `Check-in window opens at ${schedule.checkInStart}`,
           400
         );
       }
@@ -110,37 +150,40 @@ export class CheckInService {
     // Calculate readiness score
     const readiness = this.calculateReadiness(input);
 
-    // Create event + check-in atomically in a transaction
-    // Catch P2002 (unique constraint) to return friendly error on race condition
+    // Create event + check-in atomically in a transaction.
+    // The transaction returns both the check-in and any resolved miss metadata
+    // so we can emit events AFTER the transaction commits (preventing orphan events).
+    // Catch P2002 (unique constraint) to return friendly error on race condition.
     try {
-      const checkIn = await prisma.$transaction(async (tx) => {
-        // Create event first (event sourcing)
-        const event = await tx.event.create({
-          data: {
-            company_id: companyId,
-            person_id: personId,
-            event_type: 'CHECK_IN_SUBMITTED',
-            entity_type: 'check_in',
-            payload: {
-              hoursSlept: input.hoursSlept,
-              sleepQuality: input.sleepQuality,
-              stressLevel: input.stressLevel,
-              physicalCondition: input.physicalCondition,
-              painLevel: input.painLevel ?? null,
-              painLocation: input.painLocation ?? null,
-              physicalConditionNotes: input.physicalConditionNotes ?? null,
-              notes: input.notes ?? null,
-              readiness: {
-                overall: readiness.overall,
-                level: readiness.level,
-                factors: readiness.factors,
-              },
+      const { checkIn, resolvedMiss } = await prisma.$transaction(async (tx) => {
+        // Create event first (event sourcing) with time tracking
+        const eventData = buildEventData({
+          companyId,
+          personId,
+          eventType: 'CHECK_IN_SUBMITTED',
+          entityType: 'check_in',
+          payload: {
+            hoursSlept: input.hoursSlept,
+            sleepQuality: input.sleepQuality,
+            stressLevel: input.stressLevel,
+            physicalCondition: input.physicalCondition,
+            painLevel: input.painLevel ?? null,
+            painLocation: input.painLocation ?? null,
+            physicalConditionNotes: input.physicalConditionNotes ?? null,
+            notes: input.notes ?? null,
+            readiness: {
+              overall: readiness.overall,
+              level: readiness.level,
+              factors: readiness.factors,
             },
           },
+          timezone: this.timezone,
+          scheduleWindow,
         });
+        const event = await tx.event.create({ data: eventData });
 
         // Create check-in record
-        return tx.checkIn.create({
+        const newCheckIn = await tx.checkIn.create({
           data: {
             company_id: companyId,
             person_id: personId,
@@ -153,7 +196,7 @@ export class CheckInService {
             pain_level: input.painLevel ?? null,
             pain_location: input.painLocation ?? null,
             physical_condition_notes: input.physicalConditionNotes ?? null,
-            notes: input.notes,
+            notes: input.notes ?? null,
             readiness_score: readiness.overall,
             readiness_level: readiness.level,
             sleep_score: readiness.factors.sleep,
@@ -172,7 +215,64 @@ export class CheckInService {
             },
           },
         });
+
+        // Phase 2: If late submission, resolve existing missed check-in record
+        // Resolution is part of the transaction to ensure atomicity.
+        // Event emission happens AFTER commit to prevent orphan events on rollback.
+        let resolvedMissData: { missedCheckInId: string; lateByMinutes: number | null } | null = null;
+
+        if (event.is_late) {
+          const existingMiss = await tx.missedCheckIn.findFirst({
+            where: {
+              company_id: companyId,
+              person_id: personId,
+              missed_date: today,
+              resolved_at: null,
+            },
+          });
+
+          if (existingMiss) {
+            await tx.missedCheckIn.update({
+              where: { id: existingMiss.id },
+              data: {
+                resolved_by_check_in_id: newCheckIn.id,
+                resolved_at: new Date(),
+              },
+            });
+
+            resolvedMissData = {
+              missedCheckInId: existingMiss.id,
+              lateByMinutes: event.late_by_minutes,
+            };
+
+            logger.info(
+              { personId, missedCheckInId: existingMiss.id, checkInId: newCheckIn.id },
+              'Resolved missed check-in via late submission'
+            );
+          }
+        }
+
+        return { checkIn: newCheckIn, resolvedMiss: resolvedMissData };
       });
+
+      // Post-commit: emit MISSED_CHECK_IN_RESOLVED event (fire-and-forget).
+      // Placed outside the transaction so orphan events are never created on rollback.
+      if (resolvedMiss) {
+        emitEvent(prisma, {
+          companyId,
+          personId,
+          eventType: 'MISSED_CHECK_IN_RESOLVED',
+          entityType: 'missed_check_in',
+          entityId: resolvedMiss.missedCheckInId,
+          payload: {
+            missedCheckInId: resolvedMiss.missedCheckInId,
+            checkInId: checkIn.id,
+            lateByMinutes: resolvedMiss.lateByMinutes,
+            missedDate: todayStr,
+          },
+          timezone: this.timezone,
+        });
+      }
 
       return checkIn;
     } catch (error) {
@@ -216,33 +316,55 @@ export class CheckInService {
     const todayStr = getTodayInTimezone(this.timezone);
     const today = parseDateInTimezone(todayStr, this.timezone);
 
-    // Check if already checked in today
-    const existingCheckIn = await this.repository.findByDate(personId, today);
-    const hasCheckedInToday = !!existingCheckIn;
+    // All three queries are independent — run in parallel
+    const [hasCheckedInToday, person, holidayCheck] = await Promise.all([
+      this.repository.existsForDate(personId, today),
+      this.repository.getPersonWithTeam(personId),
+      checkHolidayForDate(prisma, this.repository.getCompanyId(), todayStr),
+    ]);
 
-    // Check if today is a company holiday
-    const person = await this.repository.getPersonWithTeam(personId);
-    const companyId = person?.company_id;
-    const holidayCheck = companyId
-      ? await checkHolidayForDate(prisma, companyId, todayStr)
-      : { isHoliday: false, holidayName: null };
-
-    // No team assigned
-    if (!person?.team) {
+    // Inactive account — cannot check in (getPersonWithTeam filters by is_active)
+    if (!person) {
       return {
-        isWorkDay: true,
+        isWorkDay: false,
         isHoliday: holidayCheck.isHoliday,
         holidayName: holidayCheck.holidayName,
-        isWithinWindow: true,
-        canCheckIn: !hasCheckedInToday && !holidayCheck.isHoliday,
+        isWithinWindow: false,
+        canCheckIn: false,
         hasCheckedInToday,
         schedule: null,
         team: null,
-        message: hasCheckedInToday
-          ? 'You have already checked in today'
-          : holidayCheck.isHoliday
-            ? `Today is a holiday: ${holidayCheck.holidayName}`
-            : 'No team assigned - you can check in anytime',
+        message: 'Your account is inactive. Contact your administrator.',
+      };
+    }
+
+    // No team assigned — cannot check in
+    if (!person.team) {
+      return {
+        isWorkDay: false,
+        isHoliday: holidayCheck.isHoliday,
+        holidayName: holidayCheck.holidayName,
+        isWithinWindow: false,
+        canCheckIn: false,
+        hasCheckedInToday,
+        schedule: null,
+        team: null,
+        message: 'You are not assigned to a team. Contact your administrator.',
+      };
+    }
+
+    // Inactive team — cannot check in
+    if (!person.team.is_active) {
+      return {
+        isWorkDay: false,
+        isHoliday: holidayCheck.isHoliday,
+        holidayName: holidayCheck.holidayName,
+        isWithinWindow: false,
+        canCheckIn: false,
+        hasCheckedInToday,
+        schedule: null,
+        team: { id: person.team.id, name: person.team.name },
+        message: 'Your team has been deactivated. Contact your administrator.',
       };
     }
 
@@ -270,10 +392,13 @@ export class CheckInService {
     const isWorkDay = schedule.workDays.includes(dayOfWeek);
 
     // Check time window
-    const isWithinWindow = isTimeWithinWindow(currentTime, schedule.checkInStart, schedule.checkInEnd);
+    const isWithinWindow = currentTime >= schedule.checkInStart && currentTime <= schedule.checkInEnd;
+    const isAfterWindow = currentTime > schedule.checkInEnd;
+    const isBeforeWindow = currentTime < schedule.checkInStart;
 
-    // Workers assigned today CAN check in if the window is still open
-    const canCheckIn = isWorkDay && !holidayCheck.isHoliday && isWithinWindow && !hasCheckedInToday;
+    // Workers can check in if within window OR after window (late submission allowed)
+    // Only reject if before window opens
+    const canCheckIn = isWorkDay && !holidayCheck.isHoliday && !isBeforeWindow && !hasCheckedInToday;
 
     // Build message (holiday takes priority)
     let message: string;
@@ -283,12 +408,10 @@ export class CheckInService {
       message = `Today is a holiday: ${holidayCheck.holidayName}`;
     } else if (!isWorkDay) {
       message = 'Today is not a scheduled work day for you';
-    } else if (!isWithinWindow) {
-      if (currentTime < schedule.checkInStart) {
-        message = `Check-in window opens at ${schedule.checkInStart}`;
-      } else {
-        message = `Check-in window closed at ${schedule.checkInEnd}`;
-      }
+    } else if (isBeforeWindow) {
+      message = `Check-in window opens at ${schedule.checkInStart}`;
+    } else if (isAfterWindow) {
+      message = `Check-in window closed at ${schedule.checkInEnd}. You can still submit a late check-in.`;
     } else {
       message = 'You can check in now';
     }
@@ -323,8 +446,9 @@ export class CheckInService {
     // Physical condition score
     const physicalScore = input.physicalCondition * 10;
 
-    // Pain score (inverse - lower pain = higher score, null if not reported)
-    const hasPain = input.painLevel !== undefined && input.painLevel !== null;
+    // Pain score (inverse - lower pain = higher score, null if no pain)
+    // painLevel=0 means "no pain" — use the no-pain weight formula
+    const hasPain = input.painLevel !== undefined && input.painLevel !== null && input.painLevel > 0;
     const painScore = hasPain ? Math.round((10 - input.painLevel!) * 10) : null;
 
     // Overall weighted score

@@ -9,31 +9,26 @@ interface ReadinessIndicatorProps {
 
 const categoryConfig: Record<ReadinessCategory, {
   color: string;
-  bgColor: string;
   label: string;
   description: string;
 }> = {
   ready: {
     color: 'text-green-600',
-    bgColor: 'bg-green-500',
     label: 'Fit to Work',
     description: 'Fully ready for work',
   },
   modified_duty: {
     color: 'text-yellow-600',
-    bgColor: 'bg-yellow-500',
     label: 'Light Duty',
     description: 'Can work with modifications',
   },
   needs_attention: {
     color: 'text-orange-600',
-    bgColor: 'bg-orange-500',
     label: 'Take Care',
     description: 'Requires attention',
   },
   not_ready: {
     color: 'text-red-600',
-    bgColor: 'bg-red-500',
     label: 'Rest Needed',
     description: 'Not ready for full duty',
   },

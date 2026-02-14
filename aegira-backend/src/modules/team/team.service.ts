@@ -7,8 +7,9 @@ import {
   getTodayInTimezone,
   parseDateInTimezone,
   formatDateInTimezone,
-  getDayOfWeekInTimezone,
   toCompanyTimezone,
+  precomputeDateRange,
+  buildDateLookup,
 } from '../../shared/utils';
 import { isWorkDay } from '../../shared/schedule.utils';
 
@@ -138,6 +139,10 @@ export class TeamService {
 
     const workerCount = workers.length;
 
+    // Pre-compute date lookup for check-in dates (avoids per-record Luxon calls)
+    const uniqueCheckInDates = [...new Set(checkIns.map(c => c.check_in_date.getTime()))].map(t => new Date(t));
+    const dateLookup = buildDateLookup(uniqueCheckInDates, timezone);
+
     // Calculate daily stats (including submit times for average)
     const dailyStats: Record<
       string,
@@ -152,7 +157,7 @@ export class TeamService {
     > = {};
 
     for (const checkIn of checkIns) {
-      const dateKey = formatDateInTimezone(checkIn.check_in_date, timezone);
+      const dateKey = dateLookup.get(checkIn.check_in_date.getTime()) ?? formatDateInTimezone(checkIn.check_in_date, timezone);
       if (!dailyStats[dateKey]) {
         dailyStats[dateKey] = {
           count: 0,
@@ -174,15 +179,24 @@ export class TeamService {
       dailyStats[dateKey].submitMinutes.push(submitDt.hour * 60 + submitDt.minute);
     }
 
-    // Build trends array - iterate from startDate to endDate (capped to team creation)
+    // Pre-compute date range for trends (avoids per-iteration Luxon calls)
+    const actualDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+    const dateRange = precomputeDateRange(startDate, actualDays, timezone);
+
+    // Pre-compute each worker's assignedDateStr ONCE (avoids O(days x workers) Luxon calls)
+    const workerAssignedDates = workers.map((w) => ({
+      ...w,
+      assignedDateStr: w.team_assigned_at
+        ? formatDateInTimezone(new Date(w.team_assigned_at), timezone)
+        : null,
+    }));
+
+    // Build trends array using pre-computed ranges
     const trends = [];
     let totalExpected = 0;
-    const actualDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)) + 1;
 
-    for (let i = 0; i < actualDays; i++) {
-      const trendDate = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000);
-      const dateKey = formatDateInTimezone(trendDate, timezone);
-      const dayOfWeek = getDayOfWeekInTimezone(timezone, dateKey).toString();
+    for (const day of dateRange) {
+      const { dateStr: dateKey, dow: dayOfWeek } = day;
       const stats = dailyStats[dateKey] || {
         count: 0,
         totalScore: 0,
@@ -193,14 +207,10 @@ export class TeamService {
       };
 
       // Count workers who were assigned BEFORE this date and it's their work day.
-      // (Same-day assignments are not expected to check-in)
-      // NOTE: Uses CURRENT schedule for historical dates. If the schedule was modified
-      // after a given date, compliance rates for those past dates may be slightly off.
-      // Accurate historical tracking would require storing schedule change events.
-      const expectedWorkers = workers.filter((w) => {
-        if (!w.team_assigned_at || !w.team) return false;
-        const assignedDateStr = formatDateInTimezone(new Date(w.team_assigned_at), timezone);
-        if (assignedDateStr >= dateKey) return false; // Must be assigned BEFORE (not same day)
+      // Uses pre-computed assignedDateStr instead of per-iteration Luxon conversion.
+      const expectedWorkers = workerAssignedDates.filter((w) => {
+        if (!w.assignedDateStr || !w.team) return false;
+        if (w.assignedDateStr >= dateKey) return false; // Must be assigned BEFORE (not same day)
 
         // Use worker schedule if set, otherwise fallback to team schedule
         return isWorkDay(
@@ -251,9 +261,10 @@ export class TeamService {
     const yellowCount = checkIns.filter((c) => c.readiness_level === 'YELLOW').length;
     const redCount = checkIns.filter((c) => c.readiness_level === 'RED').length;
 
-    // Build individual check-in records with person names
-    const records = checkIns.map((checkIn) => {
-      const dateKey = formatDateInTimezone(checkIn.check_in_date, timezone);
+    // Build individual check-in records with person names (reuse dateLookup)
+    // Cap to latest 200 records to prevent large payloads on 90d periods
+    const records = checkIns.slice(0, 200).map((checkIn) => {
+      const dateKey = dateLookup.get(checkIn.check_in_date.getTime()) ?? formatDateInTimezone(checkIn.check_in_date, timezone);
       const submitDt = toCompanyTimezone(new Date(checkIn.created_at), timezone);
 
       return {

@@ -2,7 +2,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { ArrowLeft, Users, Clock, UserCheck, Eye } from 'lucide-react';
+import { ArrowLeft, Users, Clock, UserCheck, AlertTriangle } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -186,8 +186,20 @@ function TeamEditForm({ team, teamLeads, supervisors, loadingTeamLeads, loadingS
         }
       />
 
+      {!team.is_active && (
+        <div className="flex items-center gap-3 p-4 rounded-lg border border-destructive/50 bg-destructive/10">
+          <AlertTriangle className="h-5 w-5 text-destructive shrink-0" />
+          <div>
+            <p className="font-medium text-destructive">This team is deactivated</p>
+            <p className="text-sm text-muted-foreground">
+              All members were unassigned when this team was deactivated. Toggle the Active Status below to reactivate.
+            </p>
+          </div>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-        {/* Basic Info */}
+        {/* Team Details */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -220,101 +232,71 @@ function TeamEditForm({ team, teamLeads, supervisors, loadingTeamLeads, loadingS
                 <p className="text-sm text-destructive">{errors.description.message}</p>
               )}
             </div>
-
-            <div className="flex items-center space-x-4 rounded-lg border p-4">
-              <Switch
-                id="isActive"
-                checked={isActive}
-                onCheckedChange={(checked) => setValue('isActive', checked)}
-              />
-              <div className="space-y-0.5">
-                <Label htmlFor="isActive" className="text-base">
-                  Active Status
-                </Label>
-                <p className="text-sm text-muted-foreground">
-                  {isActive
-                    ? 'Team is active and visible in the system'
-                    : 'Team is deactivated and hidden from selections'}
-                </p>
-              </div>
-            </div>
           </CardContent>
         </Card>
 
-        {/* Team Leader */}
+        {/* Leadership */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <UserCheck className="h-5 w-5" />
-              Team Leader
+              Leadership
             </CardTitle>
             <CardDescription>
-              Assign a team lead to manage this team and monitor worker check-ins
+              Assign a team leader and optionally a supervisor to this team
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <Label htmlFor="leaderId">Team Leader <span className="text-destructive">*</span></Label>
-              <Select
-                value={selectedLeaderId}
-                onValueChange={(value) => setValue('leaderId', value, { shouldValidate: true })}
-                disabled={loadingTeamLeads}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={loadingTeamLeads ? 'Loading...' : 'Select a team lead'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {teamLeads.map((lead) => (
-                    <SelectItem key={lead.id} value={lead.id}>
-                      {lead.first_name} {lead.last_name} ({lead.email})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {errors.leaderId && (
-                <p className="text-sm text-destructive">{errors.leaderId.message}</p>
-              )}
-              <p className="text-sm text-muted-foreground">
-                The team leader will have access to view and monitor all worker check-ins for this team
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <Label htmlFor="leaderId">Team Leader <span className="text-destructive">*</span></Label>
+                <Select
+                  value={selectedLeaderId}
+                  onValueChange={(value) => setValue('leaderId', value, { shouldValidate: true })}
+                  disabled={loadingTeamLeads}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={loadingTeamLeads ? 'Loading...' : 'Select a team lead'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {teamLeads.map((lead) => (
+                      <SelectItem key={lead.id} value={lead.id}>
+                        {lead.first_name} {lead.last_name} ({lead.email})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {errors.leaderId && (
+                  <p className="text-sm text-destructive">{errors.leaderId.message}</p>
+                )}
+                <p className="text-sm text-muted-foreground">
+                  Can view and monitor all worker check-ins
+                </p>
+              </div>
 
-        {/* Supervisor Assignment */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Eye className="h-5 w-5" />
-              Supervisor Assignment
-            </CardTitle>
-            <CardDescription>
-              Optionally assign a supervisor to oversee this team
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <Label htmlFor="supervisorId">Supervisor (Optional)</Label>
-              <Select
-                value={selectedSupervisorId || '__none__'}
-                onValueChange={(value) => setValue('supervisorId', value === '__none__' ? '' : value)}
-                disabled={loadingSupervisors}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={loadingSupervisors ? 'Loading...' : 'Select a supervisor (optional)'} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">None</SelectItem>
-                  {supervisors.map((sup) => (
-                    <SelectItem key={sup.id} value={sup.id}>
-                      {sup.first_name} {sup.last_name} ({sup.email})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-sm text-muted-foreground">
-                The supervisor will only see teams assigned to them in their dashboard
-              </p>
+              <div className="space-y-2">
+                <Label htmlFor="supervisorId">Supervisor (Optional)</Label>
+                <Select
+                  value={selectedSupervisorId || '__none__'}
+                  onValueChange={(value) => setValue('supervisorId', value === '__none__' ? '' : value, { shouldValidate: true })}
+                  disabled={loadingSupervisors}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={loadingSupervisors ? 'Loading...' : 'Select a supervisor'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">None</SelectItem>
+                    {supervisors.map((sup) => (
+                      <SelectItem key={sup.id} value={sup.id}>
+                        {sup.first_name} {sup.last_name} ({sup.email})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-muted-foreground">
+                  Only sees teams assigned to them
+                </p>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -331,7 +313,6 @@ function TeamEditForm({ team, teamLeads, supervisors, loadingTeamLeads, loadingS
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* Time Window */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="checkInStart">Check-in Start Time</Label>
@@ -358,7 +339,6 @@ function TeamEditForm({ team, teamLeads, supervisors, loadingTeamLeads, loadingS
               </div>
             </div>
 
-            {/* Work Days */}
             <div className="space-y-2">
               <Label>Work Days</Label>
               <div className="flex flex-wrap gap-2">
@@ -384,8 +364,27 @@ function TeamEditForm({ team, teamLeads, supervisors, loadingTeamLeads, loadingS
           </CardContent>
         </Card>
 
+        {/* Active Status — outside cards, matches Worker Edit pattern */}
+        <div className="flex items-center space-x-4 rounded-lg border p-4">
+          <Switch
+            id="isActive"
+            checked={isActive}
+            onCheckedChange={(checked) => setValue('isActive', checked)}
+          />
+          <div className="space-y-0.5">
+            <Label htmlFor="isActive" className="text-base">
+              Active Status
+            </Label>
+            <p className="text-sm text-muted-foreground">
+              {isActive
+                ? 'Team is active and visible in the system'
+                : 'Team is deactivated and hidden from selections'}
+            </p>
+          </div>
+        </div>
+
         {/* Actions */}
-        <div className="flex justify-end gap-4">
+        <div className="flex justify-end gap-4 pt-4">
           <Button
             type="button"
             variant="outline"

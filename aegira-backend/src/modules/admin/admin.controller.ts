@@ -4,9 +4,12 @@ import { prisma } from '../../config/database';
 import { AppError } from '../../shared/errors';
 import { parsePagination } from '../../shared/utils';
 import { logAudit } from '../../shared/audit';
-import type { UpdateSettingsData, UpdateHolidayData, UpdateUserRoleData } from './admin.validator';
+import type { CreateHolidayData, UpdateSettingsData, UpdateHolidayData, UpdateUserRoleData } from './admin.validator';
 import type { Role, Company } from '@prisma/client';
 import { AdminRepository } from './admin.repository';
+import { TeamRepository } from '../team/team.repository';
+import { invalidateCompanyCache } from '../../middleware/tenant';
+import { invalidateHolidayCache } from '../../shared/holiday.utils';
 
 /** Map Company entity to frontend-expected camelCase format */
 function toCompanySettingsResponse(company: Company) {
@@ -61,6 +64,9 @@ export async function updateCompanySettings(c: Context): Promise<Response> {
     addressCountry: data.addressCountry,
   });
 
+  // Bust cached company data (timezone, is_active may have changed)
+  invalidateCompanyCache(companyId);
+
   // Audit settings update (non-blocking)
   logAudit({
     companyId,
@@ -98,13 +104,15 @@ export async function createHoliday(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const userId = c.get('userId') as string;
   const repository = new AdminRepository(prisma, companyId);
-  const data = await c.req.json();
+  const data = c.req.valid('json' as never) as CreateHolidayData;
 
   const holiday = await repository.createHoliday({
     name: data.name,
     date: new Date(data.date),
     isRecurring: data.recurring ?? data.is_recurring ?? false,
   });
+
+  invalidateHolidayCache(companyId);
 
   // Audit holiday creation (non-blocking)
   logAudit({
@@ -133,7 +141,7 @@ export async function updateHoliday(c: Context): Promise<Response> {
   const userId = c.get('userId') as string;
   const repository = new AdminRepository(prisma, companyId);
   const id = c.req.param('id');
-  const data = await c.req.json() as UpdateHolidayData;
+  const data = c.req.valid('json' as never) as UpdateHolidayData;
 
   // Update holiday with company_id filtering (returns null if not found or not owned)
   const holiday = await repository.updateHoliday(id, {
@@ -145,6 +153,8 @@ export async function updateHoliday(c: Context): Promise<Response> {
   if (!holiday) {
     throw new AppError('NOT_FOUND', 'Holiday not found', 404);
   }
+
+  invalidateHolidayCache(companyId);
 
   // Audit holiday update (non-blocking)
   logAudit({
@@ -180,6 +190,8 @@ export async function deleteHoliday(c: Context): Promise<Response> {
   if (!deleted) {
     throw new AppError('NOT_FOUND', 'Holiday not found', 404);
   }
+
+  invalidateHolidayCache(companyId);
 
   // Audit holiday deletion (non-blocking)
   logAudit({
@@ -251,15 +263,51 @@ export async function updateUserRole(c: Context): Promise<Response> {
   const userId = c.get('userId') as string;
   const repository = new AdminRepository(prisma, companyId);
   const id = c.req.param('id');
-  const data = await c.req.json() as UpdateUserRoleData;
+  const data = c.req.valid('json' as never) as UpdateUserRoleData;
+  const newRole = data.role as Role;
 
   // Prevent self-demotion
   if (id === userId) {
     throw new AppError('FORBIDDEN', 'You cannot change your own role', 403);
   }
 
-  // Update person role with company_id filtering (returns null if not found or not owned)
-  const person = await repository.updatePersonRole(id, data.role as Role);
+  // Fetch current person to check constraints
+  const existing = await repository.findPersonById(id);
+  if (!existing) {
+    throw new AppError('NOT_FOUND', 'Person not found', 404);
+  }
+
+  // No-op if role isn't changing
+  if (existing.role === newRole) {
+    return c.json({
+      success: true,
+      data: {
+        id: existing.id,
+        email: existing.email,
+        firstName: existing.first_name,
+        lastName: existing.last_name,
+        role: existing.role,
+        isActive: existing.is_active,
+      },
+    });
+  }
+
+  // Guard: cannot change to WORKER if person has no team
+  if (newRole === 'WORKER' && !existing.team_id) {
+    throw new AppError('TEAM_REQUIRED', 'Cannot assign WORKER role — this person has no team. Assign them to a team first.', 400);
+  }
+
+  // Guard: cannot demote a TEAM_LEAD who currently leads a team
+  if (existing.role === 'TEAM_LEAD' && newRole !== 'TEAM_LEAD') {
+    const teamRepo = new TeamRepository(prisma, companyId);
+    const ledTeam = await teamRepo.findByLeaderId(id);
+    if (ledTeam) {
+      throw new AppError('LEADER_HAS_TEAM', `Cannot change role — this person leads team "${ledTeam.name}". Reassign the team leader first.`, 400);
+    }
+  }
+
+  // Update person role with company_id filtering
+  const person = await repository.updatePersonRole(id, newRole);
 
   if (!person) {
     throw new AppError('NOT_FOUND', 'Person not found', 404);
@@ -272,7 +320,7 @@ export async function updateUserRole(c: Context): Promise<Response> {
     action: 'UPDATE_ROLE',
     entityType: 'PERSON',
     entityId: id,
-    details: { newRole: data.role },
+    details: { previousRole: existing.role, newRole: data.role },
   });
 
   return c.json({

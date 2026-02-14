@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { ArrowLeft, Users, Clock, UserCheck, Eye, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Users, Clock, UserCheck, AlertTriangle } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -21,16 +21,8 @@ import { useCreateTeam } from '@/features/team/hooks/useTeams';
 import { useTeamLeads, useSupervisors } from '@/features/person/hooks/usePersons';
 import { useToast } from '@/lib/hooks/use-toast';
 import { ROUTES } from '@/config/routes.config';
+import { isEndTimeAfterStart, TIME_REGEX } from '@/lib/utils/format.utils';
 import { WORK_DAYS_OPTIONS } from '@/types/team.types';
-
-// Helper to compare HH:mm times
-function isEndTimeAfterStart(start: string, end: string): boolean {
-  const [startH, startM] = start.split(':').map(Number);
-  const [endH, endM] = end.split(':').map(Number);
-  return endH * 60 + endM > startH * 60 + startM;
-}
-
-const timeRegex = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
 
 const createTeamSchema = z
   .object({
@@ -38,8 +30,8 @@ const createTeamSchema = z
     description: z.string().max(500).optional(),
     leaderId: z.string().min(1, 'Team leader is required'),
     supervisorId: z.string().optional().or(z.literal('')),
-    checkInStart: z.string().regex(timeRegex, 'Invalid time format (HH:MM)'),
-    checkInEnd: z.string().regex(timeRegex, 'Invalid time format (HH:MM)'),
+    checkInStart: z.string().regex(TIME_REGEX, 'Invalid time format (HH:MM)'),
+    checkInEnd: z.string().regex(TIME_REGEX, 'Invalid time format (HH:MM)'),
     workDays: z.array(z.string()).min(1, 'Select at least one work day'),
   })
   .refine(
@@ -79,7 +71,7 @@ export function AdminTeamCreatePage() {
       supervisorId: '',
       checkInStart: '06:00',
       checkInEnd: '10:00',
-      workDays: ['1', '2', '3', '4', '5'], // Mon-Fri
+      workDays: ['1', '2', '3', '4', '5'],
     },
   });
 
@@ -158,7 +150,7 @@ export function AdminTeamCreatePage() {
       )}
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-        {/* Basic Info */}
+        {/* Team Details */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -194,80 +186,68 @@ export function AdminTeamCreatePage() {
           </CardContent>
         </Card>
 
-        {/* Team Leader */}
+        {/* Leadership */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <UserCheck className="h-5 w-5" />
-              Team Leader
+              Leadership
             </CardTitle>
             <CardDescription>
-              Assign a team lead to manage this team and monitor worker check-ins
+              Assign a team leader and optionally a supervisor to this team
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <Label htmlFor="leaderId">Team Leader <span className="text-destructive">*</span></Label>
-              <Select
-                value={selectedLeaderId || ''}
-                onValueChange={(value) => setValue('leaderId', value)}
-                disabled={loadingTeamLeads}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={loadingTeamLeads ? 'Loading...' : 'Select a team lead'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {teamLeads.map((lead) => (
-                    <SelectItem key={lead.id} value={lead.id}>
-                      {lead.first_name} {lead.last_name} ({lead.email})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {errors.leaderId && (
-                <p className="text-sm text-destructive">{errors.leaderId.message}</p>
-              )}
-              <p className="text-sm text-muted-foreground">
-                The team leader will have access to view and monitor all worker check-ins for this team
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <Label htmlFor="leaderId">Team Leader <span className="text-destructive">*</span></Label>
+                <Select
+                  value={selectedLeaderId || ''}
+                  onValueChange={(value) => setValue('leaderId', value, { shouldValidate: true })}
+                  disabled={loadingTeamLeads}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={loadingTeamLeads ? 'Loading...' : 'Select a team lead'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {teamLeads.map((lead) => (
+                      <SelectItem key={lead.id} value={lead.id}>
+                        {lead.first_name} {lead.last_name} ({lead.email})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {errors.leaderId && (
+                  <p className="text-sm text-destructive">{errors.leaderId.message}</p>
+                )}
+                <p className="text-sm text-muted-foreground">
+                  Can view and monitor all worker check-ins
+                </p>
+              </div>
 
-        {/* Supervisor Assignment */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Eye className="h-5 w-5" />
-              Supervisor Assignment
-            </CardTitle>
-            <CardDescription>
-              Optionally assign a supervisor to oversee this team
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <Label htmlFor="supervisorId">Supervisor (Optional)</Label>
-              <Select
-                value={selectedSupervisorId || '__none__'}
-                onValueChange={(value) => setValue('supervisorId', value === '__none__' ? '' : value)}
-                disabled={loadingSupervisors}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={loadingSupervisors ? 'Loading...' : 'Select a supervisor (optional)'} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">None</SelectItem>
-                  {supervisors.map((sup) => (
-                    <SelectItem key={sup.id} value={sup.id}>
-                      {sup.first_name} {sup.last_name} ({sup.email})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-sm text-muted-foreground">
-                The supervisor will only see teams assigned to them in their dashboard
-              </p>
+              <div className="space-y-2">
+                <Label htmlFor="supervisorId">Supervisor (Optional)</Label>
+                <Select
+                  value={selectedSupervisorId || '__none__'}
+                  onValueChange={(value) => setValue('supervisorId', value === '__none__' ? '' : value, { shouldValidate: true })}
+                  disabled={loadingSupervisors}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={loadingSupervisors ? 'Loading...' : 'Select a supervisor'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">None</SelectItem>
+                    {supervisors.map((sup) => (
+                      <SelectItem key={sup.id} value={sup.id}>
+                        {sup.first_name} {sup.last_name} ({sup.email})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-muted-foreground">
+                  Only sees teams assigned to them
+                </p>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -284,7 +264,6 @@ export function AdminTeamCreatePage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* Time Window */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="checkInStart">Check-in Start Time</Label>
@@ -311,7 +290,6 @@ export function AdminTeamCreatePage() {
               </div>
             </div>
 
-            {/* Work Days */}
             <div className="space-y-2">
               <Label>Work Days</Label>
               <div className="flex flex-wrap gap-2">
@@ -338,7 +316,7 @@ export function AdminTeamCreatePage() {
         </Card>
 
         {/* Actions */}
-        <div className="flex justify-end gap-4">
+        <div className="flex justify-end gap-4 pt-4">
           <Button
             type="button"
             variant="outline"

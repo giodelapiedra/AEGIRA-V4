@@ -7,16 +7,12 @@ export type { CheckInSubmission, CheckIn } from '@/types/check-in.types';
 
 // Transform frontend form data to backend API format
 function transformToBackendFormat(data: CheckInSubmission) {
-  // Backend expects physicalCondition as 1-10 (1=poor, 10=excellent)
-  // Frontend sends fatigueLevel 1-10 (1=energized, 10=exhausted)
-  // So we invert: physicalCondition = 11 - fatigueLevel
-  const physicalCondition = Math.max(1, Math.min(10, 11 - data.fatigueLevel));
-
+  // energyLevel (1=low, 10=high) maps directly to physicalCondition (1=poor, 10=excellent)
   return {
     hoursSlept: data.sleepHours,
     sleepQuality: data.sleepQuality,
     stressLevel: data.stressLevel,
-    physicalCondition,
+    physicalCondition: data.energyLevel,
     painLevel: data.painLevel,
     painLocation: data.painLevel > 0 ? data.painLocation : undefined,
     physicalConditionNotes: data.physicalConditionNotes || undefined,

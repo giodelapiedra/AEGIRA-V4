@@ -5,9 +5,9 @@ import { PageHeader } from '@/components/common/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DataTable, SortableHeader } from '@/components/ui/data-table';
 import { PageLoader } from '@/components/common/PageLoader';
-import { ReadinessCategoryBadge } from '@/components/common/badge-utils';
+import { ReadinessCategoryBadge, SubmissionStatusBadge } from '@/components/common/badge-utils';
 import { useCheckInHistory } from '../hooks/useCheckInHistory';
-import { formatDate } from '@/lib/utils/date.utils';
+import { formatDate, formatTime } from '@/lib/utils/date.utils';
 import type { CheckIn } from '@/types/check-in.types';
 
 const columns: ColumnDef<CheckIn>[] = [
@@ -16,6 +16,22 @@ const columns: ColumnDef<CheckIn>[] = [
     header: ({ column }) => <SortableHeader column={column}>Date</SortableHeader>,
     cell: ({ row }) => (
       <span className="font-medium">{formatDate(row.original.checkInDate)}</span>
+    ),
+  },
+  {
+    accessorKey: 'submittedAt',
+    header: 'Time',
+    cell: ({ row }) => (
+      <span className="text-muted-foreground">{formatTime(row.original.submittedAt)}</span>
+    ),
+  },
+  {
+    id: 'submissionStatus',
+    header: 'Status',
+    cell: ({ row }) => (
+      <SubmissionStatusBadge
+        isLate={row.original.isLate}
+      />
     ),
   },
   {
@@ -34,9 +50,9 @@ const columns: ColumnDef<CheckIn>[] = [
     cell: ({ row }) => `${row.original.sleepQuality}/10`,
   },
   {
-    accessorKey: 'fatigueLevel',
-    header: 'Fatigue',
-    cell: ({ row }) => `${row.original.fatigueLevel}/10`,
+    accessorKey: 'energyLevel',
+    header: 'Energy',
+    cell: ({ row }) => `${row.original.energyLevel}/10`,
   },
   {
     accessorKey: 'stressLevel',

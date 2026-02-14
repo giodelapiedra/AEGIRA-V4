@@ -32,6 +32,7 @@ import {
   formatGender,
 } from '@/lib/utils/format.utils';
 import { ROUTES } from '@/config/routes.config';
+import { buildRoute } from '@/lib/utils/route.utils';
 import type { CaseStatus } from '@/types/incident.types';
 
 const VALID_TRANSITIONS: Record<CaseStatus, CaseStatus[]> = {
@@ -215,7 +216,7 @@ export function CaseDetailPage() {
                     variant="outline"
                     size="sm"
                     className="w-full"
-                    onClick={() => navigate(ROUTES.ADMIN_INCIDENT_DETAIL.replace(':id', caseData.incident.id))}
+                    onClick={() => navigate(buildRoute(ROUTES.ADMIN_INCIDENT_DETAIL, { id: caseData.incident.id }))}
                   >
                     <ExternalLink className="h-4 w-4 mr-1" />
                     View Incident {formatIncidentNumber(caseData.incident.incidentNumber, caseData.createdAt)}

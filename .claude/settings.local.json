@@ -80,7 +80,8 @@
       "Bash(1 <<'SQL'\nSELECT column_name, data_type, is_nullable\nFROM information_schema.columns\nWHERE table_name = 'missed_check_ins'\nORDER BY ordinal_position;\nSQL)",
       "Bash(npm ls:*)",
       "Bash(del \"D:\\\\AEGIRA V5\\\\aegira-frontend\\\\src\\\\features\\\\admin\\\\pages\\\\AdminSchedulesPage.tsx\")",
-      "Bash(git -C \"D:/AEGIRA V5\" log --oneline -10)"
+      "Bash(git -C \"D:/AEGIRA V5\" log --oneline -10)",
+      "WebSearch"
     ]
   }
 }

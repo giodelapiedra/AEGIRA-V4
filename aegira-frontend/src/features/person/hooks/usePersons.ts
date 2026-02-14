@@ -132,6 +132,25 @@ export function useUpdatePerson() {
       queryClient.invalidateQueries({ queryKey: ['person', personId, 'stats'] });
       queryClient.invalidateQueries({ queryKey: ['team', 'my-members'] });
       queryClient.invalidateQueries({ queryKey: ['teams'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    },
+  });
+}
+
+/**
+ * Cancel a pending team transfer
+ */
+export function useCancelTransfer() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (personId: string) =>
+      apiClient.delete(ENDPOINTS.PERSON.CANCEL_TRANSFER(personId)),
+    onSuccess: (_, personId) => {
+      queryClient.invalidateQueries({ queryKey: ['persons'] });
+      queryClient.invalidateQueries({ queryKey: ['person', personId] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['teams'] });
     },
   });
 }

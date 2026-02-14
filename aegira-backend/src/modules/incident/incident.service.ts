@@ -5,11 +5,12 @@ import type {
   IncidentSeverity,
   IncidentStatus,
   RejectionReason,
-  Prisma,
 } from '@prisma/client';
+import type { IncidentWithRelations } from './incident.repository';
 import { AppError } from '../../shared/errors';
 import { logAudit } from '../../shared/audit';
 import { NotificationRepository } from '../notification/notification.repository';
+import { buildEventData } from '../event/event.service';
 import { logger } from '../../config/logger';
 
 const VALID_TRANSITIONS: Record<IncidentStatus, IncidentStatus[]> = {
@@ -32,7 +33,10 @@ interface RejectIncidentInput {
 }
 
 export class IncidentService {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(
+    private readonly prisma: PrismaClient,
+    private readonly timezone: string = 'Asia/Manila'
+  ) {}
 
   /**
    * Create an incident with a retry loop for concurrent incident_number generation.
@@ -43,7 +47,7 @@ export class IncidentService {
     data: CreateIncidentInput,
     companyId: string,
     reporterId: string
-  ): Promise<Incident> {
+  ): Promise<IncidentWithRelations> {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const incident = await this.prisma.$transaction(async (tx) => {
@@ -88,19 +92,20 @@ export class IncidentService {
 
           // Event sourcing — inside transaction for consistency
           await tx.event.create({
-            data: {
-              company_id: companyId,
-              person_id: reporterId,
-              event_type: 'INCIDENT_CREATED',
-              entity_type: 'incident',
-              entity_id: created.id,
+            data: buildEventData({
+              companyId,
+              personId: reporterId,
+              eventType: 'INCIDENT_CREATED',
+              entityType: 'incident',
+              entityId: created.id,
               payload: {
                 incidentNumber,
                 incidentType: data.incidentType,
                 severity: data.severity,
                 title: data.title,
-              } as Prisma.InputJsonValue,
-            },
+              },
+              timezone: this.timezone,
+            }),
           });
 
           return created;
@@ -148,7 +153,7 @@ export class IncidentService {
     incidentId: string,
     companyId: string,
     reviewerId: string
-  ): Promise<Incident> {
+  ): Promise<IncidentWithRelations> {
     const existing = await this.prisma.incident.findFirst({
       where: { id: incidentId, company_id: companyId },
     });
@@ -211,34 +216,36 @@ export class IncidentService {
 
           // Event: INCIDENT_APPROVED
           await tx.event.create({
-            data: {
-              company_id: companyId,
-              person_id: reviewerId,
-              event_type: 'INCIDENT_APPROVED',
-              entity_type: 'incident',
-              entity_id: incidentId,
+            data: buildEventData({
+              companyId,
+              personId: reviewerId,
+              eventType: 'INCIDENT_APPROVED',
+              entityType: 'incident',
+              entityId: incidentId,
               payload: {
                 incidentNumber: updated.incident_number,
                 caseId: caseRecord.id,
                 caseNumber,
-              } as Prisma.InputJsonValue,
-            },
+              },
+              timezone: this.timezone,
+            }),
           });
 
           // Event: CASE_CREATED (uses entity_type='incident' for unified timeline)
           await tx.event.create({
-            data: {
-              company_id: companyId,
-              person_id: reviewerId,
-              event_type: 'CASE_CREATED',
-              entity_type: 'incident',
-              entity_id: incidentId,
+            data: buildEventData({
+              companyId,
+              personId: reviewerId,
+              eventType: 'CASE_CREATED',
+              entityType: 'incident',
+              entityId: incidentId,
               payload: {
                 caseId: caseRecord.id,
                 caseNumber,
                 status: 'OPEN',
-              } as Prisma.InputJsonValue,
-            },
+              },
+              timezone: this.timezone,
+            }),
           });
 
           return { incident: updated, caseRecord };
@@ -276,7 +283,7 @@ export class IncidentService {
             status: result.caseRecord.status,
             notes: result.caseRecord.notes,
           },
-        } as Incident;
+        } as IncidentWithRelations;
       } catch (e: unknown) {
         if ((e as { code?: string }).code === 'P2002' && attempt < 2) continue;
         throw e;
@@ -293,7 +300,7 @@ export class IncidentService {
     companyId: string,
     reviewerId: string,
     data: RejectIncidentInput
-  ): Promise<Incident> {
+  ): Promise<IncidentWithRelations> {
     const existing = await this.prisma.incident.findFirst({
       where: { id: incidentId, company_id: companyId },
     });
@@ -321,6 +328,8 @@ export class IncidentService {
               first_name: true,
               last_name: true,
               email: true,
+              gender: true,
+              date_of_birth: true,
               team: { select: { id: true, name: true } },
             },
           },
@@ -335,18 +344,19 @@ export class IncidentService {
 
       // Event: INCIDENT_REJECTED
       await tx.event.create({
-        data: {
-          company_id: companyId,
-          person_id: reviewerId,
-          event_type: 'INCIDENT_REJECTED',
-          entity_type: 'incident',
-          entity_id: incidentId,
+        data: buildEventData({
+          companyId,
+          personId: reviewerId,
+          eventType: 'INCIDENT_REJECTED',
+          entityType: 'incident',
+          entityId: incidentId,
           payload: {
             incidentNumber: incident.incident_number,
             rejectionReason: data.rejectionReason,
             rejectionExplanation: data.rejectionExplanation,
-          } as Prisma.InputJsonValue,
-        },
+          },
+          timezone: this.timezone,
+        }),
       });
 
       return incident;

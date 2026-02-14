@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ColumnDef, PaginationState } from '@tanstack/react-table';
-import { Users, Plus, MoreHorizontal, Eye, Edit } from 'lucide-react';
+import { Users, Plus, MoreHorizontal, Eye, Edit, RotateCcw } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
 import { TableSearch } from '@/components/common/TableSearch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,6 +17,7 @@ import { DataTable, SortableHeader } from '@/components/ui/data-table';
 import { PageLoader } from '@/components/common/PageLoader';
 import { useTeams, Team } from '@/features/team/hooks/useTeams';
 import { ROUTES } from '@/config/routes.config';
+import { buildRoute } from '@/lib/utils/route.utils';
 
 const columns: ColumnDef<Team>[] = [
   {
@@ -59,15 +60,18 @@ const columns: ColumnDef<Team>[] = [
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem asChild>
-            <Link to={ROUTES.TEAM_DETAIL.replace(':teamId', row.original.id)}>
+            <Link to={buildRoute(ROUTES.TEAM_DETAIL, { teamId: row.original.id })}>
               <Eye className="h-4 w-4 mr-2" />
               View
             </Link>
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
-            <Link to={`${ROUTES.ADMIN_TEAMS}/${row.original.id}/edit`}>
-              <Edit className="h-4 w-4 mr-2" />
-              Edit
+            <Link to={buildRoute(ROUTES.ADMIN_TEAMS_EDIT, { teamId: row.original.id })}>
+              {row.original.is_active ? (
+                <><Edit className="h-4 w-4 mr-2" />Edit</>
+              ) : (
+                <><RotateCcw className="h-4 w-4 mr-2" />Reactivate</>
+              )}
             </Link>
           </DropdownMenuItem>
         </DropdownMenuContent>

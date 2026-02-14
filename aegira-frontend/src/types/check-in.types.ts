@@ -7,7 +7,7 @@
 export interface CheckInSubmission {
   sleepHours: number;        // 0-24, decimal
   sleepQuality: number;      // 1-10, integer
-  fatigueLevel: number;      // 1-10, integer (1=energized, 10=exhausted)
+  energyLevel: number;       // 1-10, integer (1=low energy, 10=high energy) → maps to backend physicalCondition
   stressLevel: number;       // 1-10, integer
   painLevel: number;         // 0-10, integer (0=no pain)
   painLocation?: string;     // Required if painLevel > 0 (dropdown selection)
@@ -52,7 +52,7 @@ export interface BackendCheckIn {
   pain_level: number | null;
   pain_location: string | null;
   physical_condition_notes: string | null;
-  notes?: string;
+  notes: string | null;
   readiness_score: number;
   readiness_level: string;
   sleep_score: number;
@@ -60,6 +60,12 @@ export interface BackendCheckIn {
   physical_score: number;
   pain_score: number | null;
   created_at: string;
+  // Event relation (Phase 1 - late submission tracking)
+  event?: {
+    is_late: boolean;
+    late_by_minutes: number | null;
+    event_time: string;
+  };
 }
 
 // Full check-in record from backend
@@ -72,7 +78,7 @@ export interface CheckIn {
   // Input fields
   sleepHours: number;
   sleepQuality: number;
-  fatigueLevel: number;
+  energyLevel: number;
   stressLevel: number;
   painLevel: number;
   painLocation?: string;
@@ -82,8 +88,12 @@ export interface CheckIn {
   // Calculated results
   readinessResult: ReadinessResult;
 
+  // Late submission tracking (Phase 1)
+  isLate?: boolean;
+  lateByMinutes?: number;
+
   // Metadata
-  submittedAt: string;       // ISO datetime string
+  submittedAt: string;       // ISO datetime string (event_time)
   createdAt: string;
   updatedAt: string;
 }
@@ -102,7 +112,7 @@ export interface DashboardCheckIn {
   id: string;
   sleepHours: number;
   sleepQuality: number;
-  fatigueLevel: number;
+  energyLevel: number;
   stressLevel: number;
   readinessResult: ReadinessResult;
 }
@@ -119,6 +129,18 @@ export interface WorkerSchedule {
   checkInEnd: string;        // e.g. "10:00"
 }
 
+// Pending transfer info for worker dashboard
+export interface PendingTransferInfo {
+  teamId: string;
+  teamName: string | null;
+  effectiveDate: string | null; // ISO date string
+  schedule: {
+    checkInStart: string;
+    checkInEnd: string;
+    workDays: string;
+  } | null;
+}
+
 // Worker dashboard stats
 export interface WorkerDashboardStats {
   streak: number;            // Consecutive check-in days
@@ -129,11 +151,12 @@ export interface WorkerDashboardStats {
   todayCheckIn: DashboardCheckIn | null;
   weeklyTrend: {
     date: string;
-    score: number;
-    category: ReadinessCategory;
+    score: number | null;
+    category: ReadinessCategory | null;
   }[];
   memberSince: string | null; // ISO date when worker was assigned to team
   schedule: WorkerSchedule;   // Today's schedule context
+  pendingTransfer: PendingTransferInfo | null;
 }
 
 // Team lead dashboard stats (team leads monitor their assigned team)
@@ -164,6 +187,7 @@ export interface TeamSummaryStats {
   leaderName: string | null;
   workerCount: number;
   todayCheckIns: number;
+  expectedCheckIns: number;
   pendingCheckIns: number;
   avgReadiness: number;
   complianceRate: number;
@@ -174,6 +198,7 @@ export interface SupervisorDashboardStats {
   totalTeams: number;
   totalWorkers: number;
   totalCheckIns: number;
+  totalExpected: number;
   totalPending: number;
   overallAvgReadiness: number;
   overallComplianceRate: number;
@@ -193,6 +218,8 @@ export interface TeamMemberStatus {
   checkInTime?: string;
   readinessCategory?: ReadinessCategory;
   readinessScore?: number;
+  transferringOut?: boolean; // Worker has a pending transfer to another team
+  transferringToTeam?: string | null; // Name of the team being transferred to
 }
 
 // Admin dashboard stats (management-focused, not check-in focused)

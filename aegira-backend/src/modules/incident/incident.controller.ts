@@ -1,5 +1,5 @@
 import type { Context } from 'hono';
-import { IncidentRepository } from './incident.repository';
+import { IncidentRepository, type IncidentWithRelations } from './incident.repository';
 import { IncidentService } from './incident.service';
 import type {
   CreateIncidentInput,
@@ -15,8 +15,8 @@ function getRepository(companyId: string): IncidentRepository {
   return new IncidentRepository(prisma, companyId);
 }
 
-function getService(): IncidentService {
-  return new IncidentService(prisma);
+function getService(timezone: string): IncidentService {
+  return new IncidentService(prisma, timezone);
 }
 
 function calculateAge(dateOfBirth: Date | null): number | null {
@@ -30,33 +30,7 @@ function calculateAge(dateOfBirth: Date | null): number | null {
   return age;
 }
 
-function mapIncidentToResponse(incident: {
-  id: string;
-  incident_number: number;
-  reporter_id: string;
-  reporter: {
-    id: string;
-    first_name: string;
-    last_name: string;
-    email: string;
-    gender: string | null;
-    date_of_birth: Date | null;
-    team: { id: string; name: string } | null;
-  };
-  incident_type: string;
-  severity: string;
-  title: string;
-  location: string | null;
-  description: string;
-  status: string;
-  reviewed_by: string | null;
-  reviewer: { id: string; first_name: string; last_name: string } | null;
-  reviewed_at: Date | null;
-  rejection_reason: string | null;
-  rejection_explanation: string | null;
-  incident_case: { id: string; case_number: number; status: string; notes: string | null } | null;
-  created_at: Date;
-}): Record<string, unknown> {
+function mapIncidentToResponse(incident: IncidentWithRelations): Record<string, unknown> {
   return {
     id: incident.id,
     incidentNumber: incident.incident_number,
@@ -94,13 +68,13 @@ function mapIncidentToResponse(incident: {
 export async function createIncident(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const userId = c.get('userId') as string;
-  const data = c.req.valid('json') as CreateIncidentInput;
+  const data = c.req.valid('json' as never) as CreateIncidentInput;
 
-  const service = getService();
+  const service = getService(c.get('companyTimezone') as string);
   const incident = await service.createIncident(data, companyId, userId);
 
   return c.json(
-    { success: true, data: mapIncidentToResponse(incident as Parameters<typeof mapIncidentToResponse>[0]) },
+    { success: true, data: mapIncidentToResponse(incident) },
     201
   );
 }
@@ -113,7 +87,7 @@ export async function getMyIncidents(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const userId = c.get('userId') as string;
   const { page, limit } = parsePagination(c.req.query('page'), c.req.query('limit'));
-  const { status } = c.req.valid('query') as GetMyIncidentsQuery;
+  const { status } = c.req.valid('query' as never) as GetMyIncidentsQuery;
 
   const repository = getRepository(companyId);
 
@@ -123,7 +97,7 @@ export async function getMyIncidents(c: Context): Promise<Response> {
   ]);
 
   const items = result.items.map((incident) =>
-    mapIncidentToResponse(incident as Parameters<typeof mapIncidentToResponse>[0])
+    mapIncidentToResponse(incident)
   );
 
   return c.json({
@@ -143,7 +117,7 @@ export async function getMyIncidents(c: Context): Promise<Response> {
 export async function getIncidents(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const { page, limit } = parsePagination(c.req.query('page'), c.req.query('limit'));
-  const { status, severity, type, search } = c.req.valid('query') as GetIncidentsQuery;
+  const { status, severity, type, search } = c.req.valid('query' as never) as GetIncidentsQuery;
 
   const repository = getRepository(companyId);
 
@@ -153,7 +127,7 @@ export async function getIncidents(c: Context): Promise<Response> {
   ]);
 
   const items = result.items.map((incident) =>
-    mapIncidentToResponse(incident as Parameters<typeof mapIncidentToResponse>[0])
+    mapIncidentToResponse(incident)
   );
 
   return c.json({
@@ -192,7 +166,7 @@ export async function getIncidentById(c: Context): Promise<Response> {
 
   return c.json({
     success: true,
-    data: mapIncidentToResponse(incident as Parameters<typeof mapIncidentToResponse>[0]),
+    data: mapIncidentToResponse(incident),
   });
 }
 
@@ -251,12 +225,12 @@ export async function approveIncident(c: Context): Promise<Response> {
   const userId = c.get('userId') as string;
   const id = c.req.param('id');
 
-  const service = getService();
+  const service = getService(c.get('companyTimezone') as string);
   const incident = await service.approveIncident(id, companyId, userId);
 
   return c.json({
     success: true,
-    data: mapIncidentToResponse(incident as Parameters<typeof mapIncidentToResponse>[0]),
+    data: mapIncidentToResponse(incident),
   });
 }
 
@@ -268,13 +242,13 @@ export async function rejectIncident(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const userId = c.get('userId') as string;
   const id = c.req.param('id');
-  const data = c.req.valid('json') as RejectIncidentInput;
+  const data = c.req.valid('json' as never) as RejectIncidentInput;
 
-  const service = getService();
+  const service = getService(c.get('companyTimezone') as string);
   const incident = await service.rejectIncident(id, companyId, userId, data);
 
   return c.json({
     success: true,
-    data: mapIncidentToResponse(incident as Parameters<typeof mapIncidentToResponse>[0]),
+    data: mapIncidentToResponse(incident),
   });
 }

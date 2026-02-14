@@ -14,6 +14,7 @@ import { useCases } from '../hooks/useCases';
 import { formatDate } from '@/lib/utils/date.utils';
 import { formatCaseNumber } from '@/lib/utils/format.utils';
 import { ROUTES } from '@/config/routes.config';
+import { buildRoute } from '@/lib/utils/route.utils';
 import type { Case, CaseStatus } from '@/types/incident.types';
 
 const columns: ColumnDef<Case>[] = [
@@ -94,7 +95,7 @@ const columns: ColumnDef<Case>[] = [
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => navigate(ROUTES.ADMIN_CASE_DETAIL.replace(':id', row.original.id))}
+          onClick={() => navigate(buildRoute(ROUTES.ADMIN_CASE_DETAIL, { id: row.original.id }))}
           aria-label="View case details"
         >
           <Eye className="h-4 w-4 mr-1" />

@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react';
-import { ColumnDef, PaginationState } from '@tanstack/react-table';
+import type { ColumnDef, PaginationState } from '@tanstack/react-table';
 import { AlertTriangle, Eye, Flame, TrendingUp, TrendingDown, Calendar, AlertCircle, Target } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { MissedCheckInStatusBadge } from '@/components/common/badge-utils';
 import { Button } from '@/components/ui/button';
 import { DataTable, SortableHeader } from '@/components/ui/data-table';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
@@ -30,6 +31,13 @@ const getColumns = (onView: (record: MissedCheckInRecord) => void): ColumnDef<Mi
     header: 'Schedule',
     cell: ({ row }) => (
       <span className="text-muted-foreground">{row.original.scheduleWindow}</span>
+    ),
+  },
+  {
+    id: 'resolutionStatus',
+    header: 'Status',
+    cell: ({ row }) => (
+      <MissedCheckInStatusBadge resolvedAt={row.original.resolvedAt} />
     ),
   },
   {
@@ -111,6 +119,12 @@ export function MemberMissedCheckInTable({ personId }: MemberMissedCheckInTableP
             <div className="space-y-3">
               <h4 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Basic Info</h4>
               <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-muted-foreground">Status</p>
+                  <div className="mt-1">
+                    <MissedCheckInStatusBadge resolvedAt={selectedRecord?.resolvedAt} />
+                  </div>
+                </div>
                 <div>
                   <p className="text-muted-foreground">Team Leader</p>
                   <p className="font-medium">{selectedRecord?.teamLeaderName || 'Not assigned'}</p>

@@ -2,8 +2,14 @@
 // Calculates contextual state snapshot when a missed check-in is detected
 import type { PrismaClient, Role } from '@prisma/client';
 import { DateTime } from 'luxon';
-import { formatDateInTimezone, getDayOfWeekInTimezone } from '../../shared/utils';
+import {
+  formatDateInTimezone,
+  precomputeDateRange,
+  buildDateLookup,
+  daysBetweenDateStrings,
+} from '../../shared/utils';
 import { getEffectiveSchedule } from '../../shared/schedule.utils';
+import type { PrecomputedDate } from '../../shared/utils';
 
 /**
  * State snapshot captured at the moment a missed check-in is detected.
@@ -87,6 +93,10 @@ export class MissedCheckInSnapshotService {
       this.getMissedCheckInsLast90Days(personIds, missedDate),
     ]);
 
+    // Pre-compute 90-day date range ONCE for all workers (shared across streak + completion calculations)
+    const ninetyDaysAgo = new Date(missedDate.getTime() - 90 * 24 * 60 * 60 * 1000);
+    const dateRange90d = precomputeDateRange(ninetyDaysAgo, 90, this.timezone);
+
     const results = new Map<string, StateSnapshot>();
 
     for (const worker of workers) {
@@ -95,7 +105,7 @@ export class MissedCheckInSnapshotService {
 
       results.set(
         worker.personId,
-        this.calculateForWorker(worker, workerCheckIns, workerMisses, missedDate, holidayDates)
+        this.calculateForWorker(worker, workerCheckIns, workerMisses, missedDate, holidayDates, dateRange90d)
       );
     }
 
@@ -110,7 +120,8 @@ export class MissedCheckInSnapshotService {
     checkIns: CheckInRecord[],
     previousMisses: MissedRecord[],
     missedDate: Date,
-    holidayDates: Set<string>
+    holidayDates: Set<string>,
+    dateRange90d: PrecomputedDate[]
   ): StateSnapshot {
     const today = formatDateInTimezone(missedDate, this.timezone);
     const todayDt = DateTime.fromISO(today, { zone: this.timezone });
@@ -131,46 +142,54 @@ export class MissedCheckInSnapshotService {
     // Week of month (1-5)
     const weekOfMonth = Math.ceil(todayDt.day / 7);
 
-    // Days since last check-in
+    // Days since last check-in (uses simple string math instead of Luxon)
     const lastCheckIn = checkIns[0]; // Sorted desc by date
-    const daysSinceLastCheckIn = lastCheckIn ? this.daysBetween(lastCheckIn.date, today) : null;
+    const daysSinceLastCheckIn = lastCheckIn ? daysBetweenDateStrings(lastCheckIn.date, today) : null;
 
     // Days since last miss
     const lastMiss = previousMisses[0]; // Sorted desc by date
-    const daysSinceLastMiss = lastMiss ? this.daysBetween(lastMiss.date, today) : null;
+    const daysSinceLastMiss = lastMiss ? daysBetweenDateStrings(lastMiss.date, today) : null;
 
-    // Calculate streak (consecutive work days with check-ins before today)
+    // Calculate streak using pre-computed date range
     const checkInStreakBefore = this.calculateStreak(
       checkIns,
       schedule.workDays,
       holidayDates,
-      missedDate
+      dateRange90d,
+      today
     );
 
-    // Recent readiness avg (last 7 days)
-    const last7DaysCheckIns = checkIns.filter((c) => this.daysBetween(c.date, today) <= 7);
+    // Recent readiness avg (last 7 days) — uses string comparison instead of daysBetween()
+    const sevenDaysAgoStr = dateRange90d.length >= 7
+      ? dateRange90d[dateRange90d.length - 7]!.dateStr
+      : dateRange90d[0]?.dateStr ?? today;
+    const last7DaysCheckIns = checkIns.filter((c) => c.date >= sevenDaysAgoStr);
     const recentReadinessAvg =
       last7DaysCheckIns.length > 0
         ? last7DaysCheckIns.reduce((sum, c) => sum + c.readinessScore, 0) /
           last7DaysCheckIns.length
         : null;
 
-    // Count misses in windows (excluding today's miss which is being created)
-    const missesInLast30d = previousMisses.filter(
-      (m) => this.daysBetween(m.date, today) <= 30
-    ).length;
-    const missesInLast60d = previousMisses.filter(
-      (m) => this.daysBetween(m.date, today) <= 60
-    ).length;
+    // Count misses in windows — uses string comparison instead of daysBetween()
+    const thirtyDaysAgoStr = dateRange90d.length >= 60
+      ? dateRange90d[dateRange90d.length - 30]!.dateStr
+      : dateRange90d[Math.max(0, dateRange90d.length - 30)]?.dateStr ?? today;
+    const sixtyDaysAgoStr = dateRange90d.length >= 30
+      ? dateRange90d[dateRange90d.length - 60 < 0 ? 0 : dateRange90d.length - 60]!.dateStr
+      : dateRange90d[0]?.dateStr ?? today;
+
+    const missesInLast30d = previousMisses.filter((m) => m.date >= thirtyDaysAgoStr).length;
+    const missesInLast60d = previousMisses.filter((m) => m.date >= sixtyDaysAgoStr).length;
     const missesInLast90d = previousMisses.length;
 
-    // Baseline completion rate since assignment
+    // Baseline completion rate since assignment (uses pre-computed date range)
     const baselineCompletionRate = this.calculateCompletionRate(
       worker,
       schedule.workDays,
       checkIns,
       holidayDates,
-      missedDate
+      dateRange90d,
+      today
     );
 
     // Pattern indicators
@@ -203,7 +222,7 @@ export class MissedCheckInSnapshotService {
 
   /**
    * Calculate consecutive work day streak before the missed date.
-   * Holidays and non-work days are skipped (don't break streak).
+   * Uses pre-computed date range to avoid per-iteration Luxon calls.
    *
    * The streak counts consecutive work days WITH check-ins going backwards from yesterday.
    * If the most recent work day has no check-in, streak is 0.
@@ -212,20 +231,23 @@ export class MissedCheckInSnapshotService {
     checkIns: CheckInRecord[],
     workDays: string[],
     holidayDates: Set<string>,
-    missedDate: Date
+    dateRange90d: PrecomputedDate[],
+    todayStr: string
   ): number {
     // Build a set of check-in dates for quick lookup
     const checkInDates = new Set(checkIns.map((c) => c.date));
 
     let streak = 0;
 
-    // Iterate backwards from yesterday (not today - today is the missed day)
-    for (let i = 1; i <= 90; i++) {
-      const checkDate = new Date(missedDate.getTime() - i * 24 * 60 * 60 * 1000);
-      const dateStr = formatDateInTimezone(checkDate, this.timezone);
-      const dow = getDayOfWeekInTimezone(this.timezone, dateStr).toString();
-      const isHolidayDay = holidayDates.has(dateStr);
-      const isScheduledWorkDay = workDays.includes(dow);
+    // Iterate backwards from the end of pre-computed range (yesterday, day before, etc.)
+    // dateRange90d is ordered from oldest to newest
+    for (let i = dateRange90d.length - 1; i >= 0; i--) {
+      const day = dateRange90d[i]!;
+      // Skip today and future dates
+      if (day.dateStr >= todayStr) continue;
+
+      const isHolidayDay = holidayDates.has(day.dateStr);
+      const isScheduledWorkDay = workDays.includes(day.dow);
 
       // Skip holidays and non-work days (they don't break or contribute to streak)
       if (isHolidayDay || !isScheduledWorkDay) {
@@ -233,12 +255,9 @@ export class MissedCheckInSnapshotService {
       }
 
       // This is a required work day
-      if (checkInDates.has(dateStr)) {
-        // Worker checked in on this work day - increment streak
+      if (checkInDates.has(day.dateStr)) {
         streak++;
       } else {
-        // Worker missed this work day - streak ends here
-        // (If streak is still 0, this confirms the most recent work day was missed)
         break;
       }
     }
@@ -248,6 +267,7 @@ export class MissedCheckInSnapshotService {
 
   /**
    * Calculate completion rate since team assignment.
+   * Uses pre-computed date range to avoid per-day Luxon calls.
    * Formula: (check-ins / required work days) * 100
    */
   private calculateCompletionRate(
@@ -255,29 +275,22 @@ export class MissedCheckInSnapshotService {
     workDays: string[],
     checkIns: CheckInRecord[],
     holidayDates: Set<string>,
-    missedDate: Date
+    dateRange90d: PrecomputedDate[],
+    todayStr: string
   ): number {
     if (!worker.teamAssignedAt) {
       return 0;
     }
 
     const assignedDateStr = formatDateInTimezone(worker.teamAssignedAt, this.timezone);
-    const todayStr = formatDateInTimezone(missedDate, this.timezone);
 
-    // Count required work days from assignment to yesterday (not including today)
+    // Count required work days from assignment to yesterday using pre-computed range
     let requiredDays = 0;
-    const startDate = new Date(worker.teamAssignedAt);
-    const yesterday = new Date(missedDate.getTime() - 24 * 60 * 60 * 1000);
+    for (const day of dateRange90d) {
+      // Skip days before assignment or today onwards
+      if (day.dateStr < assignedDateStr || day.dateStr >= todayStr) continue;
 
-    for (
-      let d = new Date(startDate);
-      d <= yesterday;
-      d = new Date(d.getTime() + 24 * 60 * 60 * 1000)
-    ) {
-      const dateStr = formatDateInTimezone(d, this.timezone);
-      const dow = getDayOfWeekInTimezone(this.timezone, dateStr).toString();
-
-      if (workDays.includes(dow) && !holidayDates.has(dateStr)) {
+      if (workDays.includes(day.dow) && !holidayDates.has(day.dateStr)) {
         requiredDays++;
       }
     }
@@ -292,15 +305,6 @@ export class MissedCheckInSnapshotService {
     }).length;
 
     return (checkInsCount / requiredDays) * 100;
-  }
-
-  /**
-   * Calculate days between two date strings (YYYY-MM-DD).
-   */
-  private daysBetween(dateStr1: string, dateStr2: string): number {
-    const dt1 = DateTime.fromISO(dateStr1, { zone: this.timezone });
-    const dt2 = DateTime.fromISO(dateStr2, { zone: this.timezone });
-    return Math.abs(Math.floor(dt2.diff(dt1, 'days').days));
   }
 
   /**
@@ -329,6 +333,10 @@ export class MissedCheckInSnapshotService {
       orderBy: { check_in_date: 'desc' },
     });
 
+    // Pre-compute date lookup for all unique check-in dates (one Luxon call per unique date)
+    const uniqueDates = [...new Set(checkIns.map(ci => ci.check_in_date.getTime()))].map(t => new Date(t));
+    const dateLookup = buildDateLookup(uniqueDates, this.timezone);
+
     // Group by person_id
     const result = new Map<string, CheckInRecord[]>();
     for (const personId of personIds) {
@@ -339,7 +347,7 @@ export class MissedCheckInSnapshotService {
       const records = result.get(ci.person_id);
       if (records) {
         records.push({
-          date: formatDateInTimezone(ci.check_in_date, this.timezone),
+          date: dateLookup.get(ci.check_in_date.getTime()) ?? formatDateInTimezone(ci.check_in_date, this.timezone),
           readinessScore: ci.readiness_score,
         });
       }
@@ -373,6 +381,10 @@ export class MissedCheckInSnapshotService {
       orderBy: { missed_date: 'desc' },
     });
 
+    // Pre-compute date lookup for all unique missed dates
+    const uniqueDates = [...new Set(misses.map(m => m.missed_date.getTime()))].map(t => new Date(t));
+    const dateLookup = buildDateLookup(uniqueDates, this.timezone);
+
     // Group by person_id
     const result = new Map<string, MissedRecord[]>();
     for (const personId of personIds) {
@@ -383,7 +395,7 @@ export class MissedCheckInSnapshotService {
       const records = result.get(miss.person_id);
       if (records) {
         records.push({
-          date: formatDateInTimezone(miss.missed_date, this.timezone),
+          date: dateLookup.get(miss.missed_date.getTime()) ?? formatDateInTimezone(miss.missed_date, this.timezone),
         });
       }
     }

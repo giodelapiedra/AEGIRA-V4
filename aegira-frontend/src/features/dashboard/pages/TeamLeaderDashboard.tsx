@@ -1,5 +1,5 @@
 import { ColumnDef } from '@tanstack/react-table';
-import { Users, CheckCircle, AlertCircle, TrendingUp, Clock, UserPlus, XCircle, BarChart3, CalendarOff, CalendarClock } from 'lucide-react';
+import { Users, CheckCircle, AlertCircle, TrendingUp, Clock, UserPlus, XCircle, BarChart3, CalendarOff, CalendarClock, ArrowRightLeft } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { PageLoader } from '@/components/common/PageLoader';
@@ -81,7 +81,17 @@ const columns: ColumnDef<TeamMemberStatus>[] = [
   {
     accessorKey: 'status',
     header: 'Status',
-    cell: ({ row }) => getStatusBadge(row.original),
+    cell: ({ row }) => (
+      <div className="flex flex-wrap gap-1">
+        {getStatusBadge(row.original)}
+        {row.original.transferringOut && (
+          <Badge variant="outline" className="gap-1 text-amber-600 border-amber-300">
+            <ArrowRightLeft className="h-3 w-3" />
+            {row.original.transferringToTeam ? `To ${row.original.transferringToTeam}` : 'Transferring'}
+          </Badge>
+        )}
+      </div>
+    ),
   },
   {
     accessorKey: 'readinessCategory',

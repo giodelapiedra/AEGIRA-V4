@@ -28,7 +28,7 @@ export interface IncidentFilters extends PaginationParams {
   reporterId?: string;
 }
 
-type IncidentWithRelations = Incident & {
+export type IncidentWithRelations = Incident & {
   reporter: {
     id: string;
     first_name: string;
@@ -47,7 +47,23 @@ export class IncidentRepository extends BaseRepository {
     super(prisma, companyId);
   }
 
-  private readonly includeRelations = {
+  private readonly selectWithRelations = {
+    id: true,
+    company_id: true,
+    incident_number: true,
+    reporter_id: true,
+    incident_type: true,
+    severity: true,
+    title: true,
+    location: true,
+    description: true,
+    status: true,
+    reviewed_by: true,
+    reviewed_at: true,
+    rejection_reason: true,
+    rejection_explanation: true,
+    created_at: true,
+    updated_at: true,
     reporter: {
       select: {
         id: true,
@@ -65,12 +81,12 @@ export class IncidentRepository extends BaseRepository {
     incident_case: {
       select: { id: true, case_number: true, status: true, notes: true },
     },
-  };
+  } as const;
 
   async findById(id: string): Promise<IncidentWithRelations | null> {
     return this.prisma.incident.findFirst({
       where: this.where({ id }),
-      include: this.includeRelations,
+      select: this.selectWithRelations,
     }) as Promise<IncidentWithRelations | null>;
   }
 
@@ -101,7 +117,7 @@ export class IncidentRepository extends BaseRepository {
     const [items, total] = await Promise.all([
       this.prisma.incident.findMany({
         where,
-        include: this.includeRelations,
+        select: this.selectWithRelations,
         orderBy: { created_at: 'desc' },
         skip: calculateSkip(filters),
         take: filters.limit,
@@ -144,12 +160,18 @@ export class IncidentRepository extends BaseRepository {
         entity_type: 'incident',
         entity_id: incidentId,
       },
-      include: {
+      select: {
+        id: true,
+        event_type: true,
+        payload: true,
+        created_at: true,
+        event_time: true,
         person: {
           select: { id: true, first_name: true, last_name: true },
         },
       },
       orderBy: { created_at: 'asc' },
+      take: 200,
     });
   }
 }

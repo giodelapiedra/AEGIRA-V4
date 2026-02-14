@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { authMiddleware } from '../../middleware/auth';
 import { tenantMiddleware } from '../../middleware/tenant';
+import { roleMiddleware } from '../../middleware/role';
 import * as controller from './check-in.controller';
 import { submitCheckInSchema, getCheckInHistorySchema } from './check-in.validator';
 
@@ -12,14 +13,20 @@ const router = new Hono();
 router.use('*', authMiddleware);
 router.use('*', tenantMiddleware);
 
+// Only workers and team leads submit check-ins (they're assigned to teams)
+const checkInRoles = roleMiddleware(['WORKER', 'TEAM_LEAD']);
+
 // POST /api/v1/check-ins - Submit a new check-in
-router.post('/', zValidator('json', submitCheckInSchema), controller.submitCheckIn);
+router.post('/', checkInRoles, zValidator('json', submitCheckInSchema), controller.submitCheckIn);
+
+// GET endpoints below are scoped to authenticated user's own data via c.get('userId')
+// - /:id: has manual access control in controller (owner, WHS, SUPERVISOR, ADMIN, TEAM_LEAD)
 
 // GET /api/v1/check-ins/today - Get today's check-in (MUST be before /:id)
 router.get('/today', controller.getTodayCheckIn);
 
-// GET /api/v1/check-ins/status - Get check-in status (can they check in based on team schedule)
-router.get('/status', controller.getCheckInStatus);
+// GET /api/v1/check-ins/status - Get check-in status (restricted to roles that can submit)
+router.get('/status', checkInRoles, controller.getCheckInStatus);
 
 // GET /api/v1/check-ins/history - Get check-in history (MUST be before /:id)
 router.get('/history', zValidator('query', getCheckInHistorySchema), controller.getCheckInHistory);

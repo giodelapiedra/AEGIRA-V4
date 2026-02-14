@@ -3,6 +3,7 @@ import { apiClient } from '@/lib/api/client';
 import { ENDPOINTS } from '@/lib/api/endpoints';
 import { STALE_TIMES } from '@/config/query.config';
 import { levelToCategory } from '@/lib/utils/format.utils';
+import { generateFactors, generateRecommendations } from './useTodayCheckIn';
 import type { BackendCheckIn, CheckIn, CheckInHistory } from '@/types/check-in.types';
 
 export type { CheckIn, CheckInHistory } from '@/types/check-in.types';
@@ -26,19 +27,21 @@ function transformCheckIn(data: BackendCheckIn): CheckIn {
     checkInDate: data.check_in_date.slice(0, 10),
     sleepHours: data.hours_slept,
     sleepQuality: data.sleep_quality,
-    fatigueLevel: 11 - data.physical_condition,
+    energyLevel: data.physical_condition,
     stressLevel: data.stress_level,
     painLevel: data.pain_level ?? 0,
     painLocation: data.pain_location ?? undefined,
     physicalConditionNotes: data.physical_condition_notes ?? undefined,
-    notes: data.notes,
+    notes: data.notes ?? undefined,
     readinessResult: {
       score: data.readiness_score,
       category: levelToCategory(data.readiness_level),
-      factors: [],
-      recommendations: [],
+      factors: generateFactors(data),
+      recommendations: generateRecommendations(data),
     },
-    submittedAt: data.created_at,
+    isLate: data.event?.is_late ?? false,
+    lateByMinutes: data.event?.late_by_minutes ?? undefined,
+    submittedAt: data.event?.event_time ?? data.created_at,
     createdAt: data.created_at,
     updatedAt: data.created_at,
   };
@@ -52,7 +55,7 @@ interface UseCheckInHistoryParams {
 export function useCheckInHistory({ page = 1, limit = 10 }: UseCheckInHistoryParams = {}) {
   return useQuery({
     queryKey: ['check-ins', 'history', page, limit],
-    staleTime: STALE_TIMES.IMMUTABLE, // Historical data rarely changes
+    staleTime: STALE_TIMES.STATIC, // Historical data changes infrequently (isLate can update)
     placeholderData: keepPreviousData, // Smooth pagination transitions
     queryFn: async () => {
       const params = new URLSearchParams({

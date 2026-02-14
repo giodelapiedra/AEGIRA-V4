@@ -31,10 +31,11 @@ function getWorkDayName(day: string): string {
 
 export function CheckInPage() {
   const navigate = useNavigate();
-  const { data: todayCheckIn, isLoading: isLoadingCheckIn } = useTodayCheckIn();
-  const { data: status, isLoading: isLoadingStatus } = useCheckInStatus();
+  const { data: todayCheckIn, isLoading: isLoadingCheckIn, error: todayError } = useTodayCheckIn();
+  const { data: status, isLoading: isLoadingStatus, error: statusError } = useCheckInStatus();
 
   const isLoading = isLoadingCheckIn || isLoadingStatus;
+  const error = (!isLoadingCheckIn && todayError) || (!isLoadingStatus && statusError) || null;
 
   // Already submitted today - show summary
   const renderCompletedCheckIn = () => {
@@ -92,8 +93,8 @@ export function CheckInPage() {
               </div>
               <div className="text-center p-3 bg-muted rounded-lg">
                 <Battery className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
-                <p className="text-2xl font-bold">{todayCheckIn.fatigueLevel}/10</p>
-                <p className="text-xs text-muted-foreground">Fatigue</p>
+                <p className="text-2xl font-bold">{todayCheckIn.energyLevel}/10</p>
+                <p className="text-xs text-muted-foreground">Energy</p>
               </div>
               <div className="text-center p-3 bg-muted rounded-lg">
                 <Brain className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
@@ -225,11 +226,9 @@ export function CheckInPage() {
               </p>
             )}
 
-            {!status.isHoliday && status.isWorkDay && !status.isWithinWindow && (
+            {!status.isHoliday && status.isWorkDay && status.schedule?.checkInStart && (
               <p className="text-sm text-muted-foreground text-center">
-                {status.schedule?.checkInStart && new Date().toTimeString().slice(0, 5) < status.schedule.checkInStart
-                  ? `The check-in window will open at ${formatTime12h(status.schedule.checkInStart)}`
-                  : `The check-in window has closed for today`}
+                The check-in window will open at {formatTime12h(status.schedule.checkInStart)}
               </p>
             )}
           </CardContent>
@@ -239,12 +238,20 @@ export function CheckInPage() {
   };
 
   // Can check in - show form
+  const isLateCheckIn = status?.isWithinWindow === false && status?.canCheckIn;
+
   const renderCheckInForm = () => (
     <div className="max-w-2xl mx-auto space-y-6">
       <PageHeader
         title="Daily Check-In"
-        description="Complete your readiness assessment for today"
+        description={isLateCheckIn ? 'Submitting a late check-in' : 'Complete your readiness assessment for today'}
       />
+      {isLateCheckIn && (
+        <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span>The check-in window has closed, but you can still submit. This will be marked as a late check-in.</span>
+        </div>
+      )}
       {status?.team && (
         <div className="bg-muted rounded-lg p-3 flex items-center justify-between text-sm">
           <div className="flex items-center gap-2">
@@ -264,7 +271,7 @@ export function CheckInPage() {
   );
 
   return (
-    <PageLoader isLoading={isLoading} error={null} skeleton="check-in">
+    <PageLoader isLoading={isLoading} error={error} skeleton="check-in">
       {todayCheckIn ? renderCompletedCheckIn() :
        (status && !status.canCheckIn && !status.hasCheckedInToday) ? renderCannotCheckIn() :
        renderCheckInForm()}

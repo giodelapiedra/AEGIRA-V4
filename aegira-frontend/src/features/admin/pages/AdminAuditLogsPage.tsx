@@ -4,9 +4,10 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { ColumnDef, PaginationState } from '@tanstack/react-table';
-import { FileText, Download, Search, Lock, Loader2 } from 'lucide-react';
+import { FileText, Download, Lock, Loader2 } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
 import { RoleBadge } from '@/components/common/RoleBadge';
+import { TableSearch } from '@/components/common/TableSearch';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -192,12 +193,6 @@ function AuditLogsContent() {
     setPagination((prev) => ({ ...prev, pageIndex: 0 }));
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleSearch();
-    }
-  };
-
   const handleExport = async () => {
     try {
       const allItems: AuditLog[] = [];
@@ -250,19 +245,12 @@ function AuditLogsContent() {
         <CardContent>
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row gap-4">
-              <div className="flex items-center gap-2">
-                <Input
-                  placeholder="Search by user name or email..."
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  className="max-w-sm"
-                />
-                <Button onClick={handleSearch} variant="secondary" size="sm">
-                  <Search className="h-4 w-4 mr-1" />
-                  Search
-                </Button>
-              </div>
+              <TableSearch
+                placeholder="Search by user name or email..."
+                value={searchInput}
+                onChange={setSearchInput}
+                onSearch={handleSearch}
+              />
               <div className="flex gap-2">
                 <Input
                   type="date"

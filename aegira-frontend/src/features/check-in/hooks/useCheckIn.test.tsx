@@ -65,7 +65,7 @@ describe('Check-in hooks', () => {
       const checkInData = {
         sleepHours: 7,
         sleepQuality: 8,
-        fatigueLevel: 3,
+        energyLevel: 8,
         stressLevel: 3,
         painLevel: 0,
         notes: 'Feeling good today',
@@ -88,7 +88,7 @@ describe('Check-in hooks', () => {
       const checkInData = {
         sleepHours: 8,
         sleepQuality: 9,
-        fatigueLevel: 2,
+        energyLevel: 9,
         stressLevel: 2,
         painLevel: 0,
         notes: 'Great day!',
@@ -111,7 +111,7 @@ describe('Check-in hooks', () => {
       const checkInData = {
         sleepHours: 0,
         sleepQuality: 1,
-        fatigueLevel: 10,
+        energyLevel: 1,
         stressLevel: 10,
         painLevel: 10,
         notes: '',

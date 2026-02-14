@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { ArrowLeft, UserPlus, Calendar } from 'lucide-react';
 import { isEndTimeAfterStart, TIME_REGEX, WORK_DAYS_REGEX } from '@/lib/utils/format.utils';
+import { formatWorkDays } from '@/lib/utils/string.utils';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -302,7 +303,7 @@ export function AdminWorkerCreatePage() {
                       return selectedTeam ? (
                         <div className="mt-2 text-sm">
                           <strong>Team default:</strong>{' '}
-                          {selectedTeam.work_days || 'Mon-Fri'} |{' '}
+                          {formatWorkDays(selectedTeam.work_days) || 'Mon-Fri'} |{' '}
                           {selectedTeam.check_in_start} - {selectedTeam.check_in_end}
                         </div>
                       ) : null;
@@ -363,7 +364,7 @@ export function AdminWorkerCreatePage() {
               </Card>
             )}
 
-            <div className="flex justify-end gap-4">
+            <div className="flex justify-end gap-4 pt-4">
               <Button
                 type="button"
                 variant="outline"

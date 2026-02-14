@@ -42,6 +42,31 @@ async function notifyTeamLeadAssignment(
   }
 }
 
+/**
+ * Notify workers who were unassigned due to team deactivation.
+ * Non-blocking — errors are logged but don't break the main operation.
+ */
+async function notifyOrphanedWorkers(
+  companyId: string,
+  workerIds: string[],
+  teamName: string
+): Promise<void> {
+  try {
+    if (workerIds.length === 0) return;
+    const notificationRepo = new NotificationRepository(prisma, companyId);
+    await notificationRepo.createMany(
+      workerIds.map((id) => ({
+        personId: id,
+        type: 'TEAM_ALERT' as const,
+        title: 'Team Deactivated',
+        message: `Your team "${teamName}" has been deactivated. You are currently unassigned. Please contact your administrator for reassignment.`,
+      }))
+    );
+  } catch (error) {
+    logger.error({ error, teamName, count: workerIds.length }, 'Failed to notify orphaned workers');
+  }
+}
+
 function getRepository(companyId: string): TeamRepository {
   return new TeamRepository(prisma, companyId);
 }
@@ -188,7 +213,76 @@ export async function updateTeam(c: Context): Promise<Response> {
     }
   }
 
-  const result = await repository.update(id, data);
+  // Deactivation path: unassign members + apply all updates atomically
+  let unassignedCount = 0;
+  const isDeactivation = data.isActive === false && existing.is_active;
+
+  // Capture worker IDs before transaction (for orphan notifications)
+  let orphanedWorkerIds: string[] = [];
+  if (isDeactivation) {
+    const members = await prisma.person.findMany({
+      where: { company_id: companyId, team_id: id, is_active: true, role: 'WORKER' },
+      select: { id: true },
+    });
+    orphanedWorkerIds = members.map((m) => m.id);
+  }
+
+  let result: Awaited<ReturnType<typeof repository.update>>;
+
+  if (isDeactivation) {
+    result = await prisma.$transaction(async (tx) => {
+      // Unassign all active members from this team
+      const unassignResult = await tx.person.updateMany({
+        where: { company_id: companyId, team_id: id, is_active: true },
+        data: { team_id: null, team_assigned_at: null },
+      });
+      unassignedCount = unassignResult.count;
+
+      // Cancel pending transfers TO this team (workers on other teams transferring here)
+      await tx.person.updateMany({
+        where: { company_id: companyId, effective_team_id: id },
+        data: { effective_team_id: null, effective_transfer_date: null, transfer_initiated_by: null },
+      });
+
+      // Cancel pending transfers FROM this team (workers who were here, now unassigned).
+      // Without this, the transfer-processor would try to move teamless workers.
+      await tx.person.updateMany({
+        where: {
+          company_id: companyId,
+          team_id: null,
+          effective_team_id: { not: null },
+        },
+        data: { effective_team_id: null, effective_transfer_date: null, transfer_initiated_by: null },
+      });
+
+      // Apply ALL update fields (including is_active + any other changes like name)
+      return tx.team.update({
+        where: { id, company_id: companyId },
+        data: {
+          ...(data.name !== undefined && { name: data.name }),
+          ...(data.description !== undefined && { description: data.description }),
+          ...(data.leaderId !== undefined && { leader_id: data.leaderId }),
+          ...(data.supervisorId !== undefined && { supervisor_id: data.supervisorId }),
+          ...(data.checkInStart !== undefined && { check_in_start: data.checkInStart }),
+          ...(data.checkInEnd !== undefined && { check_in_end: data.checkInEnd }),
+          ...(data.workDays !== undefined && { work_days: data.workDays }),
+          is_active: false,
+        },
+      });
+    });
+
+    if (unassignedCount > 0) {
+      logger.info(
+        { teamId: id, unassignedCount, companyId },
+        'Auto-unassigned members on team deactivation'
+      );
+
+      // Notify orphaned workers (fire-and-forget)
+      notifyOrphanedWorkers(companyId, orphanedWorkerIds, existing.name);
+    }
+  } else {
+    result = await repository.update(id, data);
+  }
 
   // Notify the new team lead if leader changed (non-blocking)
   if (leaderChanged && data.leaderId) {
@@ -201,6 +295,7 @@ export async function updateTeam(c: Context): Promise<Response> {
   if (data.leaderId !== undefined) auditDetails.leaderId = data.leaderId;
   if (data.supervisorId !== undefined) auditDetails.supervisorId = data.supervisorId;
   if (data.isActive !== undefined) auditDetails.isActive = data.isActive;
+  if (unassignedCount > 0) auditDetails.unassignedMembers = unassignedCount;
   if (data.checkInStart !== undefined) auditDetails.checkInStart = data.checkInStart;
   if (data.checkInEnd !== undefined) auditDetails.checkInEnd = data.checkInEnd;
   if (data.workDays !== undefined) auditDetails.workDays = data.workDays;
@@ -299,7 +394,7 @@ export async function getCheckInHistory(c: Context): Promise<Response> {
 
   // Get check-ins using CheckInRepository (filtered by team for TEAM_LEAD/SUPERVISOR)
   const checkInRepository = new CheckInRepository(prisma, companyId);
-  const { items: checkIns, total, params } = await checkInRepository.findCheckInsWithPerson(
+  const result = await checkInRepository.findCheckInsWithPerson(
     { page, limit },
     {
       teamIds,
@@ -309,7 +404,7 @@ export async function getCheckInHistory(c: Context): Promise<Response> {
   );
 
   // Transform to match frontend expected format
-  const items = checkIns.map((ci) => ({
+  const items = result.items.map((ci) => ({
     id: ci.id,
     personId: ci.person_id,
     workerName: `${ci.person.first_name} ${ci.person.last_name}`,
@@ -331,18 +426,16 @@ export async function getCheckInHistory(c: Context): Promise<Response> {
     physicalScore: ci.physical_score,
     painScore: ci.pain_score,
     createdAt: ci.created_at,
+    eventTime: ci.event?.event_time ?? ci.created_at,
+    isLate: ci.event?.is_late ?? false,
+    lateByMinutes: ci.event?.late_by_minutes ?? null,
   }));
 
   return c.json({
     success: true,
     data: {
       items,
-      pagination: {
-        page: params.page,
-        limit: params.limit,
-        total,
-        totalPages: Math.ceil(total / params.limit),
-      },
+      pagination: result.pagination,
     },
   });
 }

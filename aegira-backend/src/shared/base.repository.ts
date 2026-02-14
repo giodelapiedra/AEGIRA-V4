@@ -7,6 +7,11 @@ export abstract class BaseRepository {
     protected readonly companyId: string
   ) {}
 
+  /** Returns the company ID this repository is scoped to */
+  getCompanyId(): string {
+    return this.companyId;
+  }
+
   /**
    * Adds company_id filter to all queries
    * This ensures multi-tenant isolation

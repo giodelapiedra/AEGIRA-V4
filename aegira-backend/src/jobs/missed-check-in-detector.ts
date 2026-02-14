@@ -5,6 +5,7 @@ import { prisma } from '../config/database';
 import { MissedCheckInRepository } from '../modules/missed-check-in/missed-check-in.repository';
 import { MissedCheckInSnapshotService } from '../modules/missed-check-in/missed-check-in-snapshot.service';
 import { NotificationRepository } from '../modules/notification/notification.repository';
+import { emitEvent } from '../modules/event/event.service';
 import { logger } from '../config/logger';
 import {
   getTodayInTimezone,
@@ -104,30 +105,31 @@ async function processCompany(companyId: string, timezone: string): Promise<numb
   const todayDow = getDayOfWeekInTimezone(timezone).toString();
   const todayDate = parseDateInTimezone(todayStr, timezone);
 
-  // Skip holidays - no missed check-ins should be created on company holidays
-  const holiday = await isHoliday(prisma, companyId, todayStr);
+  // Holiday check and team fetch are independent — run in parallel
+  const [holiday, teams] = await Promise.all([
+    isHoliday(prisma, companyId, todayStr),
+    prisma.team.findMany({
+      where: {
+        company_id: companyId,
+        is_active: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        check_in_start: true,
+        check_in_end: true,
+        work_days: true,
+        leader: {
+          select: { id: true, first_name: true, last_name: true },
+        },
+      },
+    }),
+  ]);
+
   if (holiday) {
     logger.info({ companyId, date: todayStr }, 'Skipping missed check-in detection: today is a holiday');
     return 0;
   }
-
-  // Find active teams whose check-in window has already closed today
-  const teams = await prisma.team.findMany({
-    where: {
-      company_id: companyId,
-      is_active: true,
-    },
-    select: {
-      id: true,
-      name: true,
-      check_in_start: true,
-      check_in_end: true,
-      work_days: true,
-      leader: {
-        select: { id: true, first_name: true, last_name: true },
-      },
-    },
-  });
 
   // Pre-filter teams that have ANY chance of being past their window.
   // We still need all teams for lookup, but skip teams whose window
@@ -192,16 +194,20 @@ async function processCompany(companyId: string, timezone: string): Promise<numb
   if (eligibleWorkers.length === 0) return 0;
 
   const workerIds = eligibleWorkers.map((w) => w.id);
+  const ninetyDaysAgo = new Date(todayDate.getTime() - 90 * 24 * 60 * 60 * 1000);
 
-  // Find workers who already checked in today
-  const checkIns = await prisma.checkIn.findMany({
-    where: {
-      company_id: companyId,
-      person_id: { in: workerIds },
-      check_in_date: todayDate,
-    },
-    select: { person_id: true },
-  });
+  // Check-ins and holiday date set are independent — run in parallel
+  const [checkIns, holidayDateSet] = await Promise.all([
+    prisma.checkIn.findMany({
+      where: {
+        company_id: companyId,
+        person_id: { in: workerIds },
+        check_in_date: todayDate,
+      },
+      select: { person_id: true },
+    }),
+    buildHolidayDateSet(prisma, companyId, ninetyDaysAgo, todayDate, timezone),
+  ]);
 
   const checkedInSet = new Set(checkIns.map((ci) => ci.person_id));
 
@@ -222,10 +228,6 @@ async function processCompany(companyId: string, timezone: string): Promise<numb
   const newMissing = missingWorkers.filter((w) => !existingPersonIds.has(w.id));
 
   if (newMissing.length === 0) return 0;
-
-  // Build holiday date set for snapshot calculations (last 90 days)
-  const ninetyDaysAgo = new Date(todayDate.getTime() - 90 * 24 * 60 * 60 * 1000);
-  const holidayDateSet = await buildHolidayDateSet(prisma, companyId, ninetyDaysAgo, todayDate, timezone);
 
   // Calculate state snapshots for all workers in batch
   const snapshotService = new MissedCheckInSnapshotService(prisma, companyId, timezone);
@@ -299,22 +301,68 @@ async function processCompany(companyId: string, timezone: string): Promise<numb
   // Insert records (skipDuplicates as safety net)
   const inserted = await missedRepo.createMany(records);
 
-  // Send notifications for newly detected missed check-ins
+  // Send notifications for newly detected missed check-ins.
+  // Notifies both the worker AND their team lead for same-day awareness.
   if (inserted > 0) {
     try {
       const notifRepo = new NotificationRepository(prisma, companyId);
-      await notifRepo.createMany(
-        newMissing.map((w) => ({
-          personId: w.id,
-          type: 'MISSED_CHECK_IN' as const,
-          title: 'Missed Check-in',
-          message: `You missed your check-in for ${todayStr}. Please contact your team lead if needed.`,
-        }))
-      );
+
+      // Worker notifications
+      const workerNotifications = newMissing.map((w) => ({
+        personId: w.id,
+        type: 'MISSED_CHECK_IN' as const,
+        title: 'Missed Check-in',
+        message: `You missed your check-in for ${todayStr}. Please contact your team lead if needed.`,
+      }));
+
+      // Team lead notifications — group misses by team leader to avoid duplicate alerts.
+      // Uses the team leader snapshot from teamMap (already fetched).
+      const missCountByLeader = new Map<string, { leaderName: string; count: number; workerNames: string[] }>();
+      for (const w of newMissing) {
+        const team = teamMap.get(w.team_id!);
+        if (!team?.leader?.id) continue;
+        const leaderId = team.leader.id;
+        const existing = missCountByLeader.get(leaderId) || {
+          leaderName: `${team.leader.first_name} ${team.leader.last_name}`,
+          count: 0,
+          workerNames: [],
+        };
+        existing.count++;
+        missCountByLeader.set(leaderId, existing);
+      }
+
+      const leaderNotifications = Array.from(missCountByLeader.entries()).map(([leaderId, info]) => ({
+        personId: leaderId,
+        type: 'MISSED_CHECK_IN' as const,
+        title: 'Team Missed Check-ins',
+        message: `${info.count} worker${info.count > 1 ? 's' : ''} missed their check-in for ${todayStr}.`,
+      }));
+
+      await notifRepo.createMany([...workerNotifications, ...leaderNotifications]);
     } catch (error) {
       // Notification failure shouldn't break detection
       logger.error({ error, companyId }, 'Failed to send missed check-in notifications');
     }
+  }
+
+  // Emit MISSED_CHECK_IN_DETECTED events (fire-and-forget)
+  for (const w of newMissing) {
+    const effective = getEffectiveSchedule(
+      { work_days: w.work_days, check_in_start: w.check_in_start, check_in_end: w.check_in_end },
+      { work_days: w.team!.work_days, check_in_start: w.team!.check_in_start, check_in_end: w.team!.check_in_end }
+    );
+    emitEvent(prisma, {
+      companyId,
+      personId: w.id,
+      eventType: 'MISSED_CHECK_IN_DETECTED',
+      entityType: 'missed_check_in',
+      payload: {
+        missedDate: todayStr,
+        scheduleWindow: `${effective.checkInStart} - ${effective.checkInEnd}`,
+        teamId: w.team_id,
+      },
+      timezone,
+    });
   }
 
   logger.info(

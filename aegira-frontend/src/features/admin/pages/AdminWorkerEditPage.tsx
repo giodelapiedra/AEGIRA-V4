@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { ArrowLeft, UserCog, Calendar } from 'lucide-react';
+import { ArrowLeft, UserCog, Calendar, Clock } from 'lucide-react';
+import { formatDate } from '@/lib/utils/date.utils';
 import { formatWorkDays } from '@/lib/utils/string.utils';
 import { isEndTimeAfterStart, TIME_REGEX, WORK_DAYS_REGEX } from '@/lib/utils/format.utils';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -11,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import {
   Select,
   SelectContent,
@@ -20,7 +23,7 @@ import {
 } from '@/components/ui/select';
 import { PageLoader } from '@/components/common/PageLoader';
 import { ErrorMessage } from '@/components/common/ErrorMessage';
-import { usePerson, useUpdatePerson } from '@/features/person/hooks/usePersons';
+import { usePerson, useUpdatePerson, useCancelTransfer } from '@/features/person/hooks/usePersons';
 import { useTeams } from '@/features/team/hooks/useTeams';
 import { useToast } from '@/lib/hooks/use-toast';
 import { ROUTES } from '@/config/routes.config';
@@ -87,7 +90,7 @@ export function AdminWorkerEditPage() {
 
   return (
     <PageLoader isLoading={isLoading} error={error} skeleton="form">
-      {person && <WorkerEditForm person={person} teams={teamsData?.items || []} />}
+      {person && <WorkerEditForm person={person} teams={(teamsData?.items || []).filter((t) => t.is_active)} />}
     </PageLoader>
   );
 }
@@ -100,7 +103,10 @@ interface WorkerEditFormProps {
 function WorkerEditForm({ person, teams }: WorkerEditFormProps) {
   const navigate = useNavigate();
   const updatePerson = useUpdatePerson();
+  const cancelTransfer = useCancelTransfer();
   const { toast } = useToast();
+  const [showTransferConfirm, setShowTransferConfirm] = useState(false);
+  const [pendingFormData, setPendingFormData] = useState<UpdateWorkerFormData | null>(null);
 
   const {
     register,
@@ -136,9 +142,20 @@ function WorkerEditForm({ person, teams }: WorkerEditFormProps) {
     setValue('workDays', newSelection.length > 0 ? newSelection.join(',') : '', { shouldValidate: true });
   };
 
-  const onSubmit = async (data: UpdateWorkerFormData) => {
-    // Schedule override - MUST send both checkInStart and checkInEnd together
-    // Backend validation requires both to be present if either is being updated
+  const handleCancelTransfer = async () => {
+    try {
+      await cancelTransfer.mutateAsync(person.id);
+      toast({ variant: 'success', title: 'Transfer cancelled' });
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Failed to cancel transfer',
+        description: error instanceof Error ? error.message : 'Something went wrong.',
+      });
+    }
+  };
+
+  const buildUpdates = (data: UpdateWorkerFormData): Record<string, unknown> => {
     const currentStart = data.checkInStart || null;
     const currentEnd = data.checkInEnd || null;
     const originalStart = person.check_in_start || null;
@@ -147,20 +164,22 @@ function WorkerEditForm({ person, teams }: WorkerEditFormProps) {
     const scheduleTimeChanged = currentStart !== originalStart || currentEnd !== originalEnd;
     const workDaysChanged = (data.workDays || '') !== (person.work_days || '');
 
-    // Only send fields that actually changed
     const updates: Record<string, unknown> = {};
     if (data.firstName !== person.first_name) updates.firstName = data.firstName;
     if (data.lastName !== person.last_name) updates.lastName = data.lastName;
     if (data.role !== person.role) updates.role = data.role;
     if ((data.teamId ?? null) !== (person.team_id ?? null)) updates.teamId = data.teamId;
     if (data.isActive !== person.is_active) updates.isActive = data.isActive;
-    // Work days can be updated independently
     if (workDaysChanged) updates.workDays = data.workDays || null;
-    // Both check-in times must be sent together to satisfy backend validation
     if (scheduleTimeChanged) {
       updates.checkInStart = currentStart;
       updates.checkInEnd = currentEnd;
     }
+    return updates;
+  };
+
+  const submitUpdate = async (data: UpdateWorkerFormData) => {
+    const updates = buildUpdates(data);
 
     if (Object.keys(updates).length === 0) {
       toast({ title: 'No changes', description: 'No modifications were detected.' });
@@ -187,6 +206,21 @@ function WorkerEditForm({ person, teams }: WorkerEditFormProps) {
     }
   };
 
+  const onSubmit = async (data: UpdateWorkerFormData) => {
+    // Check if this is a team transfer (worker already has a team and team is changing)
+    const teamChanging = (data.teamId ?? null) !== (person.team_id ?? null);
+    const isTransfer = teamChanging && !!person.team_id && !!data.teamId;
+
+    if (isTransfer) {
+      // Show confirmation dialog — transfer takes effect next day
+      setPendingFormData(data);
+      setShowTransferConfirm(true);
+      return;
+    }
+
+    await submitUpdate(data);
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -209,6 +243,28 @@ function WorkerEditForm({ person, teams }: WorkerEditFormProps) {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+            {/* Pending Transfer Badge */}
+            {person.effective_team && (
+              <div className="flex items-center gap-2 p-3 rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/20">
+                <Clock className="h-4 w-4 text-amber-600 shrink-0" />
+                <span className="text-sm flex-1">
+                  Transferring to <strong>{person.effective_team.name}</strong> on{' '}
+                  {person.effective_transfer_date
+                    ? formatDate(person.effective_transfer_date)
+                    : 'next day'}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={cancelTransfer.isPending}
+                  onClick={handleCancelTransfer}
+                >
+                  {cancelTransfer.isPending ? 'Cancelling...' : 'Cancel Transfer'}
+                </Button>
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label>Email Address</Label>
               <Input value={person.email} disabled className="bg-muted" />
@@ -417,6 +473,21 @@ function WorkerEditForm({ person, teams }: WorkerEditFormProps) {
           </form>
         </CardContent>
       </Card>
+
+      {/* Transfer Confirmation Dialog */}
+      <ConfirmDialog
+        open={showTransferConfirm}
+        onOpenChange={setShowTransferConfirm}
+        title="Transfer Worker"
+        description={`${person.first_name} ${person.last_name} will be transferred from ${person.team?.name ?? 'current team'} to ${teams.find(t => t.id === pendingFormData?.teamId)?.name ?? 'the new team'}. The transfer takes effect tomorrow.`}
+        confirmLabel="Confirm Transfer"
+        onConfirm={() => {
+          if (pendingFormData) {
+            submitUpdate(pendingFormData);
+            setPendingFormData(null);
+          }
+        }}
+      />
     </div>
   );
 }

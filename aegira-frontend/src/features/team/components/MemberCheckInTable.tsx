@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { ColumnDef, PaginationState } from '@tanstack/react-table';
+import type { ColumnDef, PaginationState } from '@tanstack/react-table';
 import { ClipboardList } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { DataTable, SortableHeader } from '@/components/ui/data-table';
-import { ReadinessCategoryBadge } from '@/components/common/badge-utils';
+import { ReadinessCategoryBadge, SubmissionStatusBadge } from '@/components/common/badge-utils';
 import { useWorkerCheckIns } from '../hooks/useWorkerCheckIns';
 import { formatDate, formatTime } from '@/lib/utils/date.utils';
 import type { CheckIn } from '@/types/check-in.types';
@@ -28,6 +28,15 @@ const columns: ColumnDef<CheckIn>[] = [
     ),
   },
   {
+    id: 'submissionStatus',
+    header: 'Submission',
+    cell: ({ row }) => (
+      <SubmissionStatusBadge
+        isLate={row.original.isLate}
+      />
+    ),
+  },
+  {
     accessorKey: 'sleepHours',
     header: ({ column }) => <SortableHeader column={column}>Sleep (hrs)</SortableHeader>,
     cell: ({ row }) => <span className="text-center block">{row.original.sleepHours}</span>,
@@ -43,9 +52,9 @@ const columns: ColumnDef<CheckIn>[] = [
     cell: ({ row }) => <span className="text-center block">{row.original.stressLevel}/10</span>,
   },
   {
-    accessorKey: 'fatigueLevel',
-    header: 'Fatigue',
-    cell: ({ row }) => <span className="text-center block">{row.original.fatigueLevel}/10</span>,
+    accessorKey: 'energyLevel',
+    header: 'Energy',
+    cell: ({ row }) => <span className="text-center block">{row.original.energyLevel}/10</span>,
   },
   {
     accessorKey: 'readinessResult.score',

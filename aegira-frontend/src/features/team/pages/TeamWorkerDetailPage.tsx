@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -9,6 +10,7 @@ import { MemberInfoCard } from '../components/MemberInfoCard';
 import { MemberCheckInTable } from '../components/MemberCheckInTable';
 import { MemberMissedCheckInTable } from '../components/MemberMissedCheckInTable';
 import { usePerson } from '@/features/person/hooks/usePersons';
+import { useAuth } from '@/lib/hooks/use-auth';
 import type { Person } from '@/types/person.types';
 import type { PaginatedResponse } from '@/types/common.types';
 
@@ -17,26 +19,31 @@ export function TeamWorkerDetailPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
+  const { hasRole } = useAuth();
+  const [activeTab, setActiveTab] = useState('check-ins');
 
-  // 1. Try route state (passed from TeamMembersPage)
+  // Instant display: route state (from navigation) or cached my-members data
   const stateData = (location.state as { member?: Person } | null)?.member;
-
-  // 2. Fallback: look in the cached my-members query
   const cachedData = queryClient.getQueryData<PaginatedResponse<Person>>(['team', 'my-members']);
   const cachedMember = cachedData?.items.find((m) => m.id === workerId);
+  const placeholder = stateData ?? cachedMember;
 
-  // 3. Fallback: fetch from API (for WHS or direct URL access)
+  // GET /persons/:id is restricted to ADMIN/SUPERVISOR/WHS
+  // TEAM_LEAD relies on route state or cached my-members data
+  const canFetchPerson = hasRole(['ADMIN', 'SUPERVISOR', 'WHS']);
   const { data: fetchedPerson, isLoading, error } = usePerson(
-    !stateData && !cachedMember ? workerId! : ''
+    canFetchPerson ? workerId! : ''
   );
 
-  const person = stateData ?? cachedMember ?? fetchedPerson;
+  // Fresh API data takes priority, fallback to placeholder
+  const person = fetchedPerson ?? placeholder;
 
-  if (isLoading) {
+  // Show skeleton only when fetching and no placeholder available
+  if (isLoading && !placeholder) {
     return <PageLoader isLoading={true} skeleton="detail"><></></PageLoader>;
   }
 
-  if (!person || error) {
+  if (!person || (error && !placeholder)) {
     return <PageLoader isLoading={false} error={error || new Error('Member not found')}><></></PageLoader>;
   }
 
@@ -56,8 +63,8 @@ export function TeamWorkerDetailPage() {
       {/* Profile card - always visible */}
       <MemberInfoCard person={person} />
 
-      {/* Data tabs */}
-      <Tabs defaultValue="check-ins">
+      {/* Data tabs - lazy render inactive tab */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="check-ins">Check-In Records</TabsTrigger>
           <TabsTrigger value="missed">Missed Check-Ins</TabsTrigger>
@@ -68,7 +75,9 @@ export function TeamWorkerDetailPage() {
         </TabsContent>
 
         <TabsContent value="missed">
-          <MemberMissedCheckInTable personId={person.id} />
+          {activeTab === 'missed' && (
+            <MemberMissedCheckInTable personId={person.id} />
+          )}
         </TabsContent>
       </Tabs>
     </div>

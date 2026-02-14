@@ -25,6 +25,17 @@ export interface Person {
     check_in_end: string;
     work_days: string;
   };
+  // Effective next-day transfer (pending)
+  effective_team_id?: string | null;
+  effective_transfer_date?: string | null; // ISO date string
+  transfer_initiated_by?: string | null;
+  effective_team?: {
+    id: string;
+    name: string;
+    check_in_start: string;
+    check_in_end: string;
+    work_days: string;
+  } | null;
 }
 
 export interface PersonStats {

@@ -4,6 +4,7 @@ import type { Context } from 'hono';
 import type { ZodError } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import { authMiddleware } from '../../middleware/auth';
+import { rateLimitMiddleware } from '../../middleware/rate-limit';
 import * as controller from './auth.controller';
 import { loginSchema, signupSchema, changePasswordSchema, verifyPasswordSchema } from './auth.validator';
 
@@ -36,6 +37,7 @@ const validationHook = (result: ValidationResult, c: Context): Response | undefi
 // POST /api/v1/auth/signup - Create new company admin account
 router.post(
   '/signup',
+  rateLimitMiddleware(5, 15 * 60 * 1000),
   zValidator('json', signupSchema, validationHook),
   controller.signup
 );
@@ -43,6 +45,7 @@ router.post(
 // POST /api/v1/auth/login
 router.post(
   '/login',
+  rateLimitMiddleware(10, 15 * 60 * 1000),
   zValidator('json', loginSchema, validationHook),
   controller.login
 );

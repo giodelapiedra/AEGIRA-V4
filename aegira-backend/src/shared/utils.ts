@@ -10,13 +10,6 @@ export function toCompanyTimezone(date: Date, timezone: string): DateTime {
 }
 
 /**
- * Gets current DateTime in company timezone
- */
-export function nowInTimezone(timezone: string): DateTime {
-  return DateTime.now().setZone(timezone);
-}
-
-/**
  * Gets today's date string (YYYY-MM-DD) in company timezone
  */
 export function getTodayInTimezone(timezone: string): string {
@@ -39,34 +32,6 @@ export function getDayOfWeekInTimezone(timezone: string, date?: string): number 
     : DateTime.now().setZone(timezone);
   // Luxon weekday: 1=Monday, 7=Sunday, we need 0=Sunday, 6=Saturday
   return dt.weekday === 7 ? 0 : dt.weekday;
-}
-
-/**
- * Check if a time (HH:mm) is within a window.
- * Supports cross-midnight windows (e.g., "22:00" to "06:00").
- */
-export function isTimeWithinWindow(
-  currentTime: string,
-  windowStart: string,
-  windowEnd: string
-): boolean {
-  if (windowStart <= windowEnd) {
-    // Normal window (e.g., 06:00 to 10:00)
-    return currentTime >= windowStart && currentTime <= windowEnd;
-  }
-  // Cross-midnight window (e.g., 22:00 to 06:00)
-  return currentTime >= windowStart || currentTime <= windowEnd;
-}
-
-/**
- * Gets start of day in company timezone (as UTC)
- */
-export function startOfDayUtc(date: Date, timezone: string): Date {
-  return DateTime.fromJSDate(date, { zone: 'UTC' })
-    .setZone(timezone)
-    .startOf('day')
-    .toUTC()
-    .toJSDate();
 }
 
 /**
@@ -150,4 +115,70 @@ export function formatTime12h(time24: string): string {
  */
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
+}
+
+/**
+ * Pre-compute date strings and day-of-week for a contiguous date range.
+ * Creates Luxon DateTime objects once per day instead of per-iteration in loops.
+ * Returns an array ordered from startDate forward (index 0 = startDate).
+ *
+ * @param startDate - Start of the range (inclusive)
+ * @param days - Number of days to generate
+ * @param timezone - Company timezone
+ */
+export interface PrecomputedDate {
+  date: Date;
+  dateStr: string; // YYYY-MM-DD
+  dow: string;     // Day of week as string ("0"=Sun, "6"=Sat)
+}
+
+export function precomputeDateRange(
+  startDate: Date,
+  days: number,
+  timezone: string
+): PrecomputedDate[] {
+  const result: PrecomputedDate[] = [];
+  // Start a Luxon DateTime and increment by 1 day — avoids creating from scratch each iteration
+  let dt = DateTime.fromJSDate(startDate).setZone(timezone).startOf('day');
+
+  for (let i = 0; i < days; i++) {
+    const dow = dt.weekday === 7 ? 0 : dt.weekday;
+    result.push({
+      date: new Date(Date.UTC(dt.year, dt.month - 1, dt.day)),
+      dateStr: dt.toFormat('yyyy-MM-dd'),
+      dow: dow.toString(),
+    });
+    dt = dt.plus({ days: 1 });
+  }
+
+  return result;
+}
+
+/**
+ * Build a lookup map from JS Date (getTime()) to pre-computed date string.
+ * Useful for mapping Prisma query results (which return Date objects) to
+ * YYYY-MM-DD strings without per-record Luxon calls.
+ */
+export function buildDateLookup(
+  dates: Date[],
+  timezone: string
+): Map<number, string> {
+  const lookup = new Map<number, string>();
+  for (const d of dates) {
+    if (!lookup.has(d.getTime())) {
+      const dt = DateTime.fromJSDate(d).setZone(timezone);
+      lookup.set(d.getTime(), dt.toFormat('yyyy-MM-dd'));
+    }
+  }
+  return lookup;
+}
+
+/**
+ * Calculate days between two YYYY-MM-DD date strings using simple arithmetic.
+ * Avoids creating Luxon DateTime objects — uses UTC Date parsing instead.
+ */
+export function daysBetweenDateStrings(dateStr1: string, dateStr2: string): number {
+  const d1 = new Date(dateStr1 + 'T00:00:00Z');
+  const d2 = new Date(dateStr2 + 'T00:00:00Z');
+  return Math.abs(Math.round((d2.getTime() - d1.getTime()) / (24 * 60 * 60 * 1000)));
 }

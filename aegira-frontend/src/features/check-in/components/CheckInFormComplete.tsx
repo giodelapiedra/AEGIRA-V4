@@ -37,6 +37,7 @@ import {
   AlertCircle,
   ArrowRight,
   ArrowLeft,
+  Loader2,
 } from 'lucide-react';
 
 /**
@@ -46,7 +47,6 @@ import {
 const checkInSchema = z.object({
   sleepHours: z
     .number()
-    .int('Must be a whole number')
     .min(0, 'Sleep hours must be 0 or more')
     .max(15, 'Sleep hours cannot exceed 15'),
   sleepQuality: z
@@ -54,7 +54,7 @@ const checkInSchema = z.object({
     .int()
     .min(1, 'Minimum is 1')
     .max(10, 'Maximum is 10'),
-  fatigueLevel: z
+  energyLevel: z
     .number()
     .int()
     .min(1, 'Minimum is 1')
@@ -112,7 +112,7 @@ export function CheckInFormComplete() {
     defaultValues: {
       sleepHours: 7,
       sleepQuality: 5,
-      fatigueLevel: 5,
+      energyLevel: 5,
       stressLevel: 5,
       painLevel: 0,
       painLocation: '',
@@ -135,9 +135,12 @@ export function CheckInFormComplete() {
     if (currentStep !== STEPS.length - 1) return;
     try {
       const result = await submitMutation.mutateAsync(data);
+      // Backend returns raw Prisma format (snake_case) — access readiness_score directly
+      const raw = result as unknown as Record<string, unknown>;
+      const score = raw.readiness_score ?? (result.readinessResult?.score);
       toast({
         title: 'Check-in Submitted!',
-        description: `Your readiness score: ${result.readinessResult.score}%`,
+        description: score != null ? `Your readiness score: ${score}%` : 'Your check-in has been recorded.',
         variant: 'success',
       });
       navigate(ROUTES.DASHBOARD);
@@ -236,13 +239,13 @@ export function CheckInFormComplete() {
                     <div className="flex items-center gap-4">
                       <Input
                         type="number"
-                        step="1"
+                        step="0.5"
                         min="0"
                         max="15"
                         className="w-24"
                         value={field.value}
                         onChange={(e) => {
-                          const val = Math.min(15, Math.max(0, parseInt(e.target.value) || 0));
+                          const val = Math.min(15, Math.max(0, parseFloat(e.target.value) || 0));
                           field.onChange(val);
                         }}
                       />
@@ -313,19 +316,19 @@ export function CheckInFormComplete() {
             <CardContent className="space-y-6">
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <Label>Fatigue Level</Label>
+                  <Label>Energy Level</Label>
                   <Controller
-                    name="fatigueLevel"
+                    name="energyLevel"
                     control={control}
                     render={({ field }) => (
-                      <span className={cn('text-lg font-bold', getSliderColor(field.value, true))}>
+                      <span className={cn('text-lg font-bold', getSliderColor(field.value))}>
                         {field.value}/10
                       </span>
                     )}
                   />
                 </div>
                 <Controller
-                  name="fatigueLevel"
+                  name="energyLevel"
                   control={control}
                   render={({ field }) => (
                     <Slider
@@ -338,8 +341,8 @@ export function CheckInFormComplete() {
                   )}
                 />
                 <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>Energized (1)</span>
-                  <span>Exhausted (10)</span>
+                  <span>Low Energy (1)</span>
+                  <span>High Energy (10)</span>
                 </div>
               </div>
 
@@ -544,6 +547,7 @@ export function CheckInFormComplete() {
             type="button"
             variant="outline"
             onClick={currentStep === 0 ? () => navigate(ROUTES.DASHBOARD) : prevStep}
+            disabled={submitMutation.isPending}
           >
             <ArrowLeft className="mr-2 h-4 w-4" />
             {currentStep === 0 ? 'Cancel' : 'Back'}
@@ -551,6 +555,7 @@ export function CheckInFormComplete() {
 
           {isLastStep ? (
             <Button key="submit" type="submit" disabled={isSubmitting || submitMutation.isPending}>
+              {submitMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {submitMutation.isPending ? 'Submitting...' : 'Submit Check-In'}
             </Button>
           ) : (

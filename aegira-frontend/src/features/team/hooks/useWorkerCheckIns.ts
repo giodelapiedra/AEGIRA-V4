@@ -34,6 +34,9 @@ interface TeamCheckInRecord {
   physicalScore: number;       // Int 0-100
   painScore: number | null;    // Int? 0-100 (null if no pain reported)
   createdAt: string;
+  eventTime: string;
+  isLate: boolean;
+  lateByMinutes: number | null;
 }
 
 interface TeamCheckInResponse {
@@ -54,7 +57,7 @@ function transformCheckIn(data: TeamCheckInRecord): CheckIn {
     checkInDate: data.checkInDate.slice(0, 10),
     sleepHours: data.hoursSlept,
     sleepQuality: data.sleepQuality,
-    fatigueLevel: 11 - data.physicalCondition,
+    energyLevel: data.physicalCondition,
     stressLevel: data.stressLevel,
     painLevel: data.painLevel ?? 0,
     painLocation: data.painLocation ?? undefined,
@@ -66,7 +69,9 @@ function transformCheckIn(data: TeamCheckInRecord): CheckIn {
       factors: [],
       recommendations: [],
     },
-    submittedAt: data.createdAt,
+    isLate: data.isLate ?? false,
+    lateByMinutes: data.lateByMinutes ?? undefined,
+    submittedAt: data.eventTime ?? data.createdAt,
     createdAt: data.createdAt,
     updatedAt: data.createdAt,
   };
@@ -85,7 +90,7 @@ interface UseWorkerCheckInsParams {
 export function useWorkerCheckIns({ personId, page = 1, limit = 10 }: UseWorkerCheckInsParams) {
   return useQuery({
     queryKey: ['worker-check-ins', personId, page, limit],
-    staleTime: STALE_TIMES.IMMUTABLE,
+    staleTime: STALE_TIMES.STATIC,
     placeholderData: keepPreviousData,
     queryFn: async () => {
       const params = new URLSearchParams({

@@ -51,6 +51,8 @@ export interface TeamSummary {
   teamName: string;
   memberCount: number;
   checkedInCount: number;
+  /** Workers expected to check in today (schedule/holiday-aware) */
+  expectedCheckIns: number;
   averageReadiness: number;
   readinessDistribution: {
     green: number;

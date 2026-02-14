@@ -64,6 +64,16 @@ export class NotificationRepository extends BaseRepository {
         skip: calculateSkip(params),
         take: params.limit,
         orderBy: { created_at: 'desc' },
+        select: {
+          id: true,
+          company_id: true,
+          person_id: true,
+          type: true,
+          title: true,
+          message: true,
+          read_at: true,
+          created_at: true,
+        },
       }),
       this.prisma.notification.count({ where }),
     ]);
@@ -107,17 +117,4 @@ export class NotificationRepository extends BaseRepository {
     return result.count;
   }
 
-  async deleteOld(daysOld: number): Promise<number> {
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - daysOld);
-
-    const result = await this.prisma.notification.deleteMany({
-      where: {
-        company_id: this.companyId,
-        created_at: { lt: cutoffDate },
-        read_at: { not: null },
-      },
-    });
-    return result.count;
-  }
 }

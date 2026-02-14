@@ -3,6 +3,21 @@ import { API_CONFIG } from '@/config/api.config';
 import { ENDPOINTS } from './endpoints';
 import { ROUTES } from '@/config/routes.config';
 
+/**
+ * Structured API error with code and status from backend.
+ * Extends Error so `error instanceof Error` checks still work.
+ */
+export class ApiError extends Error {
+  constructor(
+    public readonly code: string,
+    message: string,
+    public readonly statusCode: number,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 // Auth endpoints that should not trigger hard redirect on 401
 const AUTH_ENDPOINTS = [
   ENDPOINTS.AUTH.LOGIN,
@@ -37,18 +52,22 @@ class APIClient {
           // Only redirect for non-auth endpoints (session expired)
           useAuthStore.getState().clearAuth();
           window.location.href = ROUTES.LOGIN;
-          throw new Error('Session expired');
+          throw new ApiError('SESSION_EXPIRED', 'Session expired', 401);
         }
       }
 
       if (!response.ok) {
-        const errorBody: { error?: { message?: string } } = await response.json().catch((parseError) => {
+        const errorBody: { error?: { code?: string; message?: string } } = await response.json().catch((parseError) => {
           if (import.meta.env.DEV) {
             console.error('[APIClient] Failed to parse error response:', parseError);
           }
-          return { error: { message: response.statusText } };
+          return { error: { code: 'NETWORK_ERROR', message: response.statusText } };
         });
-        throw new Error(errorBody.error?.message || `Request failed: ${response.statusText}`);
+        throw new ApiError(
+          errorBody.error?.code || 'UNKNOWN_ERROR',
+          errorBody.error?.message || `Request failed: ${response.statusText}`,
+          response.status,
+        );
       }
 
       const data = await response.json();
@@ -56,7 +75,7 @@ class APIClient {
     } catch (error) {
       // Handle abort (timeout)
       if (error instanceof Error && error.name === 'AbortError') {
-        throw new Error('Request timed out. Please try again.');
+        throw new ApiError('TIMEOUT', 'Request timed out. Please try again.', 408);
       }
       throw error;
     } finally {

@@ -8,7 +8,7 @@ export interface CaseFilters extends PaginationParams {
   search?: string;
 }
 
-type CaseWithRelations = Case & {
+export type CaseWithRelations = Case & {
   incident: {
     id: string;
     incident_number: number;
@@ -36,7 +36,17 @@ export class CaseRepository extends BaseRepository {
     super(prisma, companyId);
   }
 
-  private readonly includeRelations = {
+  private readonly selectWithRelations = {
+    id: true,
+    company_id: true,
+    case_number: true,
+    incident_id: true,
+    assigned_to: true,
+    status: true,
+    notes: true,
+    resolved_at: true,
+    created_at: true,
+    updated_at: true,
     incident: {
       select: {
         id: true,
@@ -63,12 +73,12 @@ export class CaseRepository extends BaseRepository {
     assignee: {
       select: { id: true, first_name: true, last_name: true },
     },
-  };
+  } as const;
 
   async findById(id: string): Promise<CaseWithRelations | null> {
     return this.prisma.case.findFirst({
       where: this.where({ id }),
-      include: this.includeRelations,
+      select: this.selectWithRelations,
     }) as Promise<CaseWithRelations | null>;
   }
 
@@ -102,7 +112,7 @@ export class CaseRepository extends BaseRepository {
     const [items, total] = await Promise.all([
       this.prisma.case.findMany({
         where,
-        include: this.includeRelations,
+        select: this.selectWithRelations,
         orderBy: { created_at: 'desc' },
         skip: calculateSkip(filters),
         take: filters.limit,

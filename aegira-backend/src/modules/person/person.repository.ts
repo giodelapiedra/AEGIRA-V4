@@ -24,6 +24,9 @@ const SAFE_PERSON_SELECT = {
   work_days: true,
   check_in_start: true,
   check_in_end: true,
+  effective_team_id: true,
+  effective_transfer_date: true,
+  transfer_initiated_by: true,
   is_active: true,
   created_at: true,
   updated_at: true,
@@ -35,6 +38,7 @@ export type SafePerson = Omit<Person, 'password_hash'>;
 /** Person without password_hash, with team relation */
 export type SafePersonWithTeam = SafePerson & {
   team: { id: string; name: string; check_in_start: string; check_in_end: string; work_days: string } | null;
+  effective_team?: { id: string; name: string; check_in_start: string; check_in_end: string; work_days: string } | null;
 };
 
 export interface CreatePersonData {
@@ -63,6 +67,9 @@ export interface UpdatePersonData {
   workDays?: string | null; // CSV: "0,1,2,3,4,5,6" - worker schedule override (null clears override)
   checkInStart?: string | null; // HH:mm format - worker schedule override (null clears override)
   checkInEnd?: string | null; // HH:mm format - worker schedule override (null clears override)
+  effectiveTeamId?: string | null;
+  effectiveTransferDate?: Date | null;
+  transferInitiatedBy?: string | null;
 }
 
 export class PersonRepository extends BaseRepository {
@@ -122,6 +129,7 @@ export class PersonRepository extends BaseRepository {
       select: {
         ...SAFE_PERSON_SELECT,
         team: { select: { id: true, name: true, check_in_start: true, check_in_end: true, work_days: true } },
+        effective_team: { select: { id: true, name: true, check_in_start: true, check_in_end: true, work_days: true } },
       },
     });
   }
@@ -185,6 +193,7 @@ export class PersonRepository extends BaseRepository {
         select: {
           ...SAFE_PERSON_SELECT,
           team: { select: { id: true, name: true, check_in_start: true, check_in_end: true, work_days: true } },
+          effective_team: { select: { id: true, name: true, check_in_start: true, check_in_end: true, work_days: true } },
         },
       }),
       this.prisma.person.count({ where }),
@@ -239,6 +248,10 @@ export class PersonRepository extends BaseRepository {
           ...(data.workDays !== undefined && { work_days: data.workDays }),
           ...(data.checkInStart !== undefined && { check_in_start: data.checkInStart }),
           ...(data.checkInEnd !== undefined && { check_in_end: data.checkInEnd }),
+          // Effective next-day transfer fields
+          ...(data.effectiveTeamId !== undefined && { effective_team_id: data.effectiveTeamId }),
+          ...(data.effectiveTransferDate !== undefined && { effective_transfer_date: data.effectiveTransferDate }),
+          ...(data.transferInitiatedBy !== undefined && { transfer_initiated_by: data.transferInitiatedBy }),
         },
         select: SAFE_PERSON_SELECT,
       });
@@ -279,31 +292,80 @@ export class PersonRepository extends BaseRepository {
     teamIds?: string[] | null
   ): Promise<PaginatedResponse<SafePersonWithTeam>> {
     const teamFilter = teamIds ? { team_id: { in: teamIds } } : {};
+    const workerFilter = { role: 'WORKER' as Role, is_active: true, ...teamFilter };
 
     const [items, total] = await Promise.all([
       this.prisma.person.findMany({
-        where: this.where({
-          role: 'WORKER',
-          is_active: true,
-          ...teamFilter,
-        }),
+        where: this.where(workerFilter),
         select: {
           ...SAFE_PERSON_SELECT,
           team: { select: { id: true, name: true, check_in_start: true, check_in_end: true, work_days: true } },
+          effective_team: { select: { id: true, name: true, check_in_start: true, check_in_end: true, work_days: true } },
         },
         skip: calculateSkip(params),
         take: params.limit,
         orderBy: { last_name: 'asc' },
       }),
       this.prisma.person.count({
-        where: this.where({
-          role: 'WORKER',
-          is_active: true,
-          ...teamFilter,
-        }),
+        where: this.where(workerFilter),
       }),
     ]);
 
     return paginate(items as SafePersonWithTeam[], total, params);
+  }
+
+  /**
+   * Find workers with pending transfers whose effective date has arrived.
+   * Used by the transfer processor cron job.
+   */
+  async findPendingTransfers(effectiveDate: Date): Promise<{
+    id: string;
+    effective_team_id: string | null;
+    effective_transfer_date: Date | null;
+    effective_team: { id: string; name: string; is_active: boolean } | null;
+  }[]> {
+    return this.prisma.person.findMany({
+      where: this.where({
+        is_active: true,
+        effective_team_id: { not: null },
+        effective_transfer_date: { lte: effectiveDate },
+      }),
+      select: {
+        id: true,
+        effective_team_id: true,
+        effective_transfer_date: true,
+        effective_team: { select: { id: true, name: true, is_active: true } },
+      },
+    });
+  }
+
+  /**
+   * Execute a pending transfer: update team_id and clear effective fields.
+   */
+  async executeTransfer(personId: string, newTeamId: string, effectiveDate: Date): Promise<void> {
+    await this.prisma.person.update({
+      where: { id: personId, company_id: this.companyId },
+      data: {
+        team_id: newTeamId,
+        team_assigned_at: effectiveDate,
+        effective_team_id: null,
+        effective_transfer_date: null,
+        transfer_initiated_by: null,
+      },
+    });
+  }
+
+  /**
+   * Cancel a pending transfer: clear all effective fields.
+   */
+  async cancelTransfer(personId: string): Promise<void> {
+    await this.prisma.person.update({
+      where: { id: personId, company_id: this.companyId },
+      data: {
+        effective_team_id: null,
+        effective_transfer_date: null,
+        transfer_initiated_by: null,
+      },
+    });
   }
 }

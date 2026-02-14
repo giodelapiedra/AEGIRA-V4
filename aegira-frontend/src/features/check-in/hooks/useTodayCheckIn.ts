@@ -7,8 +7,8 @@ import type { BackendCheckIn, CheckIn, ReadinessFactor } from '@/types/check-in.
 
 export type { CheckIn, ReadinessFactor } from '@/types/check-in.types';
 
-// Generate recommendations based on scores
-function generateRecommendations(data: BackendCheckIn): string[] {
+// Generate recommendations based on scores (exported for reuse in history transform)
+export function generateRecommendations(data: BackendCheckIn): string[] {
   const recommendations: string[] = [];
 
   if (data.hours_slept < 6) {
@@ -36,8 +36,8 @@ function generateRecommendations(data: BackendCheckIn): string[] {
   return recommendations;
 }
 
-// Generate factors breakdown
-function generateFactors(data: BackendCheckIn): ReadinessFactor[] {
+// Generate factors breakdown (exported for reuse in history transform)
+export function generateFactors(data: BackendCheckIn): ReadinessFactor[] {
   const getImpact = (good: boolean, okay: boolean): 'positive' | 'neutral' | 'negative' => {
     if (good) return 'positive';
     if (okay) return 'neutral';
@@ -46,24 +46,28 @@ function generateFactors(data: BackendCheckIn): ReadinessFactor[] {
 
   const hasPain = data.pain_level !== null && data.pain_level !== undefined && data.pain_level > 0;
 
+  const sleepScore = data.sleep_score ?? 0;
+  const stressScore = data.stress_score ?? 0;
+  const physicalScore = data.physical_score ?? 0;
+
   const factors: ReadinessFactor[] = [
     {
       name: 'Sleep',
-      value: data.sleep_score / 10,
+      value: sleepScore / 10,
       weight: hasPain ? 0.35 : 0.40,
-      impact: getImpact(data.sleep_score >= 70, data.sleep_score >= 50),
+      impact: getImpact(sleepScore >= 70, sleepScore >= 50),
     },
     {
       name: 'Stress',
-      value: data.stress_score / 10,
+      value: stressScore / 10,
       weight: hasPain ? 0.25 : 0.30,
-      impact: getImpact(data.stress_score >= 70, data.stress_score >= 50),
+      impact: getImpact(stressScore >= 70, stressScore >= 50),
     },
     {
       name: 'Physical Condition',
-      value: data.physical_score / 10,
+      value: physicalScore / 10,
       weight: hasPain ? 0.20 : 0.30,
-      impact: getImpact(data.physical_score >= 70, data.physical_score >= 50),
+      impact: getImpact(physicalScore >= 70, physicalScore >= 50),
     },
   ];
 
@@ -90,19 +94,21 @@ function transformCheckIn(data: BackendCheckIn | null): CheckIn | null {
     checkInDate: data.check_in_date.slice(0, 10),
     sleepHours: data.hours_slept,
     sleepQuality: data.sleep_quality,
-    fatigueLevel: 11 - data.physical_condition, // Convert physical condition to fatigue
+    energyLevel: data.physical_condition, // Direct mapping: 1=low energy, 10=high energy
     stressLevel: data.stress_level,
     painLevel: data.pain_level ?? 0,
     painLocation: data.pain_location ?? undefined,
     physicalConditionNotes: data.physical_condition_notes ?? undefined,
-    notes: data.notes,
+    notes: data.notes ?? undefined,
     readinessResult: {
       score: data.readiness_score,
       category: levelToCategory(data.readiness_level),
       factors: generateFactors(data),
       recommendations: generateRecommendations(data),
     },
-    submittedAt: data.created_at,
+    isLate: data.event?.is_late ?? false,
+    lateByMinutes: data.event?.late_by_minutes ?? undefined,
+    submittedAt: data.event?.event_time ?? data.created_at,
     createdAt: data.created_at,
     updatedAt: data.created_at,
   };

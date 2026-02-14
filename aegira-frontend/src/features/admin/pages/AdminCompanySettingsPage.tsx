@@ -312,7 +312,7 @@ function CompanySettingsForm({ settings }: CompanySettingsFormProps) {
           </Card>
         </div>
 
-        <div className="flex justify-end mt-6">
+        <div className="flex justify-end pt-4">
           <Button type="submit" disabled={!isDirty || isSubmitting || updateSettings.isPending}>
             <Save className="h-4 w-4 mr-2" />
             {updateSettings.isPending ? 'Saving...' : 'Save Settings'}

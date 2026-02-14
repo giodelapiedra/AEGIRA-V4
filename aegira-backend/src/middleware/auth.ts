@@ -14,7 +14,15 @@ interface JwtPayload {
 }
 
 export async function authMiddleware(c: Context, next: Next): Promise<void> {
-  const token = getCookie(c, 'auth_token');
+  // Support both cookie and Authorization header (mobile apps use Bearer token)
+  let token = getCookie(c, 'auth_token');
+
+  if (!token) {
+    const authHeader = c.req.header('Authorization');
+    if (authHeader?.startsWith('Bearer ')) {
+      token = authHeader.slice(7);
+    }
+  }
 
   if (!token) {
     throw new AppError('UNAUTHORIZED', 'Not authenticated', 401);

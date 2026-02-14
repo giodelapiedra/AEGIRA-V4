@@ -4,6 +4,7 @@ import { DashboardService } from './dashboard.service';
 import { WhsDashboardService } from './whs-dashboard.service';
 import { WhsAnalyticsService } from './whs-analytics.service';
 import { AppError } from '../../shared/errors';
+import { getTeamContext } from '../../shared/team-context';
 
 export async function getSummary(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
@@ -89,6 +90,9 @@ export async function getWhsAnalytics(c: Context): Promise<Response> {
 
 export async function getTrends(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
+  const userId = c.get('userId') as string;
+  const userRole = c.get('userRole') as string;
+  const timezone = c.get('companyTimezone') as string;
   const days = Number(c.req.query('days') ?? 7);
 
   // Validate days parameter to prevent DoS via huge date ranges
@@ -96,8 +100,11 @@ export async function getTrends(c: Context): Promise<Response> {
     throw new AppError('VALIDATION_ERROR', 'Days must be between 1 and 90', 400);
   }
 
-  const service = new DashboardService(companyId, c.get('companyTimezone') as string);
-  const result = await service.getTrends(days);
+  // Get team context for filtering (SUPERVISOR sees assigned teams, ADMIN sees all)
+  const { teamIds } = await getTeamContext(companyId, userId, userRole, timezone);
+
+  const service = new DashboardService(companyId, timezone);
+  const result = await service.getTrends(days, teamIds);
 
   return c.json({ success: true, data: result });
 }

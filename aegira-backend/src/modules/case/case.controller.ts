@@ -1,5 +1,5 @@
 import type { Context } from 'hono';
-import { CaseRepository } from './case.repository';
+import { CaseRepository, type CaseWithRelations } from './case.repository';
 import { CaseService } from './case.service';
 import type { GetCasesQuery, UpdateCaseInput } from './case.validator';
 import { prisma } from '../../config/database';
@@ -10,9 +10,9 @@ function getRepository(companyId: string): CaseRepository {
   return new CaseRepository(prisma, companyId);
 }
 
-function getService(companyId: string): CaseService {
+function getService(companyId: string, timezone: string): CaseService {
   const repository = getRepository(companyId);
-  return new CaseService(prisma, repository);
+  return new CaseService(prisma, repository, timezone);
 }
 
 function calculateAge(dateOfBirth: Date | null): number | null {
@@ -26,36 +26,7 @@ function calculateAge(dateOfBirth: Date | null): number | null {
   return age;
 }
 
-function mapCaseToResponse(caseRecord: {
-  id: string;
-  case_number: number;
-  incident_id: string;
-  incident: {
-    id: string;
-    incident_number: number;
-    incident_type: string;
-    severity: string;
-    title: string;
-    location: string | null;
-    description: string;
-    status: string;
-    reporter: {
-      id: string;
-      first_name: string;
-      last_name: string;
-      email: string;
-      gender: string | null;
-      date_of_birth: Date | null;
-      team: { id: string; name: string } | null;
-    };
-  };
-  assigned_to: string | null;
-  assignee: { id: string; first_name: string; last_name: string } | null;
-  status: string;
-  notes: string | null;
-  resolved_at: Date | null;
-  created_at: Date;
-}): Record<string, unknown> {
+function mapCaseToResponse(caseRecord: CaseWithRelations): Record<string, unknown> {
   return {
     id: caseRecord.id,
     caseNumber: caseRecord.case_number,
@@ -94,7 +65,7 @@ function mapCaseToResponse(caseRecord: {
 export async function getCases(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const { page, limit } = parsePagination(c.req.query('page'), c.req.query('limit'));
-  const { status, search } = c.req.valid('query') as GetCasesQuery;
+  const { status, search } = c.req.valid('query' as never) as GetCasesQuery;
 
   const repository = getRepository(companyId);
 
@@ -104,7 +75,7 @@ export async function getCases(c: Context): Promise<Response> {
   ]);
 
   const items = result.items.map((caseRecord) =>
-    mapCaseToResponse(caseRecord as Parameters<typeof mapCaseToResponse>[0])
+    mapCaseToResponse(caseRecord)
   );
 
   return c.json({
@@ -143,7 +114,7 @@ export async function getCaseById(c: Context): Promise<Response> {
 
   return c.json({
     success: true,
-    data: mapCaseToResponse(caseRecord as Parameters<typeof mapCaseToResponse>[0]),
+    data: mapCaseToResponse(caseRecord),
   });
 }
 
@@ -155,13 +126,13 @@ export async function updateCase(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const userId = c.get('userId') as string;
   const id = c.req.param('id');
-  const data = c.req.valid('json') as UpdateCaseInput;
+  const data = c.req.valid('json' as never) as UpdateCaseInput;
 
-  const service = getService(companyId);
+  const service = getService(companyId, c.get('companyTimezone') as string);
   const updated = await service.updateCase(id, companyId, userId, data);
 
   return c.json({
     success: true,
-    data: mapCaseToResponse(updated as Parameters<typeof mapCaseToResponse>[0]),
+    data: mapCaseToResponse(updated),
   });
 }

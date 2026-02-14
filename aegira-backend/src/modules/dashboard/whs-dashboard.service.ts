@@ -155,7 +155,13 @@ export class WhsDashboardService {
           company_id: this.companyId,
           status: 'PENDING',
         },
-        include: {
+        select: {
+          id: true,
+          incident_number: true,
+          title: true,
+          incident_type: true,
+          severity: true,
+          created_at: true,
           reporter: {
             select: { first_name: true, last_name: true },
           },
@@ -181,7 +187,11 @@ export class WhsDashboardService {
             ],
           },
         },
-        include: {
+        select: {
+          id: true,
+          event_type: true,
+          payload: true,
+          created_at: true,
           person: {
             select: { first_name: true, last_name: true },
           },

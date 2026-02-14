@@ -13,15 +13,39 @@ export interface HolidayCheck {
   holidayName: string | null;
 }
 
+// In-memory cache for holiday checks (1-hour TTL).
+// Holidays are set up annually and rarely change intra-day.
+// Bounded to MAX_CACHE_ENTRIES to prevent unbounded memory growth in long-running
+// multi-tenant deployments (each company+date = one entry).
+const HOLIDAY_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const MAX_CACHE_ENTRIES = 5000;
+const holidayCache = new Map<string, { data: HolidayCheck; expiresAt: number }>();
+
 /**
  * Check if a given date is a company holiday.
  * Handles both exact date holidays and recurring holidays (same month/day every year).
+ * Results are cached in-memory for 1 hour per company+date.
  */
 export async function checkHolidayForDate(
   prisma: PrismaClient,
   companyId: string,
   dateStr: string,
 ): Promise<HolidayCheck> {
+  // Check cache first
+  const cacheKey = `${companyId}:${dateStr}`;
+  const cached = holidayCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.data;
+  }
+
+  // Evict expired entries when cache exceeds size limit to prevent unbounded growth
+  if (holidayCache.size >= MAX_CACHE_ENTRIES) {
+    const now = Date.now();
+    for (const [key, entry] of holidayCache) {
+      if (entry.expiresAt <= now) holidayCache.delete(key);
+    }
+  }
+
   const targetDate = new Date(`${dateStr}T00:00:00Z`);
   const targetMonth = targetDate.getUTCMonth() + 1; // 1-12
   const targetDay = targetDate.getUTCDate();
@@ -37,7 +61,9 @@ export async function checkHolidayForDate(
   });
 
   if (exactHoliday) {
-    return { isHoliday: true, holidayName: exactHoliday.name };
+    const result: HolidayCheck = { isHoliday: true, holidayName: exactHoliday.name };
+    holidayCache.set(cacheKey, { data: result, expiresAt: Date.now() + HOLIDAY_CACHE_TTL_MS });
+    return result;
   }
 
   // Check recurring holidays (same month/day, any year)
@@ -52,11 +78,24 @@ export async function checkHolidayForDate(
   for (const holiday of recurringHolidays) {
     const hDate = new Date(holiday.date);
     if (hDate.getUTCMonth() + 1 === targetMonth && hDate.getUTCDate() === targetDay) {
-      return { isHoliday: true, holidayName: holiday.name };
+      const result: HolidayCheck = { isHoliday: true, holidayName: holiday.name };
+      holidayCache.set(cacheKey, { data: result, expiresAt: Date.now() + HOLIDAY_CACHE_TTL_MS });
+      return result;
     }
   }
 
-  return { isHoliday: false, holidayName: null };
+  const result: HolidayCheck = { isHoliday: false, holidayName: null };
+  holidayCache.set(cacheKey, { data: result, expiresAt: Date.now() + HOLIDAY_CACHE_TTL_MS });
+  return result;
+}
+
+/** Invalidate all cached holiday data for a company (call after admin CRUD on holidays) */
+export function invalidateHolidayCache(companyId: string): void {
+  for (const key of holidayCache.keys()) {
+    if (key.startsWith(`${companyId}:`)) {
+      holidayCache.delete(key);
+    }
+  }
 }
 
 /**

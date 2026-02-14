@@ -65,6 +65,11 @@ model Person {
   check_in_start      String? // HH:mm format (e.g., "06:00")
   check_in_end        String? // HH:mm format (e.g., "10:00")
 
+  // Effective next-day transfer (pending)
+  effective_team_id       String?   // Team being transferred TO
+  effective_transfer_date DateTime? @db.Date // Calendar date when transfer takes effect
+  transfer_initiated_by   String?   // Admin user ID who initiated
+
   is_active           Boolean   @default(true)
   created_at          DateTime  @default(now())
   updated_at          DateTime  @updatedAt
@@ -72,6 +77,7 @@ model Person {
   // Relations
   company            Company         @relation(fields: [company_id], references: [id], onDelete: Cascade)
   team               Team?           @relation("TeamMembers", fields: [team_id], references: [id], onDelete: SetNull)
+  effective_team     Team?           @relation("PendingTransfer", fields: [effective_team_id], references: [id], onDelete: SetNull)
   led_teams          Team[]          @relation("TeamLeader") // Teams this person leads
   supervised_teams   Team[]          @relation("TeamSupervisor") // Teams this person supervises
   check_ins          CheckIn[]
@@ -92,6 +98,7 @@ model Person {
   @@index([email])
   @@index([company_id, last_name, first_name])
   @@index([company_id, team_id, is_active])
+  @@index([effective_transfer_date])
   @@map("persons")
 }
 
@@ -116,8 +123,9 @@ model Team {
   company          Company         @relation(fields: [company_id], references: [id], onDelete: Cascade)
   leader           Person          @relation("TeamLeader", fields: [leader_id], references: [id])
   supervisor       Person?         @relation("TeamSupervisor", fields: [supervisor_id], references: [id])
-  members          Person[]        @relation("TeamMembers")
-  missed_check_ins MissedCheckIn[]
+  members            Person[]        @relation("TeamMembers")
+  pending_transfers  Person[]        @relation("PendingTransfer")
+  missed_check_ins   MissedCheckIn[]
 
   @@unique([company_id, name])
   @@index([leader_id])
@@ -162,11 +170,13 @@ model CheckIn {
   person     Person      @relation(fields: [person_id], references: [id], onDelete: Cascade)
   event      Event       @relation(fields: [event_id], references: [id])
   amendments Amendment[]
+  resolved_missed_check_in MissedCheckIn? @relation("ResolvedMissedCheckIns")
 
   @@unique([person_id, check_in_date])
   @@index([company_id, check_in_date])
   @@index([company_id, person_id, check_in_date])
   @@index([company_id, readiness_level, check_in_date]) // Analytics groupBy on readiness_level
+  @@index([company_id, check_in_date, readiness_level]) // Analytics groupBy with date range filter
   @@map("check_ins")
 }
 
@@ -204,13 +214,20 @@ model MissedCheckIn {
   reminder_sent   Boolean @default(true)
   reminder_failed Boolean @default(false)
 
+  // Resolution tracking (Phase 2) - set when late check-in resolves this miss
+  resolved_by_check_in_id String?   @unique // The late check-in that resolved this miss
+  resolved_at             DateTime? // When it was resolved
+
   // Relations
-  person Person @relation(fields: [person_id], references: [id], onDelete: Cascade)
-  team   Team   @relation(fields: [team_id], references: [id], onDelete: Cascade)
+  person          Person   @relation(fields: [person_id], references: [id], onDelete: Cascade)
+  team            Team     @relation(fields: [team_id], references: [id], onDelete: Cascade)
+  resolved_check_in CheckIn? @relation("ResolvedMissedCheckIns", fields: [resolved_by_check_in_id], references: [id], onDelete: SetNull)
 
   @@unique([person_id, missed_date])
   @@index([company_id, missed_date])
   @@index([team_id])
+  @@index([company_id, resolved_at]) // Filter resolved vs unresolved
+  @@index([company_id, person_id, missed_date, resolved_at]) // Unresolved misses per person
   @@map("missed_check_ins")
 }
 
@@ -390,6 +407,8 @@ enum EventType {
   CASE_RESOLVED
   MISSED_CHECK_IN_DETECTED
   MISSED_CHECK_IN_RESOLVED
+  TEAM_TRANSFER_INITIATED
+  TEAM_TRANSFER_COMPLETED
 }
 
 enum NotificationType {

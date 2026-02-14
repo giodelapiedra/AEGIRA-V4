@@ -30,6 +30,7 @@ import { useApproveIncident } from '../hooks/useApproveIncident';
 import { useToast } from '@/lib/hooks/use-toast';
 import { useAuth } from '@/lib/hooks/use-auth';
 import { ROUTES } from '@/config/routes.config';
+import { buildRoute } from '@/lib/utils/route.utils';
 import { formatDate } from '@/lib/utils/date.utils';
 import { formatIncidentNumber, formatIncidentType } from '@/lib/utils/format.utils';
 import type {
@@ -138,7 +139,7 @@ function RowActions({ incident }: { incident: Incident }) {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem
-            onClick={() => navigate(ROUTES.ADMIN_INCIDENT_DETAIL.replace(':id', incident.id))}
+            onClick={() => navigate(buildRoute(ROUTES.ADMIN_INCIDENT_DETAIL, { id: incident.id }))}
           >
             <Eye className="h-4 w-4 mr-2" />
             View Details

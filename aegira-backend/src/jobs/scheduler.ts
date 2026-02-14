@@ -3,6 +3,7 @@ import cron from 'node-cron';
 import { logger } from '../config/logger';
 import { env } from '../config/env';
 import { detectMissedCheckIns } from './missed-check-in-detector';
+import { processTransfers } from './transfer-processor';
 import { runCleanup } from './cleanup';
 
 /**
@@ -31,6 +32,15 @@ export function initializeScheduler(): void {
       await detectMissedCheckIns();
     } catch (error) {
       logger.error({ error }, 'Missed check-in detector failed');
+    }
+  }, tzOptions);
+
+  // Transfer processor — fires every 15 min, processes pending next-day transfers
+  cron.schedule('*/15 * * * *', async () => {
+    try {
+      await processTransfers();
+    } catch (error) {
+      logger.error({ error }, 'Transfer processor failed');
     }
   }, tzOptions);
 

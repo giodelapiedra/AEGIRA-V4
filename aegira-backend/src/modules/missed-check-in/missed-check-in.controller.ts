@@ -21,7 +21,7 @@ export async function getMissedCheckIns(c: Context): Promise<Response> {
   const userId = c.get('userId') as string;
   const userRole = c.get('userRole') as string;
   const { page, limit } = parsePagination(c.req.query('page'), c.req.query('limit'));
-  const { workerId: workerIdParam } = c.req.valid('query') as GetMissedCheckInsQuery;
+  const { workerId: workerIdParam } = c.req.valid('query' as never) as GetMissedCheckInsQuery;
 
   const { teamIds } = await getTeamContext(companyId, userId, userRole, c.get('companyTimezone') as string);
 
@@ -38,11 +38,16 @@ export async function getMissedCheckIns(c: Context): Promise<Response> {
 
   const repository = getRepository(companyId);
 
+  // Parse resolved filter: 'true' | 'false' | undefined (all)
+  const resolvedParam = c.req.query('resolved');
+  const resolved = resolvedParam === 'true' ? true : resolvedParam === 'false' ? false : undefined;
+
   const result = await repository.findByFilters({
     page,
     limit,
     teamIds: teamIds || undefined,
     personId: workerIdParam || undefined,
+    resolved,
   });
 
   // Transform to API response shape (includes state snapshot for analytics)
@@ -58,6 +63,9 @@ export async function getMissedCheckIns(c: Context): Promise<Response> {
     date: record.missed_date,
     scheduleWindow: record.schedule_window,
     createdAt: record.created_at,
+    // Resolution tracking (Phase 2)
+    resolvedByCheckInId: record.resolved_by_check_in_id ?? null,
+    resolvedAt: record.resolved_at ?? null,
     // State snapshot fields (for detail view)
     stateSnapshot: {
       dayOfWeek: record.day_of_week,

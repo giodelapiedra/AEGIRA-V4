@@ -108,7 +108,19 @@ export class TeamRepository extends BaseRepository {
         skip: calculateSkip(params),
         take: params.limit,
         orderBy: { name: 'asc' },
-        include: {
+        select: {
+          id: true,
+          company_id: true,
+          name: true,
+          description: true,
+          leader_id: true,
+          supervisor_id: true,
+          check_in_start: true,
+          check_in_end: true,
+          work_days: true,
+          is_active: true,
+          created_at: true,
+          updated_at: true,
           leader: {
             select: {
               id: true,
@@ -151,6 +163,49 @@ export class TeamRepository extends BaseRepository {
         ...(data.workDays !== undefined && { work_days: data.workDays }),
       },
     });
+  }
+
+  /**
+   * Count active members assigned to a team (all roles)
+   */
+  async countActiveMembers(teamId: string): Promise<number> {
+    return this.prisma.person.count({
+      where: this.where({ team_id: teamId, is_active: true }),
+    });
+  }
+
+  /**
+   * Unassign all members from a team (set team_id = null, clear pending transfers)
+   * Used when deactivating a team with Option B (bulk unassign)
+   */
+  async unassignMembers(teamId: string): Promise<number> {
+    // Unassign current members
+    const result = await this.prisma.person.updateMany({
+      where: {
+        company_id: this.companyId,
+        team_id: teamId,
+        is_active: true,
+      },
+      data: {
+        team_id: null,
+        team_assigned_at: null,
+      },
+    });
+
+    // Cancel pending transfers TO this team
+    await this.prisma.person.updateMany({
+      where: {
+        company_id: this.companyId,
+        effective_team_id: teamId,
+      },
+      data: {
+        effective_team_id: null,
+        effective_transfer_date: null,
+        transfer_initiated_by: null,
+      },
+    });
+
+    return result.count;
   }
 
   /**

@@ -5,7 +5,7 @@ import { CheckInRepository } from './check-in.repository';
 import { prisma } from '../../config/database';
 import { AppError } from '../../shared/errors';
 import type { AuthenticatedUser } from '../../types/api.types';
-import type { CheckInInput } from '../../types/domain.types';
+import type { SubmitCheckInInput } from './check-in.validator';
 
 function getService(companyId: string, timezone: string): CheckInService {
   const repository = new CheckInRepository(prisma, companyId);
@@ -13,7 +13,7 @@ function getService(companyId: string, timezone: string): CheckInService {
 }
 
 export async function submitCheckIn(c: Context): Promise<Response> {
-  const data = await c.req.json() as CheckInInput;
+  const data = c.req.valid('json' as never) as SubmitCheckInInput;
   const user = c.get('user') as AuthenticatedUser;
   const companyId = c.get('companyId') as string;
 
@@ -34,10 +34,10 @@ export async function getCheckInById(c: Context): Promise<Response> {
   const service = getService(companyId, c.get('companyTimezone') as string);
   const result = await service.getById(id);
 
-  // Validate access: owner, SUPERVISOR/ADMIN, or TEAM_LEAD of the worker's team
+  // Validate access: owner, WHS/SUPERVISOR/ADMIN, or TEAM_LEAD of the worker's team
   let canAccess =
     result.person_id === user.id ||
-    ['SUPERVISOR', 'ADMIN'].includes(user.role.toUpperCase());
+    ['WHS', 'SUPERVISOR', 'ADMIN'].includes(user.role.toUpperCase());
 
   // TEAM_LEAD can view check-ins of workers in their team
   if (!canAccess && user.role.toUpperCase() === 'TEAM_LEAD') {
@@ -56,8 +56,7 @@ export async function getCheckInById(c: Context): Promise<Response> {
 }
 
 export async function getCheckInHistory(c: Context): Promise<Response> {
-  const page = Number(c.req.query('page') ?? 1);
-  const limit = Number(c.req.query('limit') ?? 20);
+  const { page, limit } = c.req.valid('query' as never) as { page: number; limit: number };
   const user = c.get('user') as AuthenticatedUser;
   const companyId = c.get('companyId') as string;
 

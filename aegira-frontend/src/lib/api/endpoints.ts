@@ -52,6 +52,7 @@ export const ENDPOINTS = {
     UPLOAD_AVATAR: '/persons/me/avatar',
     BY_ID: (id: string) => `/persons/${id}`,
     UPDATE: (id: string) => `/persons/${id}`,
+    CANCEL_TRANSFER: (id: string) => `/persons/${id}/pending-transfer`,
     CHECK_INS: (id: string) => `/persons/${id}/check-ins`,
     STATS: (id: string) => `/persons/${id}/stats`,
   },

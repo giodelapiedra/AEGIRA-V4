@@ -6,12 +6,17 @@ import { NotificationRepository } from '../notification/notification.repository'
 import { prisma } from '../../config/database';
 import { AppError } from '../../shared/errors';
 import { hashPassword } from '../../shared/password';
-import { parsePagination, getCurrentTimeInTimezone, getDayOfWeekInTimezone } from '../../shared/utils';
+import { DateTime } from 'luxon';
+import { parsePagination, getTodayInTimezone, parseDateInTimezone, getCurrentTimeInTimezone, getDayOfWeekInTimezone, formatTime12h } from '../../shared/utils';
 import { getEffectiveSchedule } from '../../shared/schedule.utils';
+import { isHoliday } from '../../shared/holiday.utils';
 import { validateImageFile, uploadFile, deleteFile, buildAvatarKey, extractKeyFromUrl } from '../../shared/storage';
+import { emitEvent } from '../event/event.service';
+import { MissedCheckInRepository } from '../missed-check-in/missed-check-in.repository';
 import { logger } from '../../config/logger';
 import { logAudit } from '../../shared/audit';
 import type { AuthenticatedUser } from '../../types/api.types';
+import type { SafePersonWithTeam, UpdatePersonData } from './person.repository';
 import type { CreatePersonInput, UpdatePersonInput, UpdateProfileInput } from './person.validator';
 
 function getRepository(companyId: string): PersonRepository {
@@ -65,9 +70,9 @@ async function notifyWorkerTeamAssignment(
 
     // Check if today is a work day and check-in window is still open
     const isTodayWorkDay = workDays.includes(currentDayNum);
-    const isWindowOpen = currentTime < checkInEnd;
+    const isWindowOpen = currentTime >= checkInStart && currentTime < checkInEnd;
 
-    let firstCheckInInfo: string;
+    let firstCheckInInfo = `Check-in window: ${checkInStart} to ${checkInEnd}.`;
     if (isTodayWorkDay && isWindowOpen) {
       firstCheckInInfo = `Your check-in window is open now until ${checkInEnd}.`;
     } else {
@@ -82,7 +87,6 @@ async function notifyWorkerTeamAssignment(
           break;
         }
       }
-      firstCheckInInfo = firstCheckInInfo! || `Check-in window: ${checkInStart} to ${checkInEnd}.`;
     }
 
     await notificationRepo.create({
@@ -142,12 +146,15 @@ export async function createPerson(c: Context): Promise<Response> {
     throw new AppError('TEAM_REQUIRED', 'Team is required for workers', 400);
   }
 
-  // Validate team exists if teamId is provided
+  // Validate team exists and is active if teamId is provided
   if (data.teamId) {
     const teamRepository = new TeamRepository(prisma, companyId);
     const team = await teamRepository.findById(data.teamId);
     if (!team) {
       throw new AppError('INVALID_TEAM', 'Team not found', 400);
+    }
+    if (!team.is_active) {
+      throw new AppError('TEAM_INACTIVE_ASSIGNMENT', 'Cannot assign worker to an inactive team', 400);
     }
   }
 
@@ -161,6 +168,9 @@ export async function createPerson(c: Context): Promise<Response> {
     passwordHash: await hashPassword(data.password),
     gender: data.gender,
     dateOfBirth: data.dateOfBirth,
+    workDays: data.workDays,
+    checkInStart: data.checkInStart,
+    checkInEnd: data.checkInEnd,
   };
 
   const result = await repository.create(personData);
@@ -204,6 +214,7 @@ export async function getPersonById(c: Context): Promise<Response> {
 export async function updatePerson(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const userId = c.get('userId') as string;
+  const timezone = c.get('companyTimezone') as string;
   const id = c.req.param('id');
   const data = c.req.valid('json' as never) as UpdatePersonInput;
 
@@ -233,19 +244,23 @@ export async function updatePerson(c: Context): Promise<Response> {
   const effectiveRole = data.role ?? existing.role;
 
   // Workers must be assigned to a team
+  // Check the FINAL state: if team is being removed, the worker must still have a team
   if (effectiveRole === 'WORKER') {
-    const effectiveTeamId = data.teamId !== undefined ? data.teamId : existing.team_id;
-    if (!effectiveTeamId) {
-      throw new AppError('TEAM_REQUIRED', 'Team is required for workers', 400);
+    const finalTeamId = data.teamId !== undefined ? data.teamId : existing.team_id;
+    if (!finalTeamId) {
+      throw new AppError('TEAM_REQUIRED', 'Team is required for workers. Assign a new team instead of removing the current one.', 400);
     }
   }
 
-  // Validate team exists if teamId is being changed
+  // Validate team exists and is active if teamId is being changed
   if (data.teamId !== undefined && data.teamId !== null && data.teamId !== existing.team_id) {
     const teamRepository = new TeamRepository(prisma, companyId);
     const team = await teamRepository.findById(data.teamId);
     if (!team) {
       throw new AppError('INVALID_TEAM', 'Team not found', 400);
+    }
+    if (!team.is_active) {
+      throw new AppError('TEAM_INACTIVE_ASSIGNMENT', 'Cannot assign worker to an inactive team', 400);
     }
   }
 
@@ -255,23 +270,110 @@ export async function updatePerson(c: Context): Promise<Response> {
 
   // Only include teamId in update data if it actually changed
   // This prevents resetting team_assigned_at when saving with the same team
-  const updateData = { ...data };
+  const updateData: UpdatePersonData = { ...data };
   if (!teamChanged) {
     delete updateData.teamId;
   }
 
-  // Clear schedule overrides when role changes away from WORKER
+  // Guard: cannot demote a TEAM_LEAD who currently leads a team
+  if (data.role !== undefined && data.role !== 'TEAM_LEAD' && existing.role === 'TEAM_LEAD') {
+    const teamRepository = new TeamRepository(prisma, companyId);
+    const ledTeam = await teamRepository.findByLeaderId(id);
+    if (ledTeam) {
+      throw new AppError('LEADER_HAS_TEAM', `Cannot change role — this person leads team "${ledTeam.name}". Reassign the team leader first.`, 400);
+    }
+  }
+
+  // Guard: cannot deactivate a person who leads an active team
+  // (placed before transfer logic to prevent fire-and-forget side effects on rejection)
+  if (data.isActive === false && existing.is_active) {
+    const teamRepository = new TeamRepository(prisma, companyId);
+    const ledTeam = await teamRepository.findByLeaderId(id);
+    if (ledTeam && ledTeam.is_active) {
+      throw new AppError(
+        'LEADER_HAS_ACTIVE_TEAM',
+        `Cannot deactivate — this person leads team "${ledTeam.name}". Reassign the team leader or deactivate the team first.`,
+        400
+      );
+    }
+  }
+
+  // Clear schedule overrides and pending transfers when role changes away from WORKER
   if (data.role !== undefined && data.role !== 'WORKER' && existing.role === 'WORKER') {
     updateData.workDays = null;
     updateData.checkInStart = null;
     updateData.checkInEnd = null;
+    // Pending transfer is worker-specific — clear it on role change
+    if (existing.effective_team_id) {
+      updateData.effectiveTeamId = null;
+      updateData.effectiveTransferDate = null;
+      updateData.transferInitiatedBy = null;
+    }
+  }
+
+  // ===== EFFECTIVE NEXT-DAY TRANSFER LOGIC =====
+  if (teamChanged && data.teamId) {
+    if (isNewAssignment) {
+      // FIRST ASSIGNMENT — immediate (no old team to protect)
+      // updateData.teamId stays in payload → repository sets team_id + team_assigned_at
+    } else {
+      // TRANSFER — effective next day
+      // Do NOT change team_id now — set effective fields instead
+      delete updateData.teamId;
+
+      // Calculate tomorrow's date using timezone-aware Luxon math.
+      // Avoids unsafe .setUTCDate() mutation which can drift near midnight boundaries.
+      const todayStr = getTodayInTimezone(timezone);
+      const tomorrowDt = DateTime.fromISO(todayStr, { zone: timezone }).plus({ days: 1 });
+      const tomorrowDate = new Date(Date.UTC(tomorrowDt.year, tomorrowDt.month - 1, tomorrowDt.day));
+
+      updateData.effectiveTeamId = data.teamId;
+      updateData.effectiveTransferDate = tomorrowDate;
+      updateData.transferInitiatedBy = userId;
+
+      // Create immediate MissedCheckIn if window already closed and worker didn't check in (non-blocking)
+      createImmediateMissedCheckIn(companyId, id, existing, timezone, todayStr);
+
+      // Emit transfer initiated event (fire-and-forget)
+      emitEvent(prisma, {
+        companyId,
+        personId: id,
+        eventType: 'TEAM_TRANSFER_INITIATED',
+        entityType: 'person',
+        entityId: id,
+        payload: {
+          fromTeamId: existing.team_id,
+          toTeamId: data.teamId,
+          effectiveDate: tomorrowDate.toISOString(),
+          initiatedBy: userId,
+        },
+        timezone,
+      });
+    }
+  } else if (teamChanged && !data.teamId) {
+    // REMOVING from team — clear any pending transfer too
+    updateData.effectiveTeamId = null;
+    updateData.effectiveTransferDate = null;
+    updateData.transferInitiatedBy = null;
+  }
+
+  // If worker is deactivated, clear pending transfer
+  if (data.isActive === false && existing.is_active) {
+    updateData.effectiveTeamId = null;
+    updateData.effectiveTransferDate = null;
+    updateData.transferInitiatedBy = null;
   }
 
   const result = await repository.update(id, updateData);
 
   // Send notification if worker was assigned to a new team (non-blocking)
   if (teamChanged && data.teamId) {
-    notifyWorkerTeamAssignment(companyId, id, data.teamId, isNewAssignment, c.get('companyTimezone') as string);
+    if (isNewAssignment) {
+      notifyWorkerTeamAssignment(companyId, id, data.teamId, true, timezone);
+    } else {
+      // Transfer notification — tell worker about scheduled transfer
+      notifyWorkerTransferScheduled(companyId, id, existing.team?.name ?? 'current team', data.teamId, timezone);
+    }
   }
 
   // Audit person update (non-blocking) — only log changed fields
@@ -292,6 +394,190 @@ export async function updatePerson(c: Context): Promise<Response> {
   });
 
   return c.json({ success: true, data: result });
+}
+
+/**
+ * Cancel a pending team transfer.
+ * DELETE /persons/:id/pending-transfer
+ */
+export async function cancelPendingTransfer(c: Context): Promise<Response> {
+  const companyId = c.get('companyId') as string;
+  const userId = c.get('userId') as string;
+  const id = c.req.param('id');
+
+  if (!id) {
+    throw new AppError('VALIDATION_ERROR', 'Person ID is required', 400);
+  }
+
+  const repository = getRepository(companyId);
+  const existing = await repository.findById(id);
+
+  if (!existing) {
+    throw new AppError('NOT_FOUND', 'Person not found', 404);
+  }
+
+  if (!existing.effective_team_id) {
+    throw new AppError('NO_PENDING_TRANSFER', 'No pending transfer to cancel', 400);
+  }
+
+  await repository.cancelTransfer(id);
+
+  // Notify worker (fire-and-forget)
+  const notifRepo = new NotificationRepository(prisma, companyId);
+  notifRepo.create({
+    personId: id,
+    type: 'TEAM_ALERT',
+    title: 'Transfer Cancelled',
+    message: 'Your scheduled team transfer has been cancelled. You will stay on your current team.',
+  }).catch(err => logger.error({ err, personId: id }, 'Failed to send transfer cancellation notification'));
+
+  // Audit (non-blocking)
+  logAudit({
+    companyId,
+    personId: userId,
+    action: 'CANCEL_TRANSFER',
+    entityType: 'PERSON',
+    entityId: id,
+    details: { cancelledTransferTo: existing.effective_team_id },
+  });
+
+  return c.json({ success: true, data: { message: 'Transfer cancelled' } });
+}
+
+/**
+ * Send notification when a team transfer is scheduled (not immediate).
+ * Non-blocking - errors are logged but don't break the main operation.
+ */
+async function notifyWorkerTransferScheduled(
+  companyId: string,
+  personId: string,
+  currentTeamName: string,
+  newTeamId: string,
+  timezone: string
+): Promise<void> {
+  try {
+    const teamRepo = new TeamRepository(prisma, companyId);
+    const notifRepo = new NotificationRepository(prisma, companyId);
+
+    const newTeam = await teamRepo.findById(newTeamId);
+    const newTeamName = newTeam?.name ?? 'your new team';
+
+    const todayStr = getTodayInTimezone(timezone);
+    const tomorrowDt = DateTime.fromISO(todayStr, { zone: timezone }).plus({ days: 1 });
+    const effectiveDateStr = tomorrowDt.toFormat('yyyy-MM-dd');
+
+    await notifRepo.create({
+      personId,
+      type: 'TEAM_ALERT',
+      title: 'Team Transfer Scheduled',
+      message: `You will be transferred to ${newTeamName} starting ${effectiveDateStr}. Please complete your check-in for ${currentTeamName} as usual today.`,
+    });
+  } catch (error) {
+    logger.error({ error, personId, newTeamId }, 'Failed to send transfer scheduled notification');
+  }
+}
+
+/**
+ * Create an immediate MissedCheckIn record when a transfer is initiated
+ * and the check-in window has already closed without a check-in.
+ * Non-blocking - errors are logged but don't fail the transfer.
+ */
+async function createImmediateMissedCheckIn(
+  companyId: string,
+  personId: string,
+  person: SafePersonWithTeam,
+  timezone: string,
+  todayStr: string
+): Promise<void> {
+  try {
+    if (!person.team_id || !person.team) return;
+
+    const currentTime = getCurrentTimeInTimezone(timezone);
+    const todayDow = getDayOfWeekInTimezone(timezone).toString();
+    const todayDate = parseDateInTimezone(todayStr, timezone);
+
+    // Get effective schedule
+    const schedule = getEffectiveSchedule(
+      { work_days: person.work_days, check_in_start: person.check_in_start, check_in_end: person.check_in_end },
+      { work_days: person.team.work_days, check_in_start: person.team.check_in_start, check_in_end: person.team.check_in_end }
+    );
+
+    // Only create if: today is work day AND window already closed AND no check-in today
+    if (!schedule.workDays.includes(todayDow)) return;
+    if (currentTime <= schedule.checkInEnd) return;
+
+    // Check for today's holiday
+    const holidayToday = await isHoliday(prisma, companyId, todayStr);
+    if (holidayToday) return;
+
+    // Check if already checked in today
+    const existingCheckIn = await prisma.checkIn.findFirst({
+      where: { company_id: companyId, person_id: personId, check_in_date: todayDate },
+      select: { id: true },
+    });
+    if (existingCheckIn) return;
+
+    // Check if MissedCheckIn already exists
+    const missedRepo = new MissedCheckInRepository(prisma, companyId);
+    const existingMissed = await missedRepo.findExistingForDate(todayDate, [personId]);
+    if (existingMissed.has(personId)) return;
+
+    // Gather snapshot data in parallel for analytics (matches cron detector pattern).
+    // Includes temporal context fields for consistent reporting across both code paths.
+    const thirtyDaysAgo = new Date(todayDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const sixtyDaysAgo = new Date(todayDate.getTime() - 60 * 24 * 60 * 60 * 1000);
+    const ninetyDaysAgo = new Date(todayDate.getTime() - 90 * 24 * 60 * 60 * 1000);
+
+    const [missesInLast30d, missesInLast60d, missesInLast90d, lastCheckIn, teamLeader] = await Promise.all([
+      prisma.missedCheckIn.count({
+        where: { company_id: companyId, person_id: personId, missed_date: { gte: thirtyDaysAgo } },
+      }),
+      prisma.missedCheckIn.count({
+        where: { company_id: companyId, person_id: personId, missed_date: { gte: sixtyDaysAgo } },
+      }),
+      prisma.missedCheckIn.count({
+        where: { company_id: companyId, person_id: personId, missed_date: { gte: ninetyDaysAgo } },
+      }),
+      prisma.checkIn.findFirst({
+        where: { company_id: companyId, person_id: personId, check_in_date: { lt: todayDate } },
+        orderBy: { check_in_date: 'desc' },
+        select: { readiness_score: true },
+      }),
+      person.team_id
+        ? prisma.person.findFirst({
+            where: { company_id: companyId, led_teams: { some: { id: person.team_id } } },
+            select: { id: true, first_name: true, last_name: true },
+          })
+        : null,
+    ]);
+
+    const todayDowNum = getDayOfWeekInTimezone(timezone);
+    const todayDayOfMonth = DateTime.fromISO(todayStr, { zone: timezone }).day;
+
+    await missedRepo.createMany([{
+      personId,
+      teamId: person.team_id,
+      missedDate: todayDate,
+      scheduleWindow: `${formatTime12h(schedule.checkInStart)} - ${formatTime12h(schedule.checkInEnd)}`,
+      workerRoleAtMiss: person.role,
+      teamLeaderIdAtMiss: teamLeader?.id ?? null,
+      teamLeaderNameAtMiss: teamLeader ? `${teamLeader.first_name} ${teamLeader.last_name}` : null,
+      dayOfWeek: todayDowNum,
+      weekOfMonth: Math.ceil(todayDayOfMonth / 7),
+      recentReadinessAvg: lastCheckIn?.readiness_score ?? null,
+      missesInLast30d,
+      missesInLast60d,
+      missesInLast90d,
+      isFirstMissIn30d: missesInLast30d === 0,
+      isIncreasingFrequency: (missesInLast30d / 30) > (missesInLast60d / 60) && missesInLast30d >= 2,
+      reminderSent: true,
+      reminderFailed: false,
+    }]);
+
+    logger.info({ personId, companyId, date: todayStr }, 'Created immediate missed check-in on transfer');
+  } catch (error) {
+    logger.error({ error, personId }, 'Failed to create immediate missed check-in on transfer');
+  }
 }
 
 export async function getCurrentProfile(c: Context): Promise<Response> {

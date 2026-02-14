@@ -30,7 +30,7 @@ export function SupervisorDashboard() {
         />
         <StatCard
           title="Today's Check-ins"
-          value={`${stats?.totalCheckIns || 0}/${stats?.totalWorkers || 0}`}
+          value={`${stats?.totalCheckIns || 0}/${stats?.totalExpected || 0}`}
           icon={<CheckCircle className="h-4 w-4" />}
           description={`${stats?.overallComplianceRate || 0}% compliance`}
           iconBgColor="purple"
@@ -67,7 +67,7 @@ export function SupervisorDashboard() {
                     <p className="text-muted-foreground">Workers</p>
                   </div>
                   <div className="text-center">
-                    <p className="font-medium">{team.todayCheckIns}/{team.workerCount}</p>
+                    <p className="font-medium">{team.todayCheckIns}/{team.expectedCheckIns}</p>
                     <p className="text-muted-foreground">Check-ins</p>
                   </div>
                   <div className="text-center">

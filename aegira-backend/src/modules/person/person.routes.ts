@@ -15,7 +15,6 @@ router.use('*', tenantMiddleware);
 
 // Role-based access
 const adminOnly = roleMiddleware(['ADMIN']);
-const adminOrSupervisor = roleMiddleware(['ADMIN', 'SUPERVISOR']);
 const adminSupervisorOrWhs = roleMiddleware(['ADMIN', 'SUPERVISOR', 'WHS']);
 
 // GET /api/v1/persons/me - Get current user profile (any authenticated user)
@@ -35,6 +34,9 @@ router.post('/', adminOnly, zValidator('json', createPersonSchema), controller.c
 
 // GET /api/v1/persons/:id - Get person by ID (ADMIN/SUPERVISOR/WHS)
 router.get('/:id', adminSupervisorOrWhs, controller.getPersonById);
+
+// DELETE /api/v1/persons/:id/pending-transfer - Cancel pending transfer (ADMIN only)
+router.delete('/:id/pending-transfer', adminOnly, controller.cancelPendingTransfer);
 
 // PATCH /api/v1/persons/:id - Update person (ADMIN only)
 router.patch('/:id', adminOnly, zValidator('json', updatePersonSchema), controller.updatePerson);

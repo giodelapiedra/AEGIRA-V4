@@ -1,5 +1,5 @@
 // Admin Repository - Database Access
-import type { PrismaClient, Company, Holiday, AuditLog, Person, Prisma, Role } from '@prisma/client';
+import type { PrismaClient, Company, Holiday, Person, Prisma, Role } from '@prisma/client';
 import { BaseRepository } from '../../shared/base.repository';
 import { calculateSkip, paginate } from '../../shared/utils';
 import type { PaginationParams, PaginatedResponse } from '../../types/api.types';
@@ -38,6 +38,39 @@ export interface AuditLogFilters {
 
 export interface PersonFilters {
   search?: string;
+}
+
+/** Person summary for admin list view (minimal fields) */
+export interface AdminPersonSummary {
+  id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  role: Role;
+  is_active: boolean;
+  company_id: string;
+  created_at: Date;
+}
+
+/** Audit log with partial person info (safe subset for API responses) */
+export interface AuditLogWithPerson {
+  id: string;
+  company_id: string;
+  person_id: string | null;
+  action: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  details: unknown;
+  ip_address: string | null;
+  created_at: Date;
+  person: {
+    id: string;
+    email: string;
+    first_name: string;
+    last_name: string;
+    role: Role;
+    is_active: boolean;
+  } | null;
 }
 
 export class AdminRepository extends BaseRepository {
@@ -83,6 +116,15 @@ export class AdminRepository extends BaseRepository {
           lte: new Date(`${year}-12-31`),
         },
       }),
+      select: {
+        id: true,
+        company_id: true,
+        name: true,
+        date: true,
+        is_recurring: true,
+        created_at: true,
+        updated_at: true,
+      },
       orderBy: { date: 'asc' },
     });
   }
@@ -139,7 +181,7 @@ export class AdminRepository extends BaseRepository {
   async listAuditLogs(
     pagination: PaginationParams,
     filters: AuditLogFilters
-  ): Promise<PaginatedResponse<AuditLog & { person: Person | null }>> {
+  ): Promise<PaginatedResponse<AuditLogWithPerson>> {
     const where: Prisma.AuditLogWhereInput = this.where({});
 
     if (filters.type) {
@@ -169,7 +211,16 @@ export class AdminRepository extends BaseRepository {
         skip: calculateSkip(pagination),
         take: pagination.limit,
         orderBy: { created_at: 'desc' },
-        include: {
+        select: {
+          id: true,
+          company_id: true,
+          person_id: true,
+          action: true,
+          entity_type: true,
+          entity_id: true,
+          details: true,
+          ip_address: true,
+          created_at: true,
           person: {
             select: {
               id: true,
@@ -177,9 +228,7 @@ export class AdminRepository extends BaseRepository {
               first_name: true,
               last_name: true,
               role: true,
-              company_id: true,
               is_active: true,
-              created_at: true,
             },
           },
         },
@@ -195,7 +244,7 @@ export class AdminRepository extends BaseRepository {
   async listPersons(
     pagination: PaginationParams,
     filters: PersonFilters
-  ): Promise<PaginatedResponse<Person>> {
+  ): Promise<PaginatedResponse<AdminPersonSummary>> {
     const where: Prisma.PersonWhereInput = this.where({});
 
     if (filters.search) {
@@ -226,13 +275,14 @@ export class AdminRepository extends BaseRepository {
       this.prisma.person.count({ where }),
     ]);
 
-    return paginate(items as Person[], total, pagination);
+    return paginate(items, total, pagination);
   }
 
   async updatePersonRole(id: string, role: Role): Promise<Person | null> {
-    // First verify the person exists in this company
+    // Verify person exists in this company (minimal select — never fetch password_hash)
     const existing = await this.prisma.person.findFirst({
       where: this.where({ id }),
+      select: { id: true },
     });
 
     if (!existing) {

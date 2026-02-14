@@ -11,6 +11,7 @@ import { RejectionDialog } from '@/features/incident/components/RejectionDialog'
 import { useApproveIncident } from '@/features/incident/hooks/useApproveIncident';
 import { useToast } from '@/lib/hooks/use-toast';
 import { ROUTES } from '@/config/routes.config';
+import { buildRoute } from '@/lib/utils/route.utils';
 import { formatIncidentNumber, formatIncidentType } from '@/lib/utils/format.utils';
 import { getRelativeTime } from '@/lib/utils/date.utils';
 import type { PendingIncidentRow } from '@/types/whs-dashboard.types';
@@ -109,7 +110,7 @@ export function PendingIncidentsTable({ incidents }: PendingIncidentsTableProps)
                         variant="ghost"
                         size="sm"
                         onClick={() =>
-                          navigate(ROUTES.ADMIN_INCIDENT_DETAIL.replace(':id', incident.id))
+                          navigate(buildRoute(ROUTES.ADMIN_INCIDENT_DETAIL, { id: incident.id }))
                         }
                         aria-label={`View incident ${incident.incidentNumber}`}
                       >

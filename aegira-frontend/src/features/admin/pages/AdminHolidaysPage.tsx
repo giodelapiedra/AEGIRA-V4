@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ColumnDef } from '@tanstack/react-table';
 import { Calendar, Plus, Trash2, Edit2 } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
+import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -86,10 +87,11 @@ export function AdminHolidaysPage() {
     date: '',
     recurring: true,
   });
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['admin', 'holidays'],
-    staleTime: STALE_TIMES.STATIC, // Holidays rarely change
+    staleTime: STALE_TIMES.STATIC,
     queryFn: () => apiClient.get<PaginatedResponse<Holiday>>(ENDPOINTS.ADMIN.HOLIDAYS),
   });
 
@@ -132,9 +134,11 @@ export function AdminHolidaysPage() {
       queryClient.invalidateQueries({ queryKey: ['check-ins', 'status'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       toast({ variant: 'success', title: 'Holiday deleted', description: 'The holiday has been removed.' });
+      setDeleteTarget(null);
     },
     onError: (error: Error) => {
       toast({ variant: 'destructive', title: 'Failed to delete holiday', description: error.message || 'Something went wrong.' });
+      setDeleteTarget(null);
     },
   });
 
@@ -145,7 +149,6 @@ export function AdminHolidaysPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (editingHoliday) {
-      // Only send fields that actually changed
       const updates: Partial<HolidayFormData> = {};
       if (formData.name !== editingHoliday.name) updates.name = formData.name;
       if (formData.date !== editingHoliday.date) updates.date = formData.date;
@@ -176,9 +179,7 @@ export function AdminHolidaysPage() {
   };
 
   const handleDelete = (id: string) => {
-    if (confirm('Are you sure you want to delete this holiday?')) {
-      deleteMutation.mutate(id);
-    }
+    setDeleteTarget(id);
   };
 
   const columns = getHolidayColumns(handleEdit, handleDelete, deleteMutation.isPending);
@@ -224,23 +225,35 @@ export function AdminHolidaysPage() {
                   required
                 />
               </div>
-              <div className="flex items-center justify-between">
-                <Label>Recurring yearly</Label>
+              <div className="flex items-center space-x-4 rounded-lg border p-4">
                 <Switch
+                  id="recurring"
                   checked={formData.recurring}
                   onCheckedChange={(checked) => setFormData({ ...formData, recurring: checked })}
                 />
+                <div className="space-y-0.5">
+                  <Label htmlFor="recurring" className="text-base">
+                    Recurring Yearly
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {formData.recurring
+                      ? 'This holiday repeats every year on the same date'
+                      : 'This is a one-time holiday'}
+                  </p>
+                </div>
               </div>
-              <div className="flex gap-2">
-                <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
-                  {editingHoliday ? 'Update' : 'Create'}
-                </Button>
+              <div className="flex justify-end gap-4 pt-4">
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => { setShowForm(false); setEditingHoliday(null); resetForm(); }}
                 >
                   Cancel
+                </Button>
+                <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
+                  {editingHoliday
+                    ? (updateMutation.isPending ? 'Updating...' : 'Update Holiday')
+                    : (createMutation.isPending ? 'Creating...' : 'Create Holiday')}
                 </Button>
               </div>
             </form>
@@ -268,6 +281,21 @@ export function AdminHolidaysPage() {
         </CardContent>
       </Card>
     </div>
+
+    <ConfirmDialog
+      open={!!deleteTarget}
+      onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+      title="Delete Holiday"
+      description="Are you sure you want to delete this holiday? This action cannot be undone."
+      confirmLabel="Delete"
+      variant="destructive"
+      isLoading={deleteMutation.isPending}
+      onConfirm={() => {
+        if (deleteTarget) {
+          deleteMutation.mutate(deleteTarget);
+        }
+      }}
+    />
     </PageLoader>
   );
 }

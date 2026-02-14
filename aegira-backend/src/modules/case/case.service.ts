@@ -1,7 +1,8 @@
-import type { PrismaClient, Case, CaseStatus, Prisma } from '@prisma/client';
-import { CaseRepository } from './case.repository';
+import type { PrismaClient, CaseStatus, Prisma } from '@prisma/client';
+import { CaseRepository, type CaseWithRelations } from './case.repository';
 import { AppError } from '../../shared/errors';
 import { logAudit } from '../../shared/audit';
+import { buildEventData } from '../event/event.service';
 
 const VALID_TRANSITIONS: Record<CaseStatus, CaseStatus[]> = {
   OPEN: ['INVESTIGATING', 'RESOLVED', 'CLOSED'],
@@ -19,7 +20,8 @@ interface UpdateCaseInput {
 export class CaseService {
   constructor(
     private readonly prisma: PrismaClient,
-    private readonly repository: CaseRepository
+    private readonly repository: CaseRepository,
+    private readonly timezone: string = 'Asia/Manila'
   ) {}
 
   async updateCase(
@@ -27,7 +29,7 @@ export class CaseService {
     companyId: string,
     updaterId: string,
     data: UpdateCaseInput
-  ): Promise<Case> {
+  ): Promise<CaseWithRelations> {
     // Validate assignee outside transaction (user input validation)
     if (data.assignedTo !== undefined && data.assignedTo !== null) {
       const assignee = await this.prisma.person.findFirst({
@@ -130,20 +132,21 @@ export class CaseService {
 
       // Event sourcing — entity_type='incident' for unified timeline
       await tx.event.create({
-        data: {
-          company_id: companyId,
-          person_id: updaterId,
-          event_type: eventType,
-          entity_type: 'incident',
-          entity_id: caseRecord.incident_id,
+        data: buildEventData({
+          companyId,
+          personId: updaterId,
+          eventType,
+          entityType: 'incident',
+          entityId: caseRecord.incident_id,
           payload: {
             caseId: caseRecord.id,
             caseNumber: caseRecord.case_number,
             ...(data.status && { status: data.status, previousStatus: existing.status }),
             ...(data.assignedTo !== undefined && { assignedTo: data.assignedTo }),
             ...(data.notes !== undefined && { notesUpdated: true }),
-          } as Prisma.InputJsonValue,
-        },
+          },
+          timezone: this.timezone,
+        }),
       });
 
       return caseRecord;

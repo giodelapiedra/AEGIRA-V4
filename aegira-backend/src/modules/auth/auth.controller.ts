@@ -6,20 +6,20 @@ import { AuthService } from './auth.service';
 import { AppError } from '../../shared/errors';
 import { hashPassword, verifyPassword } from '../../shared/password';
 import { logAudit } from '../../shared/audit';
+import type { LoginInput, SignupInput, ChangePasswordInput, VerifyPasswordInput } from './auth.validator';
 
 const authService = new AuthService();
 
 // Cookie configuration constants
 const AUTH_COOKIE_NAME = 'auth_token';
-const AUTH_COOKIE_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 
-// Helper: Set auth cookie
+// Helper: Set auth cookie (maxAge derived from JWT_EXPIRES_IN via AuthService)
 function setAuthCookie(c: Context, token: string): void {
   setCookie(c, AUTH_COOKIE_NAME, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'Strict',
-    maxAge: AUTH_COOKIE_MAX_AGE,
+    maxAge: authService.cookieMaxAge,
     path: '/',
   });
 }
@@ -54,8 +54,11 @@ function formatUserResponse(person: UserWithCompany) {
   };
 }
 
+// Roles that should be audited on login (all privileged roles)
+const AUDITED_LOGIN_ROLES = ['ADMIN', 'WHS', 'SUPERVISOR', 'TEAM_LEAD'];
+
 export async function login(c: Context): Promise<Response> {
-  const { email, password } = await c.req.json();
+  const { email, password } = c.req.valid('json' as never) as LoginInput;
 
   // Find active person by email in an active company
   // NOTE: Email is scoped @@unique([company_id, email]) so the same email can
@@ -64,7 +67,7 @@ export async function login(c: Context): Promise<Response> {
   // companies, we prefer the most recently created active account.
   const person = await prisma.person.findFirst({
     where: {
-      email: email.toLowerCase(),
+      email,
       is_active: true,
       company: { is_active: true },
     },
@@ -79,7 +82,6 @@ export async function login(c: Context): Promise<Response> {
       profile_picture_url: true,
       role: true,
       company_id: true,
-      is_active: true,
       password_hash: true,
       company: { select: { name: true, timezone: true } },
     },
@@ -105,8 +107,8 @@ export async function login(c: Context): Promise<Response> {
 
   setAuthCookie(c, token);
 
-  // Audit login for non-worker roles only (non-blocking)
-  if (['ADMIN', 'SUPERVISOR', 'TEAM_LEAD'].includes(person.role.toUpperCase())) {
+  // Audit login for privileged roles (non-blocking)
+  if (AUDITED_LOGIN_ROLES.includes(person.role.toUpperCase())) {
     logAudit({
       companyId: person.company_id,
       personId: person.id,
@@ -118,7 +120,7 @@ export async function login(c: Context): Promise<Response> {
 
   return c.json({
     success: true,
-    data: { user: formatUserResponse(person) },
+    data: { token, user: formatUserResponse(person) },
   });
 }
 
@@ -144,7 +146,6 @@ export async function getMe(c: Context): Promise<Response> {
       profile_picture_url: true,
       role: true,
       company_id: true,
-      is_active: true,
       company: { select: { name: true, timezone: true } },
     },
   });
@@ -172,7 +173,9 @@ export async function logout(c: Context): Promise<Response> {
 export async function changePassword(c: Context): Promise<Response> {
   const userId = c.get('userId') as string;
   const companyId = c.get('companyId') as string;
-  const { currentPassword, newPassword } = await c.req.json();
+  const userRole = c.get('userRole') as string;
+  const userEmail = (c.get('user') as { email: string }).email;
+  const { currentPassword, newPassword } = c.req.valid('json' as never) as ChangePasswordInput;
 
   // Find person with company_id verification
   const person = await prisma.person.findFirst({
@@ -197,6 +200,15 @@ export async function changePassword(c: Context): Promise<Response> {
     data: { password_hash: newHash },
   });
 
+  // Rotate JWT — issue new token so old token is replaced on this session
+  const newToken = authService.generateToken({
+    sub: userId,
+    email: userEmail,
+    companyId,
+    role: userRole,
+  });
+  setAuthCookie(c, newToken);
+
   // Audit password change (non-blocking)
   logAudit({
     companyId,
@@ -215,7 +227,7 @@ export async function changePassword(c: Context): Promise<Response> {
 export async function verifyUserPassword(c: Context): Promise<Response> {
   const userId = c.get('userId') as string;
   const companyId = c.get('companyId') as string;
-  const { password } = await c.req.json();
+  const { password } = c.req.valid('json' as never) as VerifyPasswordInput;
 
   // Find person with company_id verification
   const person = await prisma.person.findFirst({
@@ -255,17 +267,7 @@ export async function signup(c: Context): Promise<Response> {
     addressPostalCode,
     addressState,
     addressCountry,
-  } = await c.req.json();
-
-  // Check if email already exists
-  const existingPerson = await prisma.person.findFirst({
-    where: { email: email.toLowerCase() },
-    select: { id: true },
-  });
-
-  if (existingPerson) {
-    throw new AppError('EMAIL_EXISTS', 'Email already registered', 400);
-  }
+  } = c.req.valid('json' as never) as SignupInput;
 
   // Hash password with bcrypt
   const passwordHash = await hashPassword(password);
@@ -280,6 +282,10 @@ export async function signup(c: Context): Promise<Response> {
     Date.now().toString(36);
 
   // Create company and admin in a single transaction
+  // NOTE: Email uniqueness is enforced at DB level via @@unique([company_id, email]).
+  // Since signup creates a new company, there can't be a duplicate within that company.
+  // We intentionally do NOT check email across all companies — the schema allows
+  // the same email to exist in different companies (multi-tenant isolation).
   const result = await prisma.$transaction(async (tx) => {
     const company = await tx.company.create({
       data: {
@@ -304,7 +310,7 @@ export async function signup(c: Context): Promise<Response> {
         company_id: company.id,
         first_name: firstName,
         last_name: lastName,
-        email: email.toLowerCase(),
+        email,
         password_hash: passwordHash,
         role: 'ADMIN',
         is_active: true,
@@ -327,8 +333,8 @@ export async function signup(c: Context): Promise<Response> {
   return c.json(
     {
       success: true,
-      message: 'Account created successfully',
       data: {
+        token,
         user: {
           id: result.admin.id,
           email: result.admin.email,

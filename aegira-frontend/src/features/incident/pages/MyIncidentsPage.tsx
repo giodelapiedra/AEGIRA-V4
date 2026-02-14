@@ -13,6 +13,7 @@ import { useMyIncidents } from '../hooks/useMyIncidents';
 import { formatDate } from '@/lib/utils/date.utils';
 import { formatIncidentNumber, formatIncidentType } from '@/lib/utils/format.utils';
 import { ROUTES } from '@/config/routes.config';
+import { buildRoute } from '@/lib/utils/route.utils';
 import type { Incident, IncidentStatus } from '@/types/incident.types';
 
 const columns: ColumnDef<Incident>[] = [
@@ -69,7 +70,7 @@ const columns: ColumnDef<Incident>[] = [
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => navigate(ROUTES.INCIDENT_DETAIL.replace(':id', row.original.id))}
+          onClick={() => navigate(buildRoute(ROUTES.INCIDENT_DETAIL, { id: row.original.id }))}
         >
           <Eye className="h-4 w-4 mr-1" />
           View
