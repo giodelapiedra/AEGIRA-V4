@@ -1,5 +1,5 @@
 import type { Context } from 'hono';
-import { CaseRepository, type CaseWithRelations } from './case.repository';
+import { CaseRepository, type CaseWithRelations, type CaseListItem } from './case.repository';
 import { CaseService } from './case.service';
 import type { GetCasesQuery, UpdateCaseInput } from './case.validator';
 import { prisma } from '../../config/database';
@@ -25,6 +25,24 @@ function calculateAge(dateOfBirth: Date | null, timezone: string): number | null
     age--;
   }
   return age;
+}
+
+/** Lean mapper for list views — only fields the table renders */
+function mapCaseToListItem(caseRecord: CaseListItem): Record<string, unknown> {
+  return {
+    id: caseRecord.id,
+    caseNumber: caseRecord.case_number,
+    incident: {
+      title: caseRecord.incident.title,
+      severity: caseRecord.incident.severity,
+      reporterName: `${caseRecord.incident.reporter.first_name} ${caseRecord.incident.reporter.last_name}`,
+    },
+    status: caseRecord.status,
+    assigneeName: caseRecord.assignee
+      ? `${caseRecord.assignee.first_name} ${caseRecord.assignee.last_name}`
+      : null,
+    createdAt: caseRecord.created_at.toISOString(),
+  };
 }
 
 function mapCaseToResponse(caseRecord: CaseWithRelations, timezone: string): Record<string, unknown> {
@@ -65,20 +83,17 @@ function mapCaseToResponse(caseRecord: CaseWithRelations, timezone: string): Rec
  */
 export async function getCases(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
-  const timezone = c.get('companyTimezone') as string;
   const { page, limit } = parsePagination(c.req.query('page'), c.req.query('limit'));
   const { status, search } = c.req.valid('query' as never) as GetCasesQuery;
 
   const repository = getRepository(companyId);
 
   const [result, statusCounts] = await Promise.all([
-    repository.findByFilters({ page, limit, status, search }),
+    repository.findForList({ page, limit, status, search }),
     repository.countByStatus(),
   ]);
 
-  const items = result.items.map((caseRecord) =>
-    mapCaseToResponse(caseRecord, timezone)
-  );
+  const items = result.items.map(mapCaseToListItem);
 
   return c.json({
     success: true,

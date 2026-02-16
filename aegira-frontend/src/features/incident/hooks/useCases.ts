@@ -4,7 +4,7 @@ import { ENDPOINTS } from '@/lib/api/endpoints';
 import { STALE_TIMES } from '@/config/query.config';
 import type { CaseListResponse, CaseStatus } from '@/types/incident.types';
 
-export type { Case, CaseStatus, CaseListResponse } from '@/types/incident.types';
+export type { CaseListItem, CaseStatus, CaseListResponse } from '@/types/incident.types';
 
 interface UseCasesParams {
   page?: number;

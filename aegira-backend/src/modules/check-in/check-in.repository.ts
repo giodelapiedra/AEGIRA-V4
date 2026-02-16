@@ -65,7 +65,7 @@ export class CheckInRepository extends BaseRepository {
   async findByPerson(
     personId: string,
     params: PaginationParams
-  ): Promise<PaginatedResponse<CheckIn>> {
+  ): Promise<PaginatedResponse<Omit<CheckIn, 'company_id'>>> {
     const where = this.where({ person_id: personId });
 
     const [items, total] = await Promise.all([
@@ -76,7 +76,6 @@ export class CheckInRepository extends BaseRepository {
         orderBy: { check_in_date: 'desc' },
         select: {
           id: true,
-          company_id: true,
           person_id: true,
           event_id: true,
           check_in_date: true,

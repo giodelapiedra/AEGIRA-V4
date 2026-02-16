@@ -344,7 +344,7 @@ export class CheckInService {
   async getHistory(
     personId: string,
     params: PaginationParams
-  ): Promise<PaginatedResponse<CheckIn>> {
+  ): Promise<PaginatedResponse<Omit<CheckIn, 'company_id'>>> {
     return this.repository.findByPerson(personId, params);
   }
 

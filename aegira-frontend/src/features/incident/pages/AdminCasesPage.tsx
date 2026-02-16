@@ -15,9 +15,9 @@ import { formatDate } from '@/lib/utils/date.utils';
 import { formatCaseNumber } from '@/lib/utils/format.utils';
 import { ROUTES } from '@/config/routes.config';
 import { buildRoute } from '@/lib/utils/route.utils';
-import type { Case, CaseStatus } from '@/types/incident.types';
+import type { CaseListItem, CaseStatus } from '@/types/incident.types';
 
-const columns: ColumnDef<Case>[] = [
+const columns: ColumnDef<CaseListItem>[] = [
   {
     accessorKey: 'caseNumber',
     header: 'Case #',

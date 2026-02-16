@@ -60,6 +60,21 @@ export interface Incident {
   createdAt: string;
 }
 
+/** Lean type for case list/table views — only fields returned by list endpoint */
+export interface CaseListItem {
+  id: string;
+  caseNumber: number;
+  incident: {
+    title: string;
+    severity: IncidentSeverity;
+    reporterName: string;
+  };
+  status: CaseStatus;
+  assigneeName: string | null;
+  createdAt: string;
+}
+
+/** Full type for case detail views — all fields returned by GET /cases/:id */
 export interface Case {
   id: string;
   caseNumber: number;
@@ -128,7 +143,7 @@ export interface IncidentListResponse {
 }
 
 export interface CaseListResponse {
-  items: Case[];
+  items: CaseListItem[];
   pagination: {
     page: number;
     limit: number;

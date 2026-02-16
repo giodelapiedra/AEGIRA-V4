@@ -31,11 +31,46 @@ export type CaseWithRelations = Case & {
   assignee: { id: string; first_name: string; last_name: string } | null;
 };
 
+/** Lean type for list views — only fields the table needs */
+export interface CaseListItem {
+  id: string;
+  case_number: number;
+  status: CaseStatus;
+  created_at: Date;
+  incident: {
+    title: string;
+    severity: string;
+    reporter: { first_name: string; last_name: string };
+  };
+  assignee: { first_name: string; last_name: string } | null;
+}
+
 export class CaseRepository extends BaseRepository {
   constructor(prisma: PrismaClient, companyId: string) {
     super(prisma, companyId);
   }
 
+  /** Lean select for list views — only fields the table needs */
+  private readonly selectForList = {
+    id: true,
+    case_number: true,
+    status: true,
+    created_at: true,
+    incident: {
+      select: {
+        title: true,
+        severity: true,
+        reporter: {
+          select: { first_name: true, last_name: true },
+        },
+      },
+    },
+    assignee: {
+      select: { first_name: true, last_name: true },
+    },
+  } as const;
+
+  /** Full select for detail views */
   private readonly selectWithRelations = {
     id: true,
     company_id: true,
@@ -82,10 +117,8 @@ export class CaseRepository extends BaseRepository {
     }) as Promise<CaseWithRelations | null>;
   }
 
-  async findByFilters(
-    filters: CaseFilters
-  ): Promise<PaginatedResponse<CaseWithRelations>> {
-    const where: Prisma.CaseWhereInput = {
+  private buildFiltersWhere(filters: CaseFilters): Prisma.CaseWhereInput {
+    return {
       company_id: this.companyId,
       ...(filters.status && { status: filters.status }),
       ...(filters.search && {
@@ -108,11 +141,17 @@ export class CaseRepository extends BaseRepository {
         ],
       }),
     };
+  }
+
+  async findForList(
+    filters: CaseFilters
+  ): Promise<PaginatedResponse<CaseListItem>> {
+    const where = this.buildFiltersWhere(filters);
 
     const [items, total] = await Promise.all([
       this.prisma.case.findMany({
         where,
-        select: this.selectWithRelations,
+        select: this.selectForList,
         orderBy: { created_at: 'desc' },
         skip: calculateSkip(filters),
         take: filters.limit,
@@ -120,7 +159,7 @@ export class CaseRepository extends BaseRepository {
       this.prisma.case.count({ where }),
     ]);
 
-    return paginate(items as CaseWithRelations[], total, filters);
+    return paginate(items as CaseListItem[], total, filters);
   }
 
   async countByStatus(): Promise<Record<string, number>> {

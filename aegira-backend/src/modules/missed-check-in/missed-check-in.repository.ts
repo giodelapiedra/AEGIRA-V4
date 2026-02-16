@@ -38,7 +38,6 @@ export interface MissedCheckInFilters extends PaginationParams {
 type MissedCheckInWithRelations = MissedCheckIn & {
   person: { id: string; first_name: string; last_name: string; email: string };
   team: { id: string; name: string };
-  resolved_check_in: { id: string; created_at: Date } | null;
 };
 
 export class MissedCheckInRepository extends BaseRepository {
@@ -104,7 +103,6 @@ export class MissedCheckInRepository extends BaseRepository {
         where,
         select: {
           id: true,
-          company_id: true,
           person_id: true,
           team_id: true,
           missed_date: true,
@@ -133,9 +131,6 @@ export class MissedCheckInRepository extends BaseRepository {
           },
           team: {
             select: { id: true, name: true },
-          },
-          resolved_check_in: {
-            select: { id: true, created_at: true },
           },
         },
         orderBy: { missed_date: 'desc' },
