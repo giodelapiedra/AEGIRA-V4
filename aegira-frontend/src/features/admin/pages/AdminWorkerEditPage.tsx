@@ -90,7 +90,7 @@ export function AdminWorkerEditPage() {
 
   return (
     <PageLoader isLoading={isLoading} error={error} skeleton="form">
-      {person && <WorkerEditForm person={person} teams={(teamsData?.items || []).filter((t) => t.is_active)} />}
+      {person && <WorkerEditForm key={person.updated_at} person={person} teams={(teamsData?.items || []).filter((t) => t.is_active)} />}
     </PageLoader>
   );
 }
@@ -332,16 +332,18 @@ function WorkerEditForm({ person, teams }: WorkerEditFormProps) {
 
               {selectedRole === 'WORKER' || selectedRole === 'TEAM_LEAD' ? (
                 <div className="space-y-2">
-                  <Label htmlFor="teamId">Team</Label>
+                  <Label htmlFor="teamId">Team {selectedRole === 'WORKER' && <span className="text-destructive">*</span>}</Label>
                   <Select
-                    value={selectedTeamId || 'none'}
-                    onValueChange={(value) => setValue('teamId', value === 'none' ? null : value)}
+                    value={selectedRole === 'WORKER' ? (selectedTeamId || '') : (selectedTeamId || 'none')}
+                    onValueChange={(value) => setValue('teamId', value === 'none' ? null : value, { shouldValidate: true })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select team" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">No Team</SelectItem>
+                      {selectedRole !== 'WORKER' && (
+                        <SelectItem value="none">No Team</SelectItem>
+                      )}
                       {teams.map((team) => (
                         <SelectItem key={team.id} value={team.id}>
                           {team.name}
@@ -349,6 +351,9 @@ function WorkerEditForm({ person, teams }: WorkerEditFormProps) {
                       ))}
                     </SelectContent>
                   </Select>
+                  {errors.teamId && (
+                    <p className="text-sm text-destructive">{errors.teamId.message}</p>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-2">

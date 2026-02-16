@@ -4,8 +4,8 @@
 import { prisma } from '../config/database';
 import { MissedCheckInRepository } from '../modules/missed-check-in/missed-check-in.repository';
 import { MissedCheckInSnapshotService } from '../modules/missed-check-in/missed-check-in-snapshot.service';
-import { NotificationRepository } from '../modules/notification/notification.repository';
-import { emitEvent } from '../modules/event/event.service';
+import { sendNotifications } from '../modules/notification/notification.service';
+import { buildEventData } from '../modules/event/event.service';
 import { logger } from '../config/logger';
 import {
   getTodayInTimezone,
@@ -131,10 +131,8 @@ async function processCompany(companyId: string, timezone: string): Promise<numb
     return 0;
   }
 
-  // Pre-filter teams that have ANY chance of being past their window.
-  // We still need all teams for lookup, but skip teams whose window
-  // hasn't closed even without overrides (optimization: earliest possible end is team end).
-  // The actual per-worker window check happens below using getEffectiveSchedule().
+  // Build team lookup map (used for leader snapshots in records + notifications).
+  // Per-worker window check happens below using getEffectiveSchedule().
   const teamMap = new Map(teams.map((t) => [t.id, t]));
   const activeTeamIds = teams.map((t) => t.id);
 
@@ -304,66 +302,63 @@ async function processCompany(companyId: string, timezone: string): Promise<numb
   // Send notifications for newly detected missed check-ins.
   // Notifies both the worker AND their team lead for same-day awareness.
   if (inserted > 0) {
-    try {
-      const notifRepo = new NotificationRepository(prisma, companyId);
-
-      // Worker notifications
-      const workerNotifications = newMissing.map((w) => ({
-        personId: w.id,
-        type: 'MISSED_CHECK_IN' as const,
-        title: 'Missed Check-in',
-        message: `You missed your check-in for ${todayStr}. Please contact your team lead if needed.`,
-      }));
-
-      // Team lead notifications — group misses by team leader to avoid duplicate alerts.
-      // Uses the team leader snapshot from teamMap (already fetched).
-      const missCountByLeader = new Map<string, { leaderName: string; count: number; workerNames: string[] }>();
-      for (const w of newMissing) {
-        const team = teamMap.get(w.team_id!);
-        if (!team?.leader?.id) continue;
-        const leaderId = team.leader.id;
-        const existing = missCountByLeader.get(leaderId) || {
-          leaderName: `${team.leader.first_name} ${team.leader.last_name}`,
-          count: 0,
-          workerNames: [],
-        };
-        existing.count++;
-        missCountByLeader.set(leaderId, existing);
-      }
-
-      const leaderNotifications = Array.from(missCountByLeader.entries()).map(([leaderId, info]) => ({
-        personId: leaderId,
-        type: 'MISSED_CHECK_IN' as const,
-        title: 'Team Missed Check-ins',
-        message: `${info.count} worker${info.count > 1 ? 's' : ''} missed their check-in for ${todayStr}.`,
-      }));
-
-      await notifRepo.createMany([...workerNotifications, ...leaderNotifications]);
-    } catch (error) {
-      // Notification failure shouldn't break detection
-      logger.error({ error, companyId }, 'Failed to send missed check-in notifications');
-    }
-  }
-
-  // Emit MISSED_CHECK_IN_DETECTED events (fire-and-forget)
-  for (const w of newMissing) {
-    const effective = getEffectiveSchedule(
-      { work_days: w.work_days, check_in_start: w.check_in_start, check_in_end: w.check_in_end },
-      { work_days: w.team!.work_days, check_in_start: w.team!.check_in_start, check_in_end: w.team!.check_in_end }
-    );
-    emitEvent(prisma, {
-      companyId,
+    // Worker notifications
+    const workerNotifications = newMissing.map((w) => ({
       personId: w.id,
-      eventType: 'MISSED_CHECK_IN_DETECTED',
-      entityType: 'missed_check_in',
-      payload: {
-        missedDate: todayStr,
-        scheduleWindow: `${effective.checkInStart} - ${effective.checkInEnd}`,
-        teamId: w.team_id,
-      },
-      timezone,
-    });
+      type: 'MISSED_CHECK_IN' as const,
+      title: 'Missed Check-in',
+      message: `You missed your check-in for ${todayStr}. Please contact your team lead if needed.`,
+    }));
+
+    // Team lead notifications — group misses by team leader to avoid duplicate alerts.
+    // Uses the team leader snapshot from teamMap (already fetched).
+    const missCountByLeader = new Map<string, { leaderName: string; count: number }>();
+    for (const w of newMissing) {
+      const team = teamMap.get(w.team_id!);
+      if (!team?.leader?.id) continue;
+      const leaderId = team.leader.id;
+      const existing = missCountByLeader.get(leaderId) || {
+        leaderName: `${team.leader.first_name} ${team.leader.last_name}`,
+        count: 0,
+      };
+      existing.count++;
+      missCountByLeader.set(leaderId, existing);
+    }
+
+    const leaderNotifications = Array.from(missCountByLeader.entries()).map(([leaderId, info]) => ({
+      personId: leaderId,
+      type: 'MISSED_CHECK_IN' as const,
+      title: 'Team Missed Check-ins',
+      message: `${info.count} worker${info.count > 1 ? 's' : ''} missed their check-in for ${todayStr}.`,
+    }));
+
+    sendNotifications(prisma, companyId, [...workerNotifications, ...leaderNotifications]);
   }
+
+  // Batch emit MISSED_CHECK_IN_DETECTED events (Pattern 6 — N inserts → 1 createMany)
+  // Fire-and-forget: event emission should never block detection results
+  prisma.event.createMany({
+    data: newMissing.map((w) => {
+      const effective = getEffectiveSchedule(
+        { work_days: w.work_days, check_in_start: w.check_in_start, check_in_end: w.check_in_end },
+        { work_days: w.team!.work_days, check_in_start: w.team!.check_in_start, check_in_end: w.team!.check_in_end }
+      );
+      return buildEventData({
+        companyId,
+        personId: w.id,
+        eventType: 'MISSED_CHECK_IN_DETECTED',
+        entityType: 'missed_check_in',
+        payload: {
+          missedDate: todayStr,
+          scheduleWindow: `${effective.checkInStart} - ${effective.checkInEnd}`,
+          teamId: w.team_id,
+        },
+        timezone,
+      });
+    }),
+  }).catch((error) => {
+    logger.error({ error, companyId }, 'Failed to batch create missed check-in events');
+  });
 
   logger.info(
     { companyId, detected: inserted, teams: teams.length },

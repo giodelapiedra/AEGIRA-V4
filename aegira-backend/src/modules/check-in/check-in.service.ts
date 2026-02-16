@@ -10,6 +10,7 @@ import {
   getCurrentTimeInTimezone,
   getDayOfWeekInTimezone,
   parseDateInTimezone,
+  formatTime12h,
 } from '../../shared/utils';
 import { checkHolidayForDate } from '../../shared/holiday.utils';
 import { getEffectiveSchedule } from '../../shared/schedule.utils';
@@ -232,6 +233,7 @@ export class CheckInService {
           });
 
           if (existingMiss) {
+            // Scenario 2: Cron already ran → resolve the existing record
             await tx.missedCheckIn.update({
               where: { id: existingMiss.id },
               data: {
@@ -248,6 +250,51 @@ export class CheckInService {
             logger.info(
               { personId, missedCheckInId: existingMiss.id, checkInId: newCheckIn.id },
               'Resolved missed check-in via late submission'
+            );
+          } else {
+            // Scenario 3: Late check-in submitted BEFORE cron ran.
+            // Create a MissedCheckIn record already resolved so the miss is tracked
+            // in stats/dashboard. Without this, the cron would later see the check-in
+            // exists and skip the worker — leaving no record of the miss.
+            // Uses upsert to handle the rare race where cron inserts between our
+            // findFirst and this write (unique constraint: [person_id, missed_date]).
+            const windowLabel = scheduleWindow
+              ? `${formatTime12h(scheduleWindow.start)} - ${formatTime12h(scheduleWindow.end)}`
+              : 'Unknown';
+
+            const createdMiss = await tx.missedCheckIn.upsert({
+              where: {
+                person_id_missed_date: {
+                  person_id: personId,
+                  missed_date: today,
+                },
+              },
+              create: {
+                company_id: companyId,
+                person_id: personId,
+                team_id: person.team!.id,
+                missed_date: today,
+                schedule_window: windowLabel,
+                resolved_by_check_in_id: newCheckIn.id,
+                resolved_at: new Date(),
+                reminder_sent: false,
+                reminder_failed: false,
+              },
+              update: {
+                // Cron raced us — resolve the record it just created
+                resolved_by_check_in_id: newCheckIn.id,
+                resolved_at: new Date(),
+              },
+            });
+
+            resolvedMissData = {
+              missedCheckInId: createdMiss.id,
+              lateByMinutes: event.late_by_minutes,
+            };
+
+            logger.info(
+              { personId, missedCheckInId: createdMiss.id, checkInId: newCheckIn.id },
+              'Created and resolved missed check-in for late submission (pre-cron)'
             );
           }
         }

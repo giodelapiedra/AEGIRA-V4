@@ -70,6 +70,9 @@ export class CaseService {
             400
           );
         }
+      } else if (data.status && data.status === existing.status) {
+        // No-op: same status — strip it so we don't create misleading audit events
+        data.status = undefined;
       }
 
       // Build update data
@@ -77,7 +80,7 @@ export class CaseService {
 
       if (data.status !== undefined) {
         updateData.status = data.status;
-        if (data.status === 'RESOLVED') {
+        if (data.status === 'RESOLVED' || data.status === 'CLOSED') {
           updateData.resolved_at = new Date();
         }
       }
@@ -127,8 +130,10 @@ export class CaseService {
         },
       });
 
-      // Determine event type
-      const eventType = data.status === 'RESOLVED' ? 'CASE_RESOLVED' : 'CASE_UPDATED';
+      // Determine event type (RESOLVED and CLOSED are both terminal — use CASE_RESOLVED for both)
+      const eventType = (data.status === 'RESOLVED' || data.status === 'CLOSED')
+        ? 'CASE_RESOLVED'
+        : 'CASE_UPDATED';
 
       // Event sourcing — entity_type='incident' for unified timeline
       await tx.event.create({
@@ -156,7 +161,9 @@ export class CaseService {
     logAudit({
       companyId,
       personId: updaterId,
-      action: data.status === 'RESOLVED' ? 'CASE_RESOLVED' : 'CASE_UPDATED',
+      action: (data.status === 'RESOLVED' || data.status === 'CLOSED')
+        ? 'CASE_RESOLVED'
+        : 'CASE_UPDATED',
       entityType: 'case',
       entityId: caseId,
       details: {

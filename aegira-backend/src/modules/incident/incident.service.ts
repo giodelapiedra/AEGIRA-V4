@@ -9,7 +9,7 @@ import type {
 import type { IncidentWithRelations } from './incident.repository';
 import { AppError } from '../../shared/errors';
 import { logAudit } from '../../shared/audit';
-import { NotificationRepository } from '../notification/notification.repository';
+import { sendNotification, sendNotifications } from '../notification/notification.service';
 import { buildEventData } from '../event/event.service';
 import { logger } from '../../config/logger';
 
@@ -154,19 +154,26 @@ export class IncidentService {
     companyId: string,
     reviewerId: string
   ): Promise<IncidentWithRelations> {
-    const existing = await this.prisma.incident.findFirst({
-      where: { id: incidentId, company_id: companyId },
-    });
-
-    if (!existing) {
-      throw new AppError('NOT_FOUND', 'Incident not found', 404);
-    }
-
-    this.validateTransition(existing.status, 'APPROVED');
-
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const result = await this.prisma.$transaction(async (tx) => {
+          // Fetch and validate INSIDE transaction to prevent TOCTOU race
+          const existing = await tx.incident.findFirst({
+            where: { id: incidentId, company_id: companyId },
+            select: { id: true, status: true, reporter_id: true, incident_number: true, created_at: true },
+          });
+
+          if (!existing) {
+            throw new AppError('NOT_FOUND', 'Incident not found', 404);
+          }
+
+          // Prevent self-approval — reviewer cannot be the reporter
+          if (reviewerId === existing.reporter_id) {
+            throw new AppError('CONFLICT', 'Cannot approve your own incident report', 409);
+          }
+
+          this.validateTransition(existing.status, 'APPROVED');
+
           // Update incident status
           const updated = await tx.incident.update({
             where: { id: incidentId, company_id: companyId },
@@ -214,41 +221,41 @@ export class IncidentService {
             },
           });
 
-          // Event: INCIDENT_APPROVED
-          await tx.event.create({
-            data: buildEventData({
-              companyId,
-              personId: reviewerId,
-              eventType: 'INCIDENT_APPROVED',
-              entityType: 'incident',
-              entityId: incidentId,
-              payload: {
-                incidentNumber: updated.incident_number,
-                caseId: caseRecord.id,
-                caseNumber,
-              },
-              timezone: this.timezone,
+          // Parallel event creates — independent INSERTs within same transaction (Pattern 9)
+          await Promise.all([
+            tx.event.create({
+              data: buildEventData({
+                companyId,
+                personId: reviewerId,
+                eventType: 'INCIDENT_APPROVED',
+                entityType: 'incident',
+                entityId: incidentId,
+                payload: {
+                  incidentNumber: updated.incident_number,
+                  caseId: caseRecord.id,
+                  caseNumber,
+                },
+                timezone: this.timezone,
+              }),
             }),
-          });
-
-          // Event: CASE_CREATED (uses entity_type='incident' for unified timeline)
-          await tx.event.create({
-            data: buildEventData({
-              companyId,
-              personId: reviewerId,
-              eventType: 'CASE_CREATED',
-              entityType: 'incident',
-              entityId: incidentId,
-              payload: {
-                caseId: caseRecord.id,
-                caseNumber,
-                status: 'OPEN',
-              },
-              timezone: this.timezone,
+            tx.event.create({
+              data: buildEventData({
+                companyId,
+                personId: reviewerId,
+                eventType: 'CASE_CREATED',
+                entityType: 'incident',
+                entityId: incidentId,
+                payload: {
+                  caseId: caseRecord.id,
+                  caseNumber,
+                  status: 'OPEN',
+                },
+                timezone: this.timezone,
+              }),
             }),
-          });
+          ]);
 
-          return { incident: updated, caseRecord };
+          return { incident: updated, caseRecord, reporterId: existing.reporter_id, incidentNumber: existing.incident_number, createdAt: existing.created_at };
         });
 
         // Fire-and-forget: audit log
@@ -267,9 +274,9 @@ export class IncidentService {
         // Fire-and-forget: notification to reporter
         this.notifyIncidentApproved(
           companyId,
-          existing.reporter_id,
-          existing.incident_number,
-          existing.created_at,
+          result.reporterId,
+          result.incidentNumber,
+          result.createdAt,
           result.caseRecord.case_number
         );
 
@@ -301,17 +308,24 @@ export class IncidentService {
     reviewerId: string,
     data: RejectIncidentInput
   ): Promise<IncidentWithRelations> {
-    const existing = await this.prisma.incident.findFirst({
-      where: { id: incidentId, company_id: companyId },
-    });
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Fetch and validate INSIDE transaction to prevent TOCTOU race
+      const existing = await tx.incident.findFirst({
+        where: { id: incidentId, company_id: companyId },
+        select: { id: true, status: true, reporter_id: true, incident_number: true, created_at: true },
+      });
 
-    if (!existing) {
-      throw new AppError('NOT_FOUND', 'Incident not found', 404);
-    }
+      if (!existing) {
+        throw new AppError('NOT_FOUND', 'Incident not found', 404);
+      }
 
-    this.validateTransition(existing.status, 'REJECTED');
+      // Prevent self-rejection — reviewer cannot be the reporter
+      if (reviewerId === existing.reporter_id) {
+        throw new AppError('CONFLICT', 'Cannot reject your own incident report', 409);
+      }
 
-    const updated = await this.prisma.$transaction(async (tx) => {
+      this.validateTransition(existing.status, 'REJECTED');
+
       const incident = await tx.incident.update({
         where: { id: incidentId, company_id: companyId },
         data: {
@@ -359,7 +373,7 @@ export class IncidentService {
         }),
       });
 
-      return incident;
+      return { incident, reporterId: existing.reporter_id, incidentNumber: existing.incident_number, createdAt: existing.created_at };
     });
 
     // Fire-and-forget: audit log
@@ -378,13 +392,13 @@ export class IncidentService {
     // Fire-and-forget: notification to reporter
     this.notifyIncidentRejected(
       companyId,
-      existing.reporter_id,
-      existing.incident_number,
-      existing.created_at,
+      result.reporterId,
+      result.incidentNumber,
+      result.createdAt,
       data.rejectionReason
     );
 
-    return updated;
+    return result.incident;
   }
 
   private validateTransition(currentStatus: IncidentStatus, newStatus: IncidentStatus): void {
@@ -427,7 +441,6 @@ export class IncidentService {
     title: string
   ): Promise<void> {
     try {
-      // Find all active WHS and ADMIN users in the same company
       const whsAndAdmins = await this.prisma.person.findMany({
         where: {
           company_id: companyId,
@@ -440,8 +453,9 @@ export class IncidentService {
       if (whsAndAdmins.length === 0) return;
 
       const ref = this.formatIncidentRef(incidentNumber, createdAt);
-      const notifRepo = new NotificationRepository(this.prisma, companyId);
-      await notifRepo.createMany(
+      sendNotifications(
+        this.prisma,
+        companyId,
         whsAndAdmins.map((person) => ({
           personId: person.id,
           type: 'INCIDENT_SUBMITTED' as const,
@@ -457,53 +471,37 @@ export class IncidentService {
     }
   }
 
-  private async notifyIncidentApproved(
+  private notifyIncidentApproved(
     companyId: string,
     reporterId: string,
     incidentNumber: number,
     createdAt: Date,
     caseNumber: number
-  ): Promise<void> {
-    try {
-      const incRef = this.formatIncidentRef(incidentNumber, createdAt);
-      const caseRef = this.formatCaseRef(caseNumber);
-      const notifRepo = new NotificationRepository(this.prisma, companyId);
-      await notifRepo.create({
-        personId: reporterId,
-        type: 'INCIDENT_APPROVED',
-        title: 'Incident Report Approved',
-        message: `Your incident report ${incRef} has been approved. Case ${caseRef} has been created.`,
-      });
-    } catch (error) {
-      logger.error(
-        { error, reporterId, incidentNumber },
-        'Failed to send incident approval notification'
-      );
-    }
+  ): void {
+    const incRef = this.formatIncidentRef(incidentNumber, createdAt);
+    const caseRef = this.formatCaseRef(caseNumber);
+    sendNotification(this.prisma, companyId, {
+      personId: reporterId,
+      type: 'INCIDENT_APPROVED',
+      title: 'Incident Report Approved',
+      message: `Your incident report ${incRef} has been approved. Case ${caseRef} has been created.`,
+    });
   }
 
-  private async notifyIncidentRejected(
+  private notifyIncidentRejected(
     companyId: string,
     reporterId: string,
     incidentNumber: number,
     createdAt: Date,
     reason: string
-  ): Promise<void> {
-    try {
-      const ref = this.formatIncidentRef(incidentNumber, createdAt);
-      const reasonLabel = this.formatRejectionReason(reason);
-      const notifRepo = new NotificationRepository(this.prisma, companyId);
-      await notifRepo.create({
-        personId: reporterId,
-        type: 'INCIDENT_REJECTED',
-        title: 'Incident Report Not Approved',
-        message: `Your incident report ${ref} was not approved. Reason: ${reasonLabel}.`,
-      });
-    } catch (error) {
-      logger.error(
-        { error, reporterId, incidentNumber },
-        'Failed to send incident rejection notification'
-      );
-    }
+  ): void {
+    const ref = this.formatIncidentRef(incidentNumber, createdAt);
+    const reasonLabel = this.formatRejectionReason(reason);
+    sendNotification(this.prisma, companyId, {
+      personId: reporterId,
+      type: 'INCIDENT_REJECTED',
+      title: 'Incident Report Not Approved',
+      message: `Your incident report ${ref} was not approved. Reason: ${reasonLabel}.`,
+    });
   }
 }

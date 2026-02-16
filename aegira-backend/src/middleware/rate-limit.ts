@@ -23,8 +23,11 @@ setInterval(() => {
  */
 export function rateLimitMiddleware(maxAttempts: number = 10, windowMs: number = 15 * 60 * 1000) {
   return async (c: Context, next: Next) => {
-    // Use IP + path as key (IP from x-forwarded-for or remote address)
-    const ip = c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
+    // Use IP + path as key
+    // Prefer cf-connecting-ip (set authoritatively by Cloudflare, not spoofable)
+    // Fall back to x-real-ip (set by trusted reverse proxies)
+    // x-forwarded-for is intentionally NOT used — clients can spoof it to bypass rate limits
+    const ip = c.req.header('cf-connecting-ip')
       || c.req.header('x-real-ip')
       || 'unknown';
     const key = `${ip}:${c.req.path}`;

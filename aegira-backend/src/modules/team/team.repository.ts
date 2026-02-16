@@ -45,6 +45,31 @@ export class TeamRepository extends BaseRepository {
     });
   }
 
+  /**
+   * Slim variant — for validation, update guards, existence checks.
+   * Does NOT load members array (saves I/O for callers that only need metadata).
+   */
+  async findByIdSlim(id: string) {
+    return this.prisma.team.findFirst({
+      where: this.where({ id }),
+      select: {
+        id: true,
+        name: true,
+        is_active: true,
+        leader_id: true,
+        supervisor_id: true,
+        check_in_start: true,
+        check_in_end: true,
+        work_days: true,
+        description: true,
+      },
+    });
+  }
+
+  /**
+   * Full variant — for GET /teams/:id detail endpoint.
+   * Includes all members, supervisor, and count.
+   */
   async findById(id: string) {
     return this.prisma.team.findFirst({
       where: this.where({ id }),
@@ -90,9 +115,12 @@ export class TeamRepository extends BaseRepository {
     });
   }
 
-  async findByName(name: string): Promise<Team | null> {
+  async findByName(name: string, excludeTeamId?: string): Promise<Team | null> {
     return this.prisma.team.findFirst({
-      where: this.where({ name }),
+      where: this.where({
+        name,
+        ...(excludeTeamId ? { id: { not: excludeTeamId } } : {}),
+      }),
     });
   }
 
@@ -166,49 +194,6 @@ export class TeamRepository extends BaseRepository {
   }
 
   /**
-   * Count active members assigned to a team (all roles)
-   */
-  async countActiveMembers(teamId: string): Promise<number> {
-    return this.prisma.person.count({
-      where: this.where({ team_id: teamId, is_active: true }),
-    });
-  }
-
-  /**
-   * Unassign all members from a team (set team_id = null, clear pending transfers)
-   * Used when deactivating a team with Option B (bulk unassign)
-   */
-  async unassignMembers(teamId: string): Promise<number> {
-    // Unassign current members
-    const result = await this.prisma.person.updateMany({
-      where: {
-        company_id: this.companyId,
-        team_id: teamId,
-        is_active: true,
-      },
-      data: {
-        team_id: null,
-        team_assigned_at: null,
-      },
-    });
-
-    // Cancel pending transfers TO this team
-    await this.prisma.person.updateMany({
-      where: {
-        company_id: this.companyId,
-        effective_team_id: teamId,
-      },
-      data: {
-        effective_team_id: null,
-        effective_transfer_date: null,
-        transfer_initiated_by: null,
-      },
-    });
-
-    return result.count;
-  }
-
-  /**
    * Check if a person already leads a team (excluding a specific team for edit scenarios)
    */
   async findByLeaderId(leaderId: string, excludeTeamId?: string): Promise<Team | null> {
@@ -216,6 +201,7 @@ export class TeamRepository extends BaseRepository {
       where: {
         company_id: this.companyId,
         leader_id: leaderId,
+        is_active: true,
         ...(excludeTeamId ? { id: { not: excludeTeamId } } : {}),
       },
     });

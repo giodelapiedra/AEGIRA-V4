@@ -4,7 +4,7 @@
 
 import { prisma } from '../config/database';
 import { PersonRepository } from '../modules/person/person.repository';
-import { NotificationRepository } from '../modules/notification/notification.repository';
+import { sendNotification } from '../modules/notification/notification.service';
 import { emitEvent } from '../modules/event/event.service';
 import { logger } from '../config/logger';
 import { getTodayInTimezone, parseDateInTimezone } from '../shared/utils';
@@ -56,7 +56,6 @@ async function processCompanyTransfers(companyId: string, timezone: string): Pro
 
   if (pendingTransfers.length === 0) return 0;
 
-  const notifRepo = new NotificationRepository(prisma, companyId);
   let processed = 0;
 
   for (const transfer of pendingTransfers) {
@@ -74,12 +73,26 @@ async function processCompanyTransfers(companyId: string, timezone: string): Pro
         );
         await personRepo.cancelTransfer(transfer.id);
 
-        notifRepo.create({
+        // Emit cancel event (fire-and-forget)
+        emitEvent(prisma, {
+          companyId,
+          personId: transfer.id,
+          eventType: 'TEAM_TRANSFER_CANCELLED',
+          entityType: 'person',
+          entityId: transfer.id,
+          payload: {
+            cancelledTransferTo: transfer.effective_team_id,
+            reason: 'target_team_inactive',
+          },
+          timezone,
+        });
+
+        sendNotification(prisma, companyId, {
           personId: transfer.id,
           type: 'TEAM_ALERT',
           title: 'Transfer Cancelled',
           message: `Your transfer to ${transfer.effective_team.name} was cancelled because the team is no longer active.`,
-        }).catch(err => logger.error({ err, personId: transfer.id }, 'Failed to send transfer cancellation notification'));
+        });
 
         continue;
       }
@@ -94,12 +107,12 @@ async function processCompanyTransfers(companyId: string, timezone: string): Pro
 
       // Send welcome notification (fire-and-forget)
       const teamName = transfer.effective_team?.name ?? 'your new team';
-      notifRepo.create({
+      sendNotification(prisma, companyId, {
         personId: transfer.id,
         type: 'TEAM_ALERT',
         title: `Welcome to ${teamName}!`,
         message: 'Your transfer is complete. Your first check-in starts on your next scheduled work day.',
-      }).catch(err => logger.error({ err, personId: transfer.id }, 'Failed to send transfer notification'));
+      });
 
       // Emit event (fire-and-forget)
       emitEvent(prisma, {

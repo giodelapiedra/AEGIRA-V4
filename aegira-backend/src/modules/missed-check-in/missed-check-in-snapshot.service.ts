@@ -171,11 +171,11 @@ export class MissedCheckInSnapshotService {
         : null;
 
     // Count misses in windows — uses string comparison instead of daysBetween()
-    const thirtyDaysAgoStr = dateRange90d.length >= 60
+    const thirtyDaysAgoStr = dateRange90d.length >= 30
       ? dateRange90d[dateRange90d.length - 30]!.dateStr
-      : dateRange90d[Math.max(0, dateRange90d.length - 30)]?.dateStr ?? today;
-    const sixtyDaysAgoStr = dateRange90d.length >= 30
-      ? dateRange90d[dateRange90d.length - 60 < 0 ? 0 : dateRange90d.length - 60]!.dateStr
+      : dateRange90d[0]?.dateStr ?? today;
+    const sixtyDaysAgoStr = dateRange90d.length >= 60
+      ? dateRange90d[dateRange90d.length - 60]!.dateStr
       : dateRange90d[0]?.dateStr ?? today;
 
     const missesInLast30d = previousMisses.filter((m) => m.date >= thirtyDaysAgoStr).length;

@@ -10,6 +10,7 @@ import { AdminRepository } from './admin.repository';
 import { TeamRepository } from '../team/team.repository';
 import { invalidateCompanyCache } from '../../middleware/tenant';
 import { invalidateHolidayCache } from '../../shared/holiday.utils';
+import { DateTime } from 'luxon';
 
 /** Map Company entity to frontend-expected camelCase format */
 function toCompanySettingsResponse(company: Company) {
@@ -84,7 +85,8 @@ export async function updateCompanySettings(c: Context): Promise<Response> {
 export async function listHolidays(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const repository = new AdminRepository(prisma, companyId);
-  const year = c.req.query('year') || new Date().getFullYear().toString();
+  const timezone = c.get('companyTimezone') as string;
+  const year = c.req.query('year') || DateTime.now().setZone(timezone).toFormat('yyyy');
 
   const holidays = await repository.listHolidays(year);
 

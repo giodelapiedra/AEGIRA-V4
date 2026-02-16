@@ -42,6 +42,19 @@ export const updateTeamSchema = z
   })
   .refine(
     (data) => {
+      // Both checkInStart and checkInEnd must be provided together to prevent inverted windows
+      const hasStart = data.checkInStart !== undefined;
+      const hasEnd = data.checkInEnd !== undefined;
+      if (hasStart !== hasEnd) return false;
+      return true;
+    },
+    {
+      message: 'Both checkInStart and checkInEnd must be set together',
+      path: ['checkInStart'],
+    }
+  )
+  .refine(
+    (data) => {
       if (data.checkInStart && data.checkInEnd) {
         return isEndTimeAfterStart(data.checkInStart, data.checkInEnd);
       }

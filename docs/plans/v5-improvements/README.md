@@ -30,6 +30,8 @@ Phase 2 (Explicit Missed Resolution) <- Depends on Phase 1 event types
   |
 Phase 3 (Availability Tracking) <- Independent, enhances Phase 2
   |
+Phase 3a (Case Risk Analysis) <- Independent of Phase 3, uses existing check-in data
+  |
 Phase 4 (Personal Baselines) <- Core analytics, needs check-in history
   |
 Phase 5 (Risk Episodes) <- Depends on Phase 4 deviations
@@ -44,6 +46,7 @@ Phase 6 (Decision Logs) <- Depends on Phase 4 + 5
 | [phase-1-event-model.md](./phase-1-event-model.md) | Event-time tracking + late submission detection |
 | [phase-2-missed-resolution.md](./phase-2-missed-resolution.md) | Explicit missed events + late resolves missed |
 | [phase-3-availability.md](./phase-3-availability.md) | Leave/sick/off-shift tracking |
+| [phase-3a-case-risk-analysis-2026-02-15.md](./phase-3a-case-risk-analysis-2026-02-15.md) | Rule-based risk analysis on Case Detail page |
 | [phase-4-baselines.md](./phase-4-baselines.md) | Personal baselines + deviation detection |
 | [phase-5-risk-episodes.md](./phase-5-risk-episodes.md) | Signal clustering + episode lifecycle |
 | [phase-6-decision-log.md](./phase-6-decision-log.md) | Explainability + versioning |

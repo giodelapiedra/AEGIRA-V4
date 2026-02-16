@@ -9,11 +9,13 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { NotificationItem } from './NotificationItem';
 import { useNotificationPreview, useUnreadCount, useMarkAsRead, useMarkAllAsRead } from '../hooks/useNotifications';
+import { useToast } from '@/lib/hooks/use-toast';
 import { Separator } from '@/components/ui/separator';
 import { ROUTES } from '@/config/routes.config';
 
 export function NotificationBell() {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const { data: preview } = useNotificationPreview();
   const { data: unreadData } = useUnreadCount();
@@ -53,7 +55,15 @@ export function NotificationBell() {
               variant="ghost"
               size="sm"
               className="text-xs h-auto py-1 px-2"
-              onClick={() => markAllAsRead.mutate()}
+              onClick={() => markAllAsRead.mutate(undefined, {
+                onError: (err) => {
+                  toast({
+                    title: 'Error',
+                    description: err instanceof Error ? err.message : 'Failed to mark all as read',
+                    variant: 'destructive',
+                  });
+                },
+              })}
             >
               Mark all read
             </Button>

@@ -2,16 +2,17 @@
 import type { Context } from 'hono';
 import { PersonRepository } from './person.repository';
 import { TeamRepository } from '../team/team.repository';
-import { NotificationRepository } from '../notification/notification.repository';
+import { sendNotification, sendNotifications, type CreateNotificationData } from '../notification/notification.service';
 import { prisma } from '../../config/database';
 import { AppError } from '../../shared/errors';
 import { hashPassword } from '../../shared/password';
 import { DateTime } from 'luxon';
 import { parsePagination, getTodayInTimezone, parseDateInTimezone, getCurrentTimeInTimezone, getDayOfWeekInTimezone, formatTime12h } from '../../shared/utils';
 import { getEffectiveSchedule } from '../../shared/schedule.utils';
-import { isHoliday } from '../../shared/holiday.utils';
+import { isHoliday, buildHolidayDateSet } from '../../shared/holiday.utils';
 import { validateImageFile, uploadFile, deleteFile, buildAvatarKey, extractKeyFromUrl } from '../../shared/storage';
 import { emitEvent } from '../event/event.service';
+import { MissedCheckInSnapshotService } from '../missed-check-in/missed-check-in-snapshot.service';
 import { MissedCheckInRepository } from '../missed-check-in/missed-check-in.repository';
 import { logger } from '../../config/logger';
 import { logAudit } from '../../shared/audit';
@@ -36,24 +37,24 @@ async function notifyWorkerTeamAssignment(
   timezone: string
 ): Promise<void> {
   try {
-    const teamRepo = new TeamRepository(prisma, companyId);
     const personRepo = new PersonRepository(prisma, companyId);
-    const notificationRepo = new NotificationRepository(prisma, companyId);
 
+    // Fetch team with leader included (Pattern 5 — 1 query instead of 2)
     const [team, person] = await Promise.all([
-      teamRepo.findById(teamId),
+      prisma.team.findFirst({
+        where: { id: teamId, company_id: companyId },
+        select: {
+          id: true, name: true, leader_id: true, work_days: true, check_in_start: true, check_in_end: true,
+          leader: { select: { id: true, first_name: true, last_name: true } },
+        },
+      }),
       personRepo.findById(personId),
     ]);
     if (!team) return;
 
-    // Get team leader name
-    let leaderName = 'your team lead';
-    if (team.leader_id) {
-      const leader = await personRepo.findById(team.leader_id);
-      if (leader) {
-        leaderName = `${leader.first_name} ${leader.last_name}`;
-      }
-    }
+    const leaderName = team.leader
+      ? `${team.leader.first_name} ${team.leader.last_name}`
+      : 'your team lead';
 
     // Resolve effective schedule (person override → team default)
     const schedule = getEffectiveSchedule(
@@ -89,7 +90,7 @@ async function notifyWorkerTeamAssignment(
       }
     }
 
-    await notificationRepo.create({
+    sendNotification(prisma, companyId, {
       personId,
       type: 'TEAM_ALERT',
       title: isNewAssignment ? 'Welcome to Your Team!' : 'Team Assignment Changed',
@@ -149,7 +150,7 @@ export async function createPerson(c: Context): Promise<Response> {
   // Validate team exists and is active if teamId is provided
   if (data.teamId) {
     const teamRepository = new TeamRepository(prisma, companyId);
-    const team = await teamRepository.findById(data.teamId);
+    const team = await teamRepository.findByIdSlim(data.teamId);
     if (!team) {
       throw new AppError('INVALID_TEAM', 'Team not found', 400);
     }
@@ -211,6 +212,56 @@ export async function getPersonById(c: Context): Promise<Response> {
   return c.json({ success: true, data: result });
 }
 
+/** Info collected when a pending transfer is cancelled during updatePerson. */
+interface PendingTransferCancellation {
+  cancelledTransferTo: string;
+  cancelledBy: string;
+  reason: string;
+}
+
+/**
+ * Mark pending transfer fields for clearing (data-only, no side effects).
+ * Side effects (event + notification) are fired AFTER repository.update() succeeds
+ * to prevent orphan events if a later guard throws.
+ */
+function markTransferCancelled(updateData: UpdatePersonData): void {
+  updateData.effectiveTeamId = null;
+  updateData.effectiveTransferDate = null;
+  updateData.transferInitiatedBy = null;
+}
+
+/**
+ * Emit cancel event + notification AFTER DB write.
+ * Called once after repository.update() when a pending transfer was cancelled.
+ */
+function emitTransferCancellation(
+  companyId: string,
+  personId: string,
+  cancellation: PendingTransferCancellation,
+  timezone: string
+): void {
+  emitEvent(prisma, {
+    companyId,
+    personId,
+    eventType: 'TEAM_TRANSFER_CANCELLED',
+    entityType: 'person',
+    entityId: personId,
+    payload: {
+      cancelledTransferTo: cancellation.cancelledTransferTo,
+      reason: cancellation.reason,
+      cancelledBy: cancellation.cancelledBy,
+    },
+    timezone,
+  });
+
+  sendNotification(prisma, companyId, {
+    personId,
+    type: 'TEAM_ALERT',
+    title: 'Transfer Cancelled',
+    message: 'Your scheduled team transfer has been cancelled. You will stay on your current team.',
+  });
+}
+
 export async function updatePerson(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const userId = c.get('userId') as string;
@@ -252,10 +303,21 @@ export async function updatePerson(c: Context): Promise<Response> {
     }
   }
 
+  // Determine what validations are needed before running them
+  const needsTeamCheck = data.teamId !== undefined && data.teamId !== null && data.teamId !== existing.team_id;
+  const needsLeaderCheck = data.role !== undefined && data.role !== 'TEAM_LEAD' && existing.role === 'TEAM_LEAD';
+  const needsDeactivationCheck = data.isActive === false && existing.is_active;
+  const needsLedTeam = needsLeaderCheck || needsDeactivationCheck;
+
+  // Run independent validations in parallel after existence check (Pattern 2)
+  const teamRepository = new TeamRepository(prisma, companyId);
+  const [team, ledTeam] = await Promise.all([
+    needsTeamCheck ? teamRepository.findByIdSlim(data.teamId!) : null,
+    needsLedTeam ? teamRepository.findByLeaderId(id) : null,
+  ]);
+
   // Validate team exists and is active if teamId is being changed
-  if (data.teamId !== undefined && data.teamId !== null && data.teamId !== existing.team_id) {
-    const teamRepository = new TeamRepository(prisma, companyId);
-    const team = await teamRepository.findById(data.teamId);
+  if (needsTeamCheck) {
     if (!team) {
       throw new AppError('INVALID_TEAM', 'Team not found', 400);
     }
@@ -271,31 +333,36 @@ export async function updatePerson(c: Context): Promise<Response> {
   // Only include teamId in update data if it actually changed
   // This prevents resetting team_assigned_at when saving with the same team
   const updateData: UpdatePersonData = { ...data };
+  // Track pending transfer cancellation — side effects fired AFTER DB write
+  let transferCancellation: PendingTransferCancellation | null = null;
+
   if (!teamChanged) {
     delete updateData.teamId;
+
+    // Same-team save with pending transfer: auto-cancel
+    // e.g. Worker on Team A → pending to Team B → admin saves with Team A again
+    // Note: current frontend doesn't trigger this (buildUpdates skips unchanged teamId),
+    // but the explicit cancel button (DELETE /pending-transfer) handles the UI flow.
+    // This guards against direct API consumers sending teamId === current team.
+    if (data.teamId !== undefined && existing.effective_team_id) {
+      markTransferCancelled(updateData);
+      transferCancellation = { cancelledTransferTo: existing.effective_team_id, cancelledBy: userId, reason: 'same_team_reassignment' };
+    }
   }
 
   // Guard: cannot demote a TEAM_LEAD who currently leads a team
-  if (data.role !== undefined && data.role !== 'TEAM_LEAD' && existing.role === 'TEAM_LEAD') {
-    const teamRepository = new TeamRepository(prisma, companyId);
-    const ledTeam = await teamRepository.findByLeaderId(id);
-    if (ledTeam) {
-      throw new AppError('LEADER_HAS_TEAM', `Cannot change role — this person leads team "${ledTeam.name}". Reassign the team leader first.`, 400);
-    }
+  if (needsLeaderCheck && ledTeam) {
+    throw new AppError('LEADER_HAS_TEAM', `Cannot change role — this person leads team "${ledTeam.name}". Reassign the team leader first.`, 400);
   }
 
   // Guard: cannot deactivate a person who leads an active team
   // (placed before transfer logic to prevent fire-and-forget side effects on rejection)
-  if (data.isActive === false && existing.is_active) {
-    const teamRepository = new TeamRepository(prisma, companyId);
-    const ledTeam = await teamRepository.findByLeaderId(id);
-    if (ledTeam && ledTeam.is_active) {
-      throw new AppError(
-        'LEADER_HAS_ACTIVE_TEAM',
-        `Cannot deactivate — this person leads team "${ledTeam.name}". Reassign the team leader or deactivate the team first.`,
-        400
-      );
-    }
+  if (needsDeactivationCheck && ledTeam && ledTeam.is_active) {
+    throw new AppError(
+      'LEADER_HAS_ACTIVE_TEAM',
+      `Cannot deactivate — this person leads team "${ledTeam.name}". Reassign the team leader or deactivate the team first.`,
+      400
+    );
   }
 
   // Clear schedule overrides and pending transfers when role changes away from WORKER
@@ -305,13 +372,24 @@ export async function updatePerson(c: Context): Promise<Response> {
     updateData.checkInEnd = null;
     // Pending transfer is worker-specific — clear it on role change
     if (existing.effective_team_id) {
-      updateData.effectiveTeamId = null;
-      updateData.effectiveTransferDate = null;
-      updateData.transferInitiatedBy = null;
+      markTransferCancelled(updateData);
+      transferCancellation = { cancelledTransferTo: existing.effective_team_id, cancelledBy: userId, reason: 'role_change' };
     }
   }
 
   // ===== EFFECTIVE NEXT-DAY TRANSFER LOGIC =====
+
+  // Guard: block new transfer if one is already pending (admin must cancel first)
+  // Skip if a prior block (role change) already cancelled the pending transfer
+  if (teamChanged && data.teamId && !isNewAssignment && existing.effective_team_id && !transferCancellation) {
+    const pendingTeamName = existing.effective_team?.name ?? existing.effective_team_id;
+    throw new AppError(
+      'PENDING_TRANSFER_EXISTS',
+      `This worker already has a pending transfer to "${pendingTeamName}". Cancel it first before scheduling a new transfer.`,
+      409
+    );
+  }
+
   if (teamChanged && data.teamId) {
     if (isNewAssignment) {
       // FIRST ASSIGNMENT — immediate (no old team to protect)
@@ -357,14 +435,18 @@ export async function updatePerson(c: Context): Promise<Response> {
     updateData.transferInitiatedBy = null;
   }
 
-  // If worker is deactivated, clear pending transfer
-  if (data.isActive === false && existing.is_active) {
-    updateData.effectiveTeamId = null;
-    updateData.effectiveTransferDate = null;
-    updateData.transferInitiatedBy = null;
+  // If worker is deactivated, clear pending transfer (skip if a prior block already handled it)
+  if (data.isActive === false && existing.is_active && existing.effective_team_id && !transferCancellation) {
+    markTransferCancelled(updateData);
+    transferCancellation = { cancelledTransferTo: existing.effective_team_id, cancelledBy: userId, reason: 'deactivation' };
   }
 
   const result = await repository.update(id, updateData);
+
+  // Fire transfer cancellation side effects AFTER DB write succeeded
+  if (transferCancellation) {
+    emitTransferCancellation(companyId, id, transferCancellation, timezone);
+  }
 
   // Send notification if worker was assigned to a new team (non-blocking)
   if (teamChanged && data.teamId) {
@@ -420,16 +502,31 @@ export async function cancelPendingTransfer(c: Context): Promise<Response> {
     throw new AppError('NO_PENDING_TRANSFER', 'No pending transfer to cancel', 400);
   }
 
+  const timezone = c.get('companyTimezone') as string;
+
   await repository.cancelTransfer(id);
 
+  // Emit cancel event (fire-and-forget)
+  emitEvent(prisma, {
+    companyId,
+    personId: id,
+    eventType: 'TEAM_TRANSFER_CANCELLED',
+    entityType: 'person',
+    entityId: id,
+    payload: {
+      cancelledTransferTo: existing.effective_team_id,
+      cancelledBy: userId,
+    },
+    timezone,
+  });
+
   // Notify worker (fire-and-forget)
-  const notifRepo = new NotificationRepository(prisma, companyId);
-  notifRepo.create({
+  sendNotification(prisma, companyId, {
     personId: id,
     type: 'TEAM_ALERT',
     title: 'Transfer Cancelled',
     message: 'Your scheduled team transfer has been cancelled. You will stay on your current team.',
-  }).catch(err => logger.error({ err, personId: id }, 'Failed to send transfer cancellation notification'));
+  });
 
   // Audit (non-blocking)
   logAudit({
@@ -457,16 +554,14 @@ async function notifyWorkerTransferScheduled(
 ): Promise<void> {
   try {
     const teamRepo = new TeamRepository(prisma, companyId);
-    const notifRepo = new NotificationRepository(prisma, companyId);
-
-    const newTeam = await teamRepo.findById(newTeamId);
+    const newTeam = await teamRepo.findByIdSlim(newTeamId);
     const newTeamName = newTeam?.name ?? 'your new team';
 
     const todayStr = getTodayInTimezone(timezone);
     const tomorrowDt = DateTime.fromISO(todayStr, { zone: timezone }).plus({ days: 1 });
     const effectiveDateStr = tomorrowDt.toFormat('yyyy-MM-dd');
 
-    await notifRepo.create({
+    sendNotification(prisma, companyId, {
       personId,
       type: 'TEAM_ALERT',
       title: 'Team Transfer Scheduled',
@@ -481,6 +576,10 @@ async function notifyWorkerTransferScheduled(
  * Create an immediate MissedCheckIn record when a transfer is initiated
  * and the check-in window has already closed without a check-in.
  * Non-blocking - errors are logged but don't fail the transfer.
+ *
+ * Uses the same MissedCheckInSnapshotService as the cron detector for
+ * consistent snapshot data, and sends notifications + emits events
+ * matching the cron detector pattern.
  */
 async function createImmediateMissedCheckIn(
   companyId: string,
@@ -497,52 +596,26 @@ async function createImmediateMissedCheckIn(
     const todayDate = parseDateInTimezone(todayStr, timezone);
 
     // Get effective schedule
-    const schedule = getEffectiveSchedule(
-      { work_days: person.work_days, check_in_start: person.check_in_start, check_in_end: person.check_in_end },
-      { work_days: person.team.work_days, check_in_start: person.team.check_in_start, check_in_end: person.team.check_in_end }
-    );
+    const personSchedule = { work_days: person.work_days, check_in_start: person.check_in_start, check_in_end: person.check_in_end };
+    const teamSchedule = { work_days: person.team.work_days, check_in_start: person.team.check_in_start, check_in_end: person.team.check_in_end };
+    const schedule = getEffectiveSchedule(personSchedule, teamSchedule);
 
     // Only create if: today is work day AND window already closed AND no check-in today
     if (!schedule.workDays.includes(todayDow)) return;
     if (currentTime <= schedule.checkInEnd) return;
 
-    // Check for today's holiday
-    const holidayToday = await isHoliday(prisma, companyId, todayStr);
-    if (holidayToday) return;
-
-    // Check if already checked in today
-    const existingCheckIn = await prisma.checkIn.findFirst({
-      where: { company_id: companyId, person_id: personId, check_in_date: todayDate },
-      select: { id: true },
-    });
-    if (existingCheckIn) return;
-
-    // Check if MissedCheckIn already exists
+    // Run independent checks in parallel
     const missedRepo = new MissedCheckInRepository(prisma, companyId);
-    const existingMissed = await missedRepo.findExistingForDate(todayDate, [personId]);
-    if (existingMissed.has(personId)) return;
-
-    // Gather snapshot data in parallel for analytics (matches cron detector pattern).
-    // Includes temporal context fields for consistent reporting across both code paths.
-    const thirtyDaysAgo = new Date(todayDate.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const sixtyDaysAgo = new Date(todayDate.getTime() - 60 * 24 * 60 * 60 * 1000);
     const ninetyDaysAgo = new Date(todayDate.getTime() - 90 * 24 * 60 * 60 * 1000);
 
-    const [missesInLast30d, missesInLast60d, missesInLast90d, lastCheckIn, teamLeader] = await Promise.all([
-      prisma.missedCheckIn.count({
-        where: { company_id: companyId, person_id: personId, missed_date: { gte: thirtyDaysAgo } },
-      }),
-      prisma.missedCheckIn.count({
-        where: { company_id: companyId, person_id: personId, missed_date: { gte: sixtyDaysAgo } },
-      }),
-      prisma.missedCheckIn.count({
-        where: { company_id: companyId, person_id: personId, missed_date: { gte: ninetyDaysAgo } },
-      }),
+    const [holidayToday, existingCheckIn, existingMissed, holidayDateSet, teamLeader] = await Promise.all([
+      isHoliday(prisma, companyId, todayStr),
       prisma.checkIn.findFirst({
-        where: { company_id: companyId, person_id: personId, check_in_date: { lt: todayDate } },
-        orderBy: { check_in_date: 'desc' },
-        select: { readiness_score: true },
+        where: { company_id: companyId, person_id: personId, check_in_date: todayDate },
+        select: { id: true },
       }),
+      missedRepo.findExistingForDate(todayDate, [personId]),
+      buildHolidayDateSet(prisma, companyId, ninetyDaysAgo, todayDate, timezone),
       person.team_id
         ? prisma.person.findFirst({
             where: { company_id: companyId, led_teams: { some: { id: person.team_id } } },
@@ -550,29 +623,95 @@ async function createImmediateMissedCheckIn(
           })
         : null,
     ]);
+    if (holidayToday || existingCheckIn || existingMissed.has(personId)) return;
 
-    const todayDowNum = getDayOfWeekInTimezone(timezone);
-    const todayDayOfMonth = DateTime.fromISO(todayStr, { zone: timezone }).day;
+    // Use MissedCheckInSnapshotService for consistent snapshots (matches cron detector)
+    const snapshotService = new MissedCheckInSnapshotService(prisma, companyId, timezone);
+    const snapshots = await snapshotService.calculateBatch(
+      [{
+        personId,
+        teamId: person.team_id,
+        role: person.role,
+        teamAssignedAt: person.team_assigned_at,
+        workDays: person.work_days,
+        checkInStart: person.check_in_start,
+        checkInEnd: person.check_in_end,
+        team: teamSchedule,
+      }],
+      todayDate,
+      holidayDateSet
+    );
+    const snapshot = snapshots.get(personId);
 
-    await missedRepo.createMany([{
+    // Team leader snapshot
+    const teamLeaderIdAtMiss = teamLeader?.id ?? null;
+    const teamLeaderNameAtMiss = teamLeader
+      ? `${teamLeader.first_name} ${teamLeader.last_name}`
+      : null;
+
+    const inserted = await missedRepo.createMany([{
       personId,
       teamId: person.team_id,
       missedDate: todayDate,
       scheduleWindow: `${formatTime12h(schedule.checkInStart)} - ${formatTime12h(schedule.checkInEnd)}`,
-      workerRoleAtMiss: person.role,
-      teamLeaderIdAtMiss: teamLeader?.id ?? null,
-      teamLeaderNameAtMiss: teamLeader ? `${teamLeader.first_name} ${teamLeader.last_name}` : null,
-      dayOfWeek: todayDowNum,
-      weekOfMonth: Math.ceil(todayDayOfMonth / 7),
-      recentReadinessAvg: lastCheckIn?.readiness_score ?? null,
-      missesInLast30d,
-      missesInLast60d,
-      missesInLast90d,
-      isFirstMissIn30d: missesInLast30d === 0,
-      isIncreasingFrequency: (missesInLast30d / 30) > (missesInLast60d / 60) && missesInLast30d >= 2,
+      teamLeaderIdAtMiss,
+      teamLeaderNameAtMiss,
+      ...(snapshot && {
+        workerRoleAtMiss: snapshot.workerRoleAtMiss,
+        dayOfWeek: snapshot.dayOfWeek,
+        weekOfMonth: snapshot.weekOfMonth,
+        daysSinceLastCheckIn: snapshot.daysSinceLastCheckIn,
+        daysSinceLastMiss: snapshot.daysSinceLastMiss,
+        checkInStreakBefore: snapshot.checkInStreakBefore,
+        recentReadinessAvg: snapshot.recentReadinessAvg,
+        missesInLast30d: snapshot.missesInLast30d,
+        missesInLast60d: snapshot.missesInLast60d,
+        missesInLast90d: snapshot.missesInLast90d,
+        baselineCompletionRate: snapshot.baselineCompletionRate,
+        isFirstMissIn30d: snapshot.isFirstMissIn30d,
+        isIncreasingFrequency: snapshot.isIncreasingFrequency,
+      }),
       reminderSent: true,
       reminderFailed: false,
     }]);
+
+    // Send notifications (matches cron detector pattern)
+    if (inserted > 0) {
+      const notifications: CreateNotificationData[] = [
+        {
+          personId,
+          type: 'MISSED_CHECK_IN',
+          title: 'Missed Check-in',
+          message: `You missed your check-in for ${todayStr}. Please contact your team lead if needed.`,
+        },
+      ];
+
+      if (teamLeaderIdAtMiss) {
+        notifications.push({
+          personId: teamLeaderIdAtMiss,
+          type: 'MISSED_CHECK_IN',
+          title: 'Team Missed Check-in',
+          message: `1 worker missed their check-in for ${todayStr}.`,
+        });
+      }
+
+      sendNotifications(prisma, companyId, notifications);
+    }
+
+    // Emit MISSED_CHECK_IN_DETECTED event (fire-and-forget, matches cron detector)
+    emitEvent(prisma, {
+      companyId,
+      personId,
+      eventType: 'MISSED_CHECK_IN_DETECTED',
+      entityType: 'missed_check_in',
+      payload: {
+        missedDate: todayStr,
+        scheduleWindow: `${schedule.checkInStart} - ${schedule.checkInEnd}`,
+        teamId: person.team_id,
+        source: 'transfer',
+      },
+      timezone,
+    });
 
     logger.info({ personId, companyId, date: todayStr }, 'Created immediate missed check-in on transfer');
   } catch (error) {

@@ -44,8 +44,8 @@ const readinessLevelVariant: Record<string, 'success' | 'warning' | 'destructive
 
 const readinessLevelLabel: Record<string, string> = {
   GREEN: 'Ready',
-  YELLOW: 'Caution',
-  RED: 'High Risk',
+  YELLOW: 'Modified Duty',
+  RED: 'Not Ready',
 };
 
 const columns: ColumnDef<CheckInRecord>[] = [
@@ -173,7 +173,7 @@ export function TeamAnalyticsPage() {
               <div className="w-3 h-3 bg-yellow-500 rounded-full" />
               <span className="text-2xl font-bold">{summary.readinessDistribution.yellow}</span>
             </div>
-            <p className="text-sm text-muted-foreground">Yellow (Caution)</p>
+            <p className="text-sm text-muted-foreground">Yellow (Modified Duty)</p>
           </CardContent>
         </Card>
         <Card>
@@ -182,7 +182,7 @@ export function TeamAnalyticsPage() {
               <div className="w-3 h-3 bg-red-500 rounded-full" />
               <span className="text-2xl font-bold">{summary.readinessDistribution.red}</span>
             </div>
-            <p className="text-sm text-muted-foreground">Red (High Risk)</p>
+            <p className="text-sm text-muted-foreground">Red (Not Ready)</p>
           </CardContent>
         </Card>
       </div>

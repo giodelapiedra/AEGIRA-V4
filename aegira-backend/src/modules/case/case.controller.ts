@@ -5,6 +5,7 @@ import type { GetCasesQuery, UpdateCaseInput } from './case.validator';
 import { prisma } from '../../config/database';
 import { AppError } from '../../shared/errors';
 import { parsePagination } from '../../shared/utils';
+import { DateTime } from 'luxon';
 
 function getRepository(companyId: string): CaseRepository {
   return new CaseRepository(prisma, companyId);
@@ -15,18 +16,18 @@ function getService(companyId: string, timezone: string): CaseService {
   return new CaseService(prisma, repository, timezone);
 }
 
-function calculateAge(dateOfBirth: Date | null): number | null {
+function calculateAge(dateOfBirth: Date | null, timezone: string): number | null {
   if (!dateOfBirth) return null;
-  const today = new Date();
-  let age = today.getFullYear() - dateOfBirth.getFullYear();
-  const monthDiff = today.getMonth() - dateOfBirth.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dateOfBirth.getDate())) {
+  const now = DateTime.now().setZone(timezone);
+  let age = now.year - dateOfBirth.getUTCFullYear();
+  const monthDiff = now.month - (dateOfBirth.getUTCMonth() + 1);
+  if (monthDiff < 0 || (monthDiff === 0 && now.day < dateOfBirth.getUTCDate())) {
     age--;
   }
   return age;
 }
 
-function mapCaseToResponse(caseRecord: CaseWithRelations): Record<string, unknown> {
+function mapCaseToResponse(caseRecord: CaseWithRelations, timezone: string): Record<string, unknown> {
   return {
     id: caseRecord.id,
     caseNumber: caseRecord.case_number,
@@ -44,7 +45,7 @@ function mapCaseToResponse(caseRecord: CaseWithRelations): Record<string, unknow
       reporterName: `${caseRecord.incident.reporter.first_name} ${caseRecord.incident.reporter.last_name}`,
       reporterEmail: caseRecord.incident.reporter.email,
       reporterGender: caseRecord.incident.reporter.gender,
-      reporterAge: calculateAge(caseRecord.incident.reporter.date_of_birth),
+      reporterAge: calculateAge(caseRecord.incident.reporter.date_of_birth, timezone),
       teamName: caseRecord.incident.reporter.team?.name ?? 'Unassigned',
     },
     assignedTo: caseRecord.assigned_to,
@@ -64,6 +65,7 @@ function mapCaseToResponse(caseRecord: CaseWithRelations): Record<string, unknow
  */
 export async function getCases(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
+  const timezone = c.get('companyTimezone') as string;
   const { page, limit } = parsePagination(c.req.query('page'), c.req.query('limit'));
   const { status, search } = c.req.valid('query' as never) as GetCasesQuery;
 
@@ -75,7 +77,7 @@ export async function getCases(c: Context): Promise<Response> {
   ]);
 
   const items = result.items.map((caseRecord) =>
-    mapCaseToResponse(caseRecord)
+    mapCaseToResponse(caseRecord, timezone)
   );
 
   return c.json({
@@ -97,6 +99,7 @@ export async function getCaseById(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const userId = c.get('userId') as string;
   const userRole = c.get('userRole') as string;
+  const timezone = c.get('companyTimezone') as string;
   const id = c.req.param('id');
 
   const repository = getRepository(companyId);
@@ -114,7 +117,7 @@ export async function getCaseById(c: Context): Promise<Response> {
 
   return c.json({
     success: true,
-    data: mapCaseToResponse(caseRecord),
+    data: mapCaseToResponse(caseRecord, timezone),
   });
 }
 
@@ -125,14 +128,15 @@ export async function getCaseById(c: Context): Promise<Response> {
 export async function updateCase(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const userId = c.get('userId') as string;
+  const timezone = c.get('companyTimezone') as string;
   const id = c.req.param('id');
   const data = c.req.valid('json' as never) as UpdateCaseInput;
 
-  const service = getService(companyId, c.get('companyTimezone') as string);
+  const service = getService(companyId, timezone);
   const updated = await service.updateCase(id, companyId, userId, data);
 
   return c.json({
     success: true,
-    data: mapCaseToResponse(updated),
+    data: mapCaseToResponse(updated, timezone),
   });
 }

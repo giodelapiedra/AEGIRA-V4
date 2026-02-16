@@ -88,10 +88,37 @@ export class DashboardService {
       buildHolidayDateSet(prisma, this.companyId, thirtyDaysAgo, today, timezone),
     ]);
 
+    // Guard: worker without a team — no schedule context, return safe empty state.
+    // Prevents phantom schedule (hardcoded 06:00-10:00 Mon-Fri fallback) from showing
+    // a misleading "Check-In Now" button that would fail with NO_TEAM_ASSIGNED.
+    if (!person?.team) {
+      return {
+        streak: 0,
+        avgReadiness: 0,
+        completionRate: 0,
+        completedDays: 0,
+        requiredDays: 0,
+        todayCheckIn: null,
+        weeklyTrend: [],
+        memberSince: null,
+        schedule: {
+          isWorkDay: false,
+          isHoliday: holidayCheck.isHoliday,
+          holidayName: holidayCheck.holidayName,
+          isAssignedToday: false,
+          windowOpen: false,
+          windowClosed: false,
+          checkInStart: '00:00',
+          checkInEnd: '00:00',
+        },
+        pendingTransfer: null,
+      };
+    }
+
     const teamAssignedAt = person?.team_assigned_at
       ? parseDateInTimezone(formatDateInTimezone(new Date(person.team_assigned_at), timezone), timezone)
       : null;
-    // Resolve effective schedule: person override → team default → hardcoded fallback
+    // Resolve effective schedule: person override → team default
     const effectiveSchedule = getEffectiveSchedule(
       { work_days: person?.work_days, check_in_start: person?.check_in_start, check_in_end: person?.check_in_end },
       { work_days: person?.team?.work_days ?? '1,2,3,4,5', check_in_start: person?.team?.check_in_start ?? '06:00', check_in_end: person?.team?.check_in_end ?? '10:00' }
@@ -504,6 +531,7 @@ export class DashboardService {
         work_days: true,
         check_in_start: true,
         check_in_end: true,
+        leader: { select: { id: true, first_name: true, last_name: true } },
       },
     });
 
@@ -521,18 +549,9 @@ export class DashboardService {
     }
 
     const teamIds = teams.map(t => t.id);
-    const leaderIds = teams.map(t => t.leader_id).filter((id): id is string => id !== null);
 
-    // Batch queries - run all in parallel
-    const [leaders, allWorkers, checkInsByPerson, holidayCheck] = await Promise.all([
-      // Get all leaders in one query
-      prisma.person.findMany({
-        where: {
-          id: { in: leaderIds },
-          company_id: this.companyId,
-        },
-        select: { id: true, first_name: true, last_name: true },
-      }),
+    // Batch queries - run all in parallel (leaders included in teams query above)
+    const [allWorkers, checkInsByPerson, holidayCheck] = await Promise.all([
       // Get all workers with schedule override fields (replaces groupBy count)
       prisma.person.findMany({
         where: {
@@ -593,8 +612,6 @@ export class DashboardService {
     // Current time context (shared across all workers)
     const currentTime = getCurrentTimeInTimezone(timezone);
     const dayOfWeekStr = getDayOfWeekInTimezone(timezone).toString();
-    const leaderMap = new Map(leaders.map(l => [l.id, l]));
-
     // Helper to check if worker was assigned today
     // Uses company timezone for proper date comparison
     const isAssignedToday = (assignedAt: Date | null): boolean => {
@@ -604,7 +621,7 @@ export class DashboardService {
 
     // Build team summaries with schedule-aware classification
     const teamSummaries = teams.map(team => {
-      const leader = team.leader_id ? leaderMap.get(team.leader_id) : null;
+      const leader = team.leader;
       const teamWorkers = workersByTeam.get(team.id) || [];
       const stats = checkInStats.get(team.id) || { count: 0, avgSum: 0 };
       const checkInCount = stats.count;

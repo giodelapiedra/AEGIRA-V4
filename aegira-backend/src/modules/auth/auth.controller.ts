@@ -177,9 +177,9 @@ export async function changePassword(c: Context): Promise<Response> {
   const userEmail = (c.get('user') as { email: string }).email;
   const { currentPassword, newPassword } = c.req.valid('json' as never) as ChangePasswordInput;
 
-  // Find person with company_id verification
+  // Find active person with company_id verification
   const person = await prisma.person.findFirst({
-    where: { id: userId, company_id: companyId },
+    where: { id: userId, company_id: companyId, is_active: true },
     select: { id: true, password_hash: true },
   });
 
@@ -229,9 +229,9 @@ export async function verifyUserPassword(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const { password } = c.req.valid('json' as never) as VerifyPasswordInput;
 
-  // Find person with company_id verification
+  // Find active person with company_id verification
   const person = await prisma.person.findFirst({
-    where: { id: userId, company_id: companyId },
+    where: { id: userId, company_id: companyId, is_active: true },
     select: { id: true, password_hash: true },
   });
 

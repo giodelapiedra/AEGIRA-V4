@@ -163,6 +163,7 @@ export class IncidentRepository extends BaseRepository {
       select: {
         id: true,
         event_type: true,
+        person_id: true,
         payload: true,
         created_at: true,
         event_time: true,

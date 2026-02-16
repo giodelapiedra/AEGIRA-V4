@@ -1,5 +1,6 @@
+import { useMemo } from 'react';
 import { ColumnDef } from '@tanstack/react-table';
-import { Users, CheckCircle, AlertCircle, TrendingUp, Clock, UserPlus, XCircle, BarChart3, CalendarOff, CalendarClock, ArrowRightLeft } from 'lucide-react';
+import { Users, CheckCircle, TrendingUp, Clock, UserPlus, XCircle, BarChart3, ArrowRightLeft } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { PageLoader } from '@/components/common/PageLoader';
@@ -10,15 +11,13 @@ import { StatCard } from '../components/StatCard';
 import { useTeamLeadDashboardStats } from '../hooks/useDashboardStats';
 import type { TeamMemberStatus } from '@/types/check-in.types';
 import { formatTime } from '@/lib/utils/date.utils';
-import { formatScheduleWindow } from '@/lib/utils/format.utils';
 
-// Map day number (0=Sun..6=Sat) to short label
-const DAY_LABELS: Record<string, string> = {
-  '0': 'Sun', '1': 'Mon', '2': 'Tue', '3': 'Wed',
-  '4': 'Thu', '5': 'Fri', '6': 'Sat',
+// Priority order for table sorting: problems first, healthy last
+const STATUS_ORDER: Record<string, number> = {
+  missed: 0,
+  pending: 1,
+  submitted: 2,
 };
-
-const ALL_DAYS = ['0', '1', '2', '3', '4', '5', '6'];
 
 // Get status badge based on member check-in status
 const getStatusBadge = (member: TeamMemberStatus) => {
@@ -35,22 +34,6 @@ const getStatusBadge = (member: TeamMemberStatus) => {
         <Badge variant="destructive" className="gap-1">
           <XCircle className="h-3 w-3" />
           Missed
-        </Badge>
-      );
-    case 'not_required':
-      // Distinguish between "just assigned today" and "day off / holiday"
-      if (member.assignedToday) {
-        return (
-          <Badge variant="info" className="gap-1">
-            <UserPlus className="h-3 w-3" />
-            Just Assigned
-          </Badge>
-        );
-      }
-      return (
-        <Badge variant="outline" className="gap-1">
-          <CalendarOff className="h-3 w-3" />
-          Day Off
         </Badge>
       );
     case 'pending':
@@ -121,6 +104,27 @@ const columns: ColumnDef<TeamMemberStatus>[] = [
 export function TeamLeadDashboard() {
   const { data: stats, isLoading, error } = useTeamLeadDashboardStats();
 
+  // Filter to expected check-ins only (exclude day off / newly assigned),
+  // then sort by priority: missed → pending → submitted
+  const sortedMembers = useMemo(() => {
+    if (!stats?.memberStatuses) return [];
+    return stats.memberStatuses
+      .filter((m) => m.status !== 'not_required')
+      .sort((a, b) => (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9));
+  }, [stats?.memberStatuses]);
+
+  // Compute status counts for summary bar (expected check-ins only)
+  const statusCounts = useMemo(() => {
+    if (!stats?.memberStatuses) return { missed: 0, pending: 0, submitted: 0 };
+    let missed = 0, pending = 0, submitted = 0;
+    for (const m of stats.memberStatuses) {
+      if (m.status === 'missed') missed++;
+      else if (m.status === 'pending') pending++;
+      else if (m.status === 'submitted') submitted++;
+    }
+    return { missed, pending, submitted };
+  }, [stats?.memberStatuses]);
+
   return (
     <PageLoader isLoading={isLoading} error={error} skeleton="team-lead-dashboard">
       {!stats?.teamId ? (
@@ -140,7 +144,8 @@ export function TeamLeadDashboard() {
     <div className="space-y-6">
       <PageHeader title="Team Dashboard" description={stats.teamName ?? undefined} />
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      {/* Stat Cards — 4 key metrics */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard
           title="Team Size"
           value={stats?.teamSize || 0}
@@ -163,20 +168,6 @@ export function TeamLeadDashboard() {
           iconBgColor="purple"
         />
         <StatCard
-          title="Pending"
-          value={stats?.pendingCheckIns || 0}
-          icon={<AlertCircle className="h-4 w-4" />}
-          description="awaiting submission"
-          iconBgColor="orange"
-        />
-        <StatCard
-          title="Missed"
-          value={stats?.missedCheckIns || 0}
-          icon={<XCircle className="h-4 w-4" />}
-          description="window closed"
-          iconBgColor="orange"
-        />
-        <StatCard
           title="Compliance"
           value={`${stats?.complianceRate || 0}%`}
           icon={<BarChart3 className="h-4 w-4" />}
@@ -185,6 +176,7 @@ export function TeamLeadDashboard() {
         />
       </div>
 
+      {/* Newly assigned alert */}
       {(stats?.newlyAssigned || 0) > 0 && (
         <Card>
           <CardContent className="py-3">
@@ -196,52 +188,40 @@ export function TeamLeadDashboard() {
         </Card>
       )}
 
-      {/* Team Schedule */}
-      {stats?.checkInStart && (() => {
-        const activeDays = new Set(stats.workDays?.split(',') ?? []);
-        return (
-          <Card>
-            <CardContent className="py-4">
-              <div className="flex items-center gap-6 flex-wrap">
-                <div className="flex items-center gap-2 text-sm">
-                  <CalendarClock className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">Check-in Window:</span>
-                  <span className="font-medium">{formatScheduleWindow(stats.checkInStart, stats.checkInEnd)}</span>
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="text-muted-foreground">Work Days:</span>
-                  <div className="flex gap-1">
-                    {ALL_DAYS.map(day => {
-                      const isActive = activeDays.has(day);
-                      return (
-                        <Badge
-                          key={day}
-                          variant={isActive ? 'default' : 'outline'}
-                          className={isActive ? 'px-1.5 py-0.5 text-xs' : 'px-1.5 py-0.5 text-xs opacity-40'}
-                        >
-                          {DAY_LABELS[day]}
-                        </Badge>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        );
-      })()}
-
+      {/* Team Member Status — sorted by priority, summary badges in header */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Users className="h-5 w-5" />
-            Team Member Status
-          </CardTitle>
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Team Member Status
+            </CardTitle>
+            <div className="flex items-center gap-2 flex-wrap">
+              {statusCounts.missed > 0 && (
+                <Badge variant="destructive" className="gap-1">
+                  <XCircle className="h-3 w-3" />
+                  {statusCounts.missed} Missed
+                </Badge>
+              )}
+              {statusCounts.pending > 0 && (
+                <Badge variant="warning" className="gap-1">
+                  <Clock className="h-3 w-3" />
+                  {statusCounts.pending} Pending
+                </Badge>
+              )}
+              {statusCounts.submitted > 0 && (
+                <Badge variant="success" className="gap-1">
+                  <CheckCircle className="h-3 w-3" />
+                  {statusCounts.submitted} Submitted
+                </Badge>
+              )}
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           <DataTable
             columns={columns}
-            data={stats?.memberStatuses || []}
+            data={sortedMembers}
             searchable
             searchPlaceholder="Search member..."
             searchColumn="fullName"
@@ -249,6 +229,7 @@ export function TeamLeadDashboard() {
           />
         </CardContent>
       </Card>
+
     </div>
       )}
     </PageLoader>

@@ -4,7 +4,7 @@ import { TeamRepository } from './team.repository';
 import { TeamService } from './team.service';
 import { PersonRepository } from '../person/person.repository';
 import { CheckInRepository } from '../check-in/check-in.repository';
-import { NotificationRepository } from '../notification/notification.repository';
+import { sendNotification, sendNotifications } from '../notification/notification.service';
 import { prisma } from '../../config/database';
 import { AppError } from '../../shared/errors';
 import { logger } from '../../config/logger';
@@ -19,52 +19,37 @@ import {
 } from '../../shared/utils';
 import type { CreateTeamInput, UpdateTeamInput } from './team.validator';
 
-/**
- * Send notification when team lead is assigned to a team
- * Non-blocking - errors are logged but don't break the main operation
- */
-async function notifyTeamLeadAssignment(
+/** Non-blocking notification when team lead is assigned to a team. */
+function notifyTeamLeadAssignment(
   companyId: string,
   leaderId: string,
   teamName: string
-): Promise<void> {
-  try {
-    const notificationRepo = new NotificationRepository(prisma, companyId);
-    await notificationRepo.create({
-      personId: leaderId,
-      type: 'TEAM_ALERT',
-      title: 'Team Leadership Assignment',
-      message: `You have been assigned as the team lead of ${teamName}.`,
-    });
-  } catch (error) {
-    // Log error but don't throw - notification failure shouldn't break main operation
-    logger.error({ error, leaderId, teamName }, 'Failed to send team lead assignment notification');
-  }
+): void {
+  sendNotification(prisma, companyId, {
+    personId: leaderId,
+    type: 'TEAM_ALERT',
+    title: 'Team Leadership Assignment',
+    message: `You have been assigned as the team lead of ${teamName}.`,
+  });
 }
 
-/**
- * Notify workers who were unassigned due to team deactivation.
- * Non-blocking — errors are logged but don't break the main operation.
- */
-async function notifyOrphanedWorkers(
+/** Non-blocking notification to workers unassigned due to team deactivation. */
+function notifyOrphanedWorkers(
   companyId: string,
   workerIds: string[],
   teamName: string
-): Promise<void> {
-  try {
-    if (workerIds.length === 0) return;
-    const notificationRepo = new NotificationRepository(prisma, companyId);
-    await notificationRepo.createMany(
-      workerIds.map((id) => ({
-        personId: id,
-        type: 'TEAM_ALERT' as const,
-        title: 'Team Deactivated',
-        message: `Your team "${teamName}" has been deactivated. You are currently unassigned. Please contact your administrator for reassignment.`,
-      }))
-    );
-  } catch (error) {
-    logger.error({ error, teamName, count: workerIds.length }, 'Failed to notify orphaned workers');
-  }
+): void {
+  if (workerIds.length === 0) return;
+  sendNotifications(
+    prisma,
+    companyId,
+    workerIds.map((id) => ({
+      personId: id,
+      type: 'TEAM_ALERT' as const,
+      title: 'Team Deactivated',
+      message: `Your team "${teamName}" has been deactivated. You are currently unassigned. Please contact your administrator for reassignment.`,
+    }))
+  );
 }
 
 function getRepository(companyId: string): TeamRepository {
@@ -90,34 +75,33 @@ export async function createTeam(c: Context): Promise<Response> {
 
   const repository = getRepository(companyId);
 
-  // Check if team name already exists
-  const existing = await repository.findByName(data.name);
-  if (existing) {
-    throw new AppError('DUPLICATE_TEAM', 'Team with this name already exists', 409);
-  }
-
-  // Validate leader (required)
+  // Validate leader (required) — check before queries
   if (!data.leaderId) {
     throw new AppError('LEADER_REQUIRED', 'Team leader is required', 400);
   }
 
-  const leader = await repository.findPersonById(data.leaderId);
+  // Run all independent validation queries in parallel (Pattern 1)
+  const [existing, leader, existingLeadTeam, supervisor] = await Promise.all([
+    repository.findByName(data.name),
+    repository.findPersonById(data.leaderId),
+    repository.findByLeaderId(data.leaderId),
+    data.supervisorId ? repository.findPersonById(data.supervisorId) : null,
+  ]);
+
+  // Validate results
+  if (existing) {
+    throw new AppError('DUPLICATE_TEAM', 'Team with this name already exists', 409);
+  }
   if (!leader) {
     throw new AppError('INVALID_LEADER', 'Leader not found or inactive', 400);
   }
   if (leader.role !== 'TEAM_LEAD') {
     throw new AppError('INVALID_LEADER_ROLE', 'Team leader must have TEAM_LEAD role', 400);
   }
-
-  // Check if leader already leads another team
-  const existingLeadTeam = await repository.findByLeaderId(data.leaderId);
   if (existingLeadTeam) {
     throw new AppError('LEADER_ALREADY_ASSIGNED', `This team lead is already assigned to team "${existingLeadTeam.name}". A team lead can only lead one team.`, 409);
   }
-
-  // Validate supervisor (optional)
   if (data.supervisorId) {
-    const supervisor = await repository.findPersonById(data.supervisorId);
     if (!supervisor) {
       throw new AppError('INVALID_SUPERVISOR', 'Supervisor not found or inactive', 400);
     }
@@ -174,8 +158,8 @@ export async function updateTeam(c: Context): Promise<Response> {
 
   const repository = getRepository(companyId);
 
-  // Check if team exists
-  const existing = await repository.findById(id);
+  // Check if team exists (slim — no members needed for validation)
+  const existing = await repository.findByIdSlim(id);
   if (!existing) {
     throw new AppError('NOT_FOUND', 'Team not found', 404);
   }
@@ -183,28 +167,36 @@ export async function updateTeam(c: Context): Promise<Response> {
   // Check if leader is changing
   const leaderChanged = data.leaderId !== undefined && data.leaderId !== existing.leader_id;
 
-  // Validate leader if changing (cannot remove leader, can only change)
+  // Run independent validations in parallel after existence check (Pattern 2)
+  const [leader, existingLeadTeam, supervisor, nameConflict] = await Promise.all([
+    data.leaderId !== undefined ? repository.findPersonById(data.leaderId) : null,
+    data.leaderId !== undefined && leaderChanged ? repository.findByLeaderId(data.leaderId, id) : null,
+    data.supervisorId !== undefined && data.supervisorId !== null
+      ? repository.findPersonById(data.supervisorId) : null,
+    data.name !== undefined && data.name !== existing.name
+      ? repository.findByName(data.name, id) : null,
+  ]);
+
+  // Validate name uniqueness
+  if (nameConflict) {
+    throw new AppError('DUPLICATE_TEAM', 'Team with this name already exists', 409);
+  }
+
+  // Validate leader if changing
   if (data.leaderId !== undefined) {
-    const leader = await repository.findPersonById(data.leaderId);
     if (!leader) {
       throw new AppError('INVALID_LEADER', 'Leader not found or inactive', 400);
     }
     if (leader.role !== 'TEAM_LEAD') {
       throw new AppError('INVALID_LEADER_ROLE', 'Team leader must have TEAM_LEAD role', 400);
     }
-
-    // Check if leader already leads another team (exclude current team)
-    if (leaderChanged) {
-      const existingLeadTeam = await repository.findByLeaderId(data.leaderId, id);
-      if (existingLeadTeam) {
-        throw new AppError('LEADER_ALREADY_ASSIGNED', `This team lead is already assigned to team "${existingLeadTeam.name}". A team lead can only lead one team.`, 409);
-      }
+    if (leaderChanged && existingLeadTeam) {
+      throw new AppError('LEADER_ALREADY_ASSIGNED', `This team lead is already assigned to team "${existingLeadTeam.name}". A team lead can only lead one team.`, 409);
     }
   }
 
   // Validate supervisor if changing (can be null to remove)
   if (data.supervisorId !== undefined && data.supervisorId !== null) {
-    const supervisor = await repository.findPersonById(data.supervisorId);
     if (!supervisor) {
       throw new AppError('INVALID_SUPERVISOR', 'Supervisor not found or inactive', 400);
     }
@@ -213,18 +205,40 @@ export async function updateTeam(c: Context): Promise<Response> {
     }
   }
 
+  // Reactivation guard: re-validate the existing leader hasn't been reassigned.
+  // Triggers when leader isn't changing (undefined OR same ID) — the regular
+  // validation above only checks conflicts when leaderChanged is true.
+  const isReactivation = data.isActive === true && !existing.is_active;
+  if (isReactivation && !leaderChanged) {
+    const [currentLeader, leaderConflict] = await Promise.all([
+      repository.findPersonById(existing.leader_id),
+      repository.findByLeaderId(existing.leader_id, id),
+    ]);
+    if (!currentLeader) {
+      throw new AppError('INVALID_LEADER', 'The assigned team leader is no longer active. Please assign a new leader before reactivating.', 400);
+    }
+    if (currentLeader.role !== 'TEAM_LEAD') {
+      throw new AppError('INVALID_LEADER_ROLE', 'The assigned team leader no longer has the TEAM_LEAD role. Please assign a new leader before reactivating.', 400);
+    }
+    if (leaderConflict) {
+      throw new AppError('LEADER_ALREADY_ASSIGNED', `The assigned team lead now leads "${leaderConflict.name}". Please assign a new leader before reactivating.`, 409);
+    }
+  }
+
   // Deactivation path: unassign members + apply all updates atomically
   let unassignedCount = 0;
   const isDeactivation = data.isActive === false && existing.is_active;
 
-  // Capture worker IDs before transaction (for orphan notifications)
+  // Capture member IDs before transaction (for transfer cleanup + notifications)
+  let allMemberIds: string[] = [];
   let orphanedWorkerIds: string[] = [];
   if (isDeactivation) {
     const members = await prisma.person.findMany({
-      where: { company_id: companyId, team_id: id, is_active: true, role: 'WORKER' },
-      select: { id: true },
+      where: { company_id: companyId, team_id: id, is_active: true },
+      select: { id: true, role: true },
     });
-    orphanedWorkerIds = members.map((m) => m.id);
+    allMemberIds = members.map((m) => m.id);
+    orphanedWorkerIds = members.filter((m) => m.role === 'WORKER').map((m) => m.id);
   }
 
   let result: Awaited<ReturnType<typeof repository.update>>;
@@ -244,16 +258,18 @@ export async function updateTeam(c: Context): Promise<Response> {
         data: { effective_team_id: null, effective_transfer_date: null, transfer_initiated_by: null },
       });
 
-      // Cancel pending transfers FROM this team (workers who were here, now unassigned).
-      // Without this, the transfer-processor would try to move teamless workers.
-      await tx.person.updateMany({
-        where: {
-          company_id: companyId,
-          team_id: null,
-          effective_team_id: { not: null },
-        },
-        data: { effective_team_id: null, effective_transfer_date: null, transfer_initiated_by: null },
-      });
+      // Cancel pending transfers FROM this team's now-unassigned members.
+      // Scoped to only the members who were just unassigned (not all teamless persons company-wide).
+      if (allMemberIds.length > 0) {
+        await tx.person.updateMany({
+          where: {
+            company_id: companyId,
+            id: { in: allMemberIds },
+            effective_team_id: { not: null },
+          },
+          data: { effective_team_id: null, effective_transfer_date: null, transfer_initiated_by: null },
+        });
+      }
 
       // Apply ALL update fields (including is_active + any other changes like name)
       return tx.team.update({

@@ -50,10 +50,21 @@ export async function getSupervisorDashboard(c: Context): Promise<Response> {
 
 export async function getTeamDashboard(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
+  const userId = c.get('userId') as string;
+  const userRole = c.get('userRole') as string;
   const teamId = c.req.param('id');
 
   if (!teamId) {
     throw new AppError('VALIDATION_ERROR', 'Team ID is required', 400);
+  }
+
+  // TEAM_LEAD and SUPERVISOR can only view their assigned team dashboards
+  // (ADMIN passes through — sees all teams)
+  if (userRole === 'TEAM_LEAD' || userRole === 'SUPERVISOR') {
+    const { teamIds } = await getTeamContext(companyId, userId, userRole, c.get('companyTimezone') as string);
+    if (!teamIds || !teamIds.includes(teamId)) {
+      throw new AppError('FORBIDDEN', 'You can only view your assigned team dashboards', 403);
+    }
   }
 
   const service = new DashboardService(companyId, c.get('companyTimezone') as string);

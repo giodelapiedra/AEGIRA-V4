@@ -1,15 +1,14 @@
-// Notification Service - Business Logic
-import { NotificationRepository, CreateNotificationData } from './notification.repository';
+// Notification Service - Business Logic + Fire-and-Forget Utilities
+import type { PrismaClient, Notification } from '@prisma/client';
+import { NotificationRepository, type CreateNotificationData } from './notification.repository';
 import { AppError } from '../../shared/errors';
-import type { Notification, NotificationType } from '@prisma/client';
+import { logger } from '../../config/logger';
 import type { PaginationParams, PaginatedResponse } from '../../types/api.types';
 
-interface CreateNotificationInput {
-  personId: string;
-  type: NotificationType;
-  title: string;
-  message: string;
-}
+// Re-export for convenience — external callers import from here, not the repository
+export type { CreateNotificationData } from './notification.repository';
+
+// ─── Service (used by notification controller for read-side operations) ────
 
 export class NotificationService {
   constructor(private readonly repository: NotificationRepository) {}
@@ -19,26 +18,6 @@ export class NotificationService {
     params: PaginationParams & { filter?: 'unread' | 'read' }
   ): Promise<PaginatedResponse<Notification>> {
     return this.repository.findByPerson(personId, params);
-  }
-
-  async create(input: CreateNotificationInput): Promise<Notification> {
-    return this.repository.create({
-      personId: input.personId,
-      type: input.type,
-      title: input.title,
-      message: input.message,
-    });
-  }
-
-  async createMany(notifications: CreateNotificationInput[]): Promise<number> {
-    return this.repository.createMany(
-      notifications.map((n) => ({
-        personId: n.personId,
-        type: n.type,
-        title: n.title,
-        message: n.message,
-      }))
-    );
   }
 
   async getUnreadCount(personId: string): Promise<number> {
@@ -52,16 +31,13 @@ export class NotificationService {
    * Throws NOT_FOUND if the notification doesn't exist or doesn't belong to the user.
    */
   async markAsRead(id: string, personId: string): Promise<Notification> {
-    // Single query: updateMany with ownership + read_at null guard
     const updated = await this.repository.markAsRead(id, personId);
 
     if (updated) return updated;
 
     // updateMany returned 0 rows — either not found, wrong owner, or already read.
-    // Distinguish between "already read" and "not found / not yours".
     const existing = await this.repository.findById(id);
     if (existing && existing.person_id === personId) {
-      // Already read — return as-is (idempotent)
       return existing;
     }
 
@@ -71,41 +47,46 @@ export class NotificationService {
   async markAllAsRead(personId: string): Promise<number> {
     return this.repository.markAllAsRead(personId);
   }
+}
 
-  // Helper methods for common notification types
-  async sendCheckInReminder(personId: string): Promise<Notification> {
-    return this.create({
-      personId,
-      type: 'CHECK_IN_REMINDER',
-      title: 'Check-in Reminder',
-      message: "Don't forget to complete your daily check-in!",
-    });
-  }
+// ─── Fire-and-Forget Utilities (used by external modules) ──────────────
+//
+// Follows the same pattern as logAudit() in shared/audit.ts:
+// errors are logged but never thrown — safe to call without await.
 
-  async sendMissedCheckInAlert(personId: string, date: string): Promise<Notification> {
-    return this.create({
-      personId,
-      type: 'MISSED_CHECK_IN',
-      title: 'Missed Check-in',
-      message: `You missed your check-in for ${date}. Please contact your team lead if needed.`,
-    });
-  }
+/**
+ * Fire-and-forget: create a single notification.
+ * Errors are logged but never thrown — safe to call without await.
+ */
+export function sendNotification(
+  prisma: PrismaClient,
+  companyId: string,
+  data: CreateNotificationData
+): void {
+  const repo = new NotificationRepository(prisma, companyId);
+  repo.create(data).catch((error) => {
+    logger.error(
+      { error, companyId, personId: data.personId, type: data.type },
+      'Failed to send notification'
+    );
+  });
+}
 
-  async sendTeamAlert(personId: string, title: string, message: string): Promise<Notification> {
-    return this.create({
-      personId,
-      type: 'TEAM_ALERT',
-      title,
-      message,
-    });
-  }
-
-  async sendSystemNotification(personId: string, title: string, message: string): Promise<Notification> {
-    return this.create({
-      personId,
-      type: 'SYSTEM',
-      title,
-      message,
-    });
-  }
+/**
+ * Fire-and-forget: create multiple notifications in batch.
+ * Errors are logged but never thrown — safe to call without await.
+ */
+export function sendNotifications(
+  prisma: PrismaClient,
+  companyId: string,
+  notifications: CreateNotificationData[]
+): void {
+  if (notifications.length === 0) return;
+  const repo = new NotificationRepository(prisma, companyId);
+  repo.createMany(notifications).catch((error) => {
+    logger.error(
+      { error, companyId, count: notifications.length },
+      'Failed to send notifications'
+    );
+  });
 }
