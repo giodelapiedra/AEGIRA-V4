@@ -4,7 +4,7 @@ import { ENDPOINTS } from '@/lib/api/endpoints';
 import { STALE_TIMES } from '@/config/query.config';
 import type { IncidentListResponse, IncidentStatus } from '@/types/incident.types';
 
-export type { Incident, IncidentStatus, IncidentListResponse } from '@/types/incident.types';
+export type { Incident, IncidentListItem, IncidentStatus, IncidentListResponse } from '@/types/incident.types';
 
 export function useMyIncidents(page = 1, limit = 20, status?: IncidentStatus) {
   return useQuery({

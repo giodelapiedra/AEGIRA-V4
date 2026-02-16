@@ -14,9 +14,9 @@ import { formatDate } from '@/lib/utils/date.utils';
 import { formatIncidentNumber, formatIncidentType } from '@/lib/utils/format.utils';
 import { ROUTES } from '@/config/routes.config';
 import { buildRoute } from '@/lib/utils/route.utils';
-import type { Incident, IncidentStatus } from '@/types/incident.types';
+import type { IncidentListItem, IncidentStatus } from '@/types/incident.types';
 
-const columns: ColumnDef<Incident>[] = [
+const columns: ColumnDef<IncidentListItem>[] = [
   {
     accessorKey: 'incidentNumber',
     header: 'Incident #',

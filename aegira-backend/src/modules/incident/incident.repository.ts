@@ -42,11 +42,50 @@ export type IncidentWithRelations = Incident & {
   incident_case: { id: string; case_number: number; status: string; notes: string | null } | null;
 };
 
+/** Lean type for list views — only fields the table needs */
+export interface IncidentListItem {
+  id: string;
+  incident_number: number;
+  incident_type: IncidentType;
+  severity: IncidentSeverity;
+  title: string;
+  status: IncidentStatus;
+  created_at: Date;
+  reporter: {
+    first_name: string;
+    last_name: string;
+    team: { name: string } | null;
+  };
+  reviewer: { first_name: string; last_name: string } | null;
+}
+
 export class IncidentRepository extends BaseRepository {
   constructor(prisma: PrismaClient, companyId: string) {
     super(prisma, companyId);
   }
 
+  /** Lean select for list views — only fields the table needs */
+  private readonly selectForList = {
+    id: true,
+    incident_number: true,
+    incident_type: true,
+    severity: true,
+    title: true,
+    status: true,
+    created_at: true,
+    reporter: {
+      select: {
+        first_name: true,
+        last_name: true,
+        team: { select: { name: true } },
+      },
+    },
+    reviewer: {
+      select: { first_name: true, last_name: true },
+    },
+  } as const;
+
+  /** Full select for detail views — includes all fields + case */
   private readonly selectWithRelations = {
     id: true,
     company_id: true,
@@ -90,10 +129,8 @@ export class IncidentRepository extends BaseRepository {
     }) as Promise<IncidentWithRelations | null>;
   }
 
-  async findByFilters(
-    filters: IncidentFilters
-  ): Promise<PaginatedResponse<IncidentWithRelations>> {
-    const where: Prisma.IncidentWhereInput = {
+  private buildFiltersWhere(filters: IncidentFilters): Prisma.IncidentWhereInput {
+    return {
       company_id: this.companyId,
       ...(filters.status && { status: filters.status }),
       ...(filters.severity && { severity: filters.severity }),
@@ -113,11 +150,33 @@ export class IncidentRepository extends BaseRepository {
         ],
       }),
     };
+  }
+
+  /**
+   * Lean list query — returns only fields the table needs.
+   * When `total` is provided (e.g. derived from statusCounts), skips the COUNT query.
+   */
+  async findForList(
+    filters: IncidentFilters,
+    knownTotal?: number
+  ): Promise<PaginatedResponse<IncidentListItem>> {
+    const where = this.buildFiltersWhere(filters);
+
+    if (knownTotal !== undefined) {
+      const items = await this.prisma.incident.findMany({
+        where,
+        select: this.selectForList,
+        orderBy: { created_at: 'desc' },
+        skip: calculateSkip(filters),
+        take: filters.limit,
+      });
+      return paginate(items as IncidentListItem[], knownTotal, filters);
+    }
 
     const [items, total] = await Promise.all([
       this.prisma.incident.findMany({
         where,
-        select: this.selectWithRelations,
+        select: this.selectForList,
         orderBy: { created_at: 'desc' },
         skip: calculateSkip(filters),
         take: filters.limit,
@@ -125,7 +184,7 @@ export class IncidentRepository extends BaseRepository {
       this.prisma.incident.count({ where }),
     ]);
 
-    return paginate(items as IncidentWithRelations[], total, filters);
+    return paginate(items as IncidentListItem[], total, filters);
   }
 
   async countByStatus(reporterId?: string): Promise<Record<string, number>> {

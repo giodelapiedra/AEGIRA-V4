@@ -18,6 +18,21 @@ export type RejectionReason =
 
 export type Gender = 'MALE' | 'FEMALE';
 
+/** Lean type for list/table views — only fields returned by list endpoints */
+export interface IncidentListItem {
+  id: string;
+  incidentNumber: number;
+  incidentType: IncidentType;
+  severity: IncidentSeverity;
+  title: string;
+  status: IncidentStatus;
+  reporterName: string;
+  teamName: string;
+  reviewerName: string | null;
+  createdAt: string;
+}
+
+/** Full type for detail views — all fields returned by GET /incidents/:id */
 export interface Incident {
   id: string;
   incidentNumber: number;
@@ -102,7 +117,7 @@ export interface IncidentEvent {
 }
 
 export interface IncidentListResponse {
-  items: Incident[];
+  items: IncidentListItem[];
   pagination: {
     page: number;
     limit: number;

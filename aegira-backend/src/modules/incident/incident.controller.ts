@@ -1,5 +1,5 @@
 import type { Context } from 'hono';
-import { IncidentRepository, type IncidentWithRelations } from './incident.repository';
+import { IncidentRepository, type IncidentWithRelations, type IncidentListItem } from './incident.repository';
 import { IncidentService } from './incident.service';
 import type {
   CreateIncidentInput,
@@ -31,6 +31,25 @@ function calculateAge(dateOfBirth: Date | null, timezone: string): number | null
   return age;
 }
 
+/** Lean mapper for list views — only fields the table renders */
+function mapIncidentToListItem(incident: IncidentListItem): Record<string, unknown> {
+  return {
+    id: incident.id,
+    incidentNumber: incident.incident_number,
+    incidentType: incident.incident_type,
+    severity: incident.severity,
+    title: incident.title,
+    status: incident.status,
+    reporterName: `${incident.reporter.first_name} ${incident.reporter.last_name}`,
+    teamName: incident.reporter.team?.name ?? 'Unassigned',
+    reviewerName: incident.reviewer
+      ? `${incident.reviewer.first_name} ${incident.reviewer.last_name}`
+      : null,
+    createdAt: incident.created_at.toISOString(),
+  };
+}
+
+/** Full mapper for detail views — includes all fields + computed values */
 function mapIncidentToResponse(incident: IncidentWithRelations, timezone: string): Record<string, unknown> {
   return {
     id: incident.id,
@@ -88,20 +107,17 @@ export async function createIncident(c: Context): Promise<Response> {
 export async function getMyIncidents(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const userId = c.get('userId') as string;
-  const timezone = c.get('companyTimezone') as string;
   const { page, limit } = parsePagination(c.req.query('page'), c.req.query('limit'));
   const { status } = c.req.valid('query' as never) as GetMyIncidentsQuery;
 
   const repository = getRepository(companyId);
 
   const [result, statusCounts] = await Promise.all([
-    repository.findByFilters({ page, limit, status, reporterId: userId }),
+    repository.findForList({ page, limit, status, reporterId: userId }),
     repository.countByStatus(userId),
   ]);
 
-  const items = result.items.map((incident) =>
-    mapIncidentToResponse(incident, timezone)
-  );
+  const items = result.items.map(mapIncidentToListItem);
 
   return c.json({
     success: true,
@@ -119,20 +135,17 @@ export async function getMyIncidents(c: Context): Promise<Response> {
  */
 export async function getIncidents(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
-  const timezone = c.get('companyTimezone') as string;
   const { page, limit } = parsePagination(c.req.query('page'), c.req.query('limit'));
   const { status, severity, type, search } = c.req.valid('query' as never) as GetIncidentsQuery;
 
   const repository = getRepository(companyId);
 
   const [result, statusCounts] = await Promise.all([
-    repository.findByFilters({ page, limit, status, severity, type, search }),
+    repository.findForList({ page, limit, status, severity, type, search }),
     repository.countByStatus(),
   ]);
 
-  const items = result.items.map((incident) =>
-    mapIncidentToResponse(incident, timezone)
-  );
+  const items = result.items.map(mapIncidentToListItem);
 
   return c.json({
     success: true,

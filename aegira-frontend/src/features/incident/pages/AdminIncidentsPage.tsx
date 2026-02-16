@@ -34,13 +34,13 @@ import { buildRoute } from '@/lib/utils/route.utils';
 import { formatDate } from '@/lib/utils/date.utils';
 import { formatIncidentNumber, formatIncidentType } from '@/lib/utils/format.utils';
 import type {
-  Incident,
+  IncidentListItem,
   IncidentStatus,
   IncidentSeverity,
   IncidentType,
 } from '@/types/incident.types';
 
-const columns: ColumnDef<Incident>[] = [
+const columns: ColumnDef<IncidentListItem>[] = [
   {
     accessorKey: 'incidentNumber',
     header: 'Incident #',
@@ -102,7 +102,7 @@ const columns: ColumnDef<Incident>[] = [
   },
 ];
 
-function RowActions({ incident }: { incident: Incident }) {
+function RowActions({ incident }: { incident: IncidentListItem }) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const isWhs = user?.role === 'WHS';
