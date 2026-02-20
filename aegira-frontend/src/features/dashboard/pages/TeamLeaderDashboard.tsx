@@ -68,7 +68,7 @@ const columns: ColumnDef<TeamMemberStatus>[] = [
       <div className="flex flex-wrap gap-1">
         {getStatusBadge(row.original)}
         {row.original.transferringOut && (
-          <Badge variant="outline" className="gap-1 text-amber-600 border-amber-300">
+          <Badge variant="amber" className="gap-1">
             <ArrowRightLeft className="h-3 w-3" />
             {row.original.transferringToTeam ? `To ${row.original.transferringToTeam}` : 'Transferring'}
           </Badge>

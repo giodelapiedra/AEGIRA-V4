@@ -13,37 +13,6 @@ export interface PaginatedResponse<T> {
   };
 }
 
-// Standard pagination params for requests
-export interface PaginationParams {
-  page?: number;
-  pageSize?: number;
-}
-
-// Standard sort params
-export interface SortParams {
-  sortBy?: string;
-  sortOrder?: 'asc' | 'desc';
-}
-
-// Standard API error response
-export interface ApiError {
-  code: string;
-  message: string;
-  details?: Record<string, unknown>;
-}
-
-// Standard API success response
-export interface ApiResponse<T> {
-  success: true;
-  data: T;
-}
-
-// Standard API error response
-export interface ApiErrorResponse {
-  success: false;
-  error: ApiError;
-}
-
 /**
  * Notification Types - Must match backend Notification model
  */
@@ -71,11 +40,3 @@ export interface NotificationUnreadCount {
   count: number;
 }
 
-/**
- * Base entity with timestamps
- */
-export interface BaseEntity {
-  id: string;
-  createdAt: string;
-  updatedAt: string;
-}

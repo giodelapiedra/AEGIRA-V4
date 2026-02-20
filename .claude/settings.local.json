@@ -81,7 +81,8 @@
       "Bash(npm ls:*)",
       "Bash(del \"D:\\\\AEGIRA V5\\\\aegira-frontend\\\\src\\\\features\\\\admin\\\\pages\\\\AdminSchedulesPage.tsx\")",
       "Bash(git -C \"D:/AEGIRA V5\" log --oneline -10)",
-      "WebSearch"
+      "WebSearch",
+      "WebFetch(domain:perplexity.ai)"
     ]
   }
 }

@@ -1,4 +1,4 @@
-import { ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PieChart as PieIcon } from 'lucide-react';
@@ -45,10 +45,19 @@ export function RejectionAnalysisChart({ data }: RejectionAnalysisChartProps) {
                     stroke="hsl(var(--card))"
                     strokeWidth={2}
                   >
-                    {data.map((_, i) => (
-                      <Cell key={i} fill={REJECTION_COLORS[i % REJECTION_COLORS.length]} />
+                    {data.map((entry) => (
+                      <Cell key={entry.reason} fill={REJECTION_COLORS[entry.reason] ?? '#cbd5e1'} />
                     ))}
                   </Pie>
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--card))',
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px',
+                      fontSize: 12,
+                    }}
+                    formatter={(value) => [value, 'Count']}
+                  />
                 </PieChart>
               </ResponsiveContainer>
               {/* Center label */}
@@ -60,12 +69,12 @@ export function RejectionAnalysisChart({ data }: RejectionAnalysisChartProps) {
 
             {/* Legend list */}
             <div className="flex-1 space-y-2.5">
-              {data.map((entry, i) => (
+              {data.map((entry) => (
                 <div key={entry.reason} className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2 min-w-0">
                     <div
                       className="h-3 w-3 rounded-full shrink-0"
-                      style={{ backgroundColor: REJECTION_COLORS[i % REJECTION_COLORS.length] }}
+                      style={{ backgroundColor: REJECTION_COLORS[entry.reason] ?? '#cbd5e1' }}
                     />
                     <span className="text-sm text-muted-foreground truncate">{entry.label}</span>
                   </div>

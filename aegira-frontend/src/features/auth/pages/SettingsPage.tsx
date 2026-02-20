@@ -2,7 +2,8 @@ import { useState, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Shield, Mail, Building2, Clock, User as UserIcon, CheckCircle, Cake, Pencil, Camera, Loader2 } from 'lucide-react';
+import { DateTime } from 'luxon';
+import { Shield, Mail, Building2, Clock, User as UserIcon, CheckCircle, Cake, Pencil, Camera, Loader2, Phone, Heart } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -36,19 +37,22 @@ type ChangePasswordForm = z.infer<typeof changePasswordSchema>;
 const editProfileSchema = z.object({
   firstName: z.string().min(1, 'First name is required').max(100).trim(),
   lastName: z.string().min(1, 'Last name is required').max(100).trim(),
-  gender: z.string(),
-  dateOfBirth: z.string(),
+  gender: z.string().min(1, 'Gender is required'),
+  dateOfBirth: z.string().min(1, 'Date of birth is required'),
+  contactNumber: z.string().min(1, 'Contact number is required').max(20).trim(),
+  emergencyContactName: z.string().min(1, 'Emergency contact name is required').max(100).trim(),
+  emergencyContactPhone: z.string().min(1, 'Emergency contact phone is required').max(20).trim(),
+  emergencyContactRelationship: z.string().min(1, 'Relationship is required').max(50).trim(),
 });
 
 type EditProfileForm = z.infer<typeof editProfileSchema>;
 
 // --- Helpers ---
-function calculateAge(dateOfBirth: string): number {
-  const dob = new Date(dateOfBirth);
-  const today = new Date();
-  let age = today.getFullYear() - dob.getFullYear();
-  const monthDiff = today.getMonth() - dob.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+function calculateAge(dateOfBirth: string, timezone: string): number {
+  const dob = DateTime.fromISO(dateOfBirth, { zone: timezone });
+  const today = DateTime.now().setZone(timezone);
+  let age = today.year - dob.year;
+  if (today.month < dob.month || (today.month === dob.month && today.day < dob.day)) {
     age--;
   }
   return age;
@@ -113,6 +117,10 @@ export function SettingsPage() {
       lastName: user?.lastName || '',
       gender: user?.gender || '',
       dateOfBirth: user?.dateOfBirth || '',
+      contactNumber: user?.contactNumber || '',
+      emergencyContactName: user?.emergencyContactName || '',
+      emergencyContactPhone: user?.emergencyContactPhone || '',
+      emergencyContactRelationship: user?.emergencyContactRelationship || '',
     },
   });
 
@@ -138,15 +146,20 @@ export function SettingsPage() {
   const onProfileSubmit = async (data: EditProfileForm) => {
     if (!user) return;
 
-    const gender = (data.gender as 'MALE' | 'FEMALE') || null;
-    const dateOfBirth = data.dateOfBirth || null;
+    // All fields are required by the form schema — cast gender to the union type
+    const gender = data.gender as 'MALE' | 'FEMALE';
+    const { dateOfBirth, contactNumber, emergencyContactName, emergencyContactPhone, emergencyContactRelationship } = data;
 
     // Only send fields that actually changed
     const updates = {
       ...(data.firstName !== user.firstName && { firstName: data.firstName }),
       ...(data.lastName !== user.lastName && { lastName: data.lastName }),
-      ...(gender !== (user.gender || null) && { gender }),
-      ...(dateOfBirth !== (user.dateOfBirth || null) && { dateOfBirth }),
+      ...(gender !== user.gender && { gender }),
+      ...(dateOfBirth !== (user.dateOfBirth || '') && { dateOfBirth }),
+      ...(contactNumber !== (user.contactNumber || '') && { contactNumber }),
+      ...(emergencyContactName !== (user.emergencyContactName || '') && { emergencyContactName }),
+      ...(emergencyContactPhone !== (user.emergencyContactPhone || '') && { emergencyContactPhone }),
+      ...(emergencyContactRelationship !== (user.emergencyContactRelationship || '') && { emergencyContactRelationship }),
     };
 
     if (Object.keys(updates).length === 0) {
@@ -157,14 +170,8 @@ export function SettingsPage() {
 
     try {
       await updateProfileMutation.mutateAsync(updates);
-      // Update the auth store with new profile data
-      setAuth({
-        ...user,
-        firstName: data.firstName,
-        lastName: data.lastName,
-        gender,
-        dateOfBirth,
-      });
+      // Update the auth store with new profile data (all fields required by form)
+      setAuth({ ...user, firstName: data.firstName, lastName: data.lastName, gender, dateOfBirth, contactNumber, emergencyContactName, emergencyContactPhone, emergencyContactRelationship });
       toast({ title: 'Profile updated', description: 'Your profile has been updated successfully.' });
       setIsEditing(false);
     } catch (error) {
@@ -182,6 +189,10 @@ export function SettingsPage() {
       lastName: user?.lastName || '',
       gender: user?.gender || '',
       dateOfBirth: user?.dateOfBirth || '',
+      contactNumber: user?.contactNumber || '',
+      emergencyContactName: user?.emergencyContactName || '',
+      emergencyContactPhone: user?.emergencyContactPhone || '',
+      emergencyContactRelationship: user?.emergencyContactRelationship || '',
     });
     setIsEditing(true);
   };
@@ -233,7 +244,7 @@ export function SettingsPage() {
     : '';
 
   const genderDisplay = user?.gender === 'MALE' ? 'Male' : user?.gender === 'FEMALE' ? 'Female' : 'Not set';
-  const ageDisplay = user?.dateOfBirth ? `${calculateAge(user.dateOfBirth)} years old` : 'Not set';
+  const ageDisplay = user?.dateOfBirth ? `${calculateAge(user.dateOfBirth, user.companyTimezone || 'Asia/Manila')} years old` : 'Not set';
 
   return (
     <div className="space-y-6">
@@ -337,6 +348,36 @@ export function SettingsPage() {
 
                 <div className="py-4">
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+                    Contact Information
+                  </p>
+                  <div className="flex flex-wrap gap-x-10 gap-y-4">
+                    <InfoItem
+                      icon={<Phone className="h-4 w-4" />}
+                      label="Contact Number"
+                      value={user?.contactNumber || 'Not set'}
+                    />
+                    <InfoItem
+                      icon={<UserIcon className="h-4 w-4" />}
+                      label="Emergency Contact"
+                      value={user?.emergencyContactName || 'Not set'}
+                    />
+                    <InfoItem
+                      icon={<Phone className="h-4 w-4" />}
+                      label="Emergency Phone"
+                      value={user?.emergencyContactPhone || 'Not set'}
+                    />
+                    <InfoItem
+                      icon={<Heart className="h-4 w-4" />}
+                      label="Relationship"
+                      value={user?.emergencyContactRelationship || 'Not set'}
+                    />
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="py-4">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
                     Company
                   </p>
                   <div className="flex flex-wrap gap-x-10 gap-y-4">
@@ -364,7 +405,7 @@ export function SettingsPage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="firstName">First Name</Label>
+                    <Label htmlFor="firstName">First Name <span className="text-destructive">*</span></Label>
                     <Input
                       id="firstName"
                       placeholder="Enter first name"
@@ -375,7 +416,7 @@ export function SettingsPage() {
                     )}
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="lastName">Last Name</Label>
+                    <Label htmlFor="lastName">Last Name <span className="text-destructive">*</span></Label>
                     <Input
                       id="lastName"
                       placeholder="Enter last name"
@@ -389,10 +430,10 @@ export function SettingsPage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Gender</Label>
+                    <Label>Gender <span className="text-destructive">*</span></Label>
                     <Select
                       value={selectedGender}
-                      onValueChange={(value) => setProfileValue('gender', value)}
+                      onValueChange={(value) => setProfileValue('gender', value, { shouldValidate: true })}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Select gender" />
@@ -402,14 +443,75 @@ export function SettingsPage() {
                         <SelectItem value="FEMALE">Female</SelectItem>
                       </SelectContent>
                     </Select>
+                    {profileErrors.gender && (
+                      <p className="text-sm text-destructive">{profileErrors.gender.message}</p>
+                    )}
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="dateOfBirth">Date of Birth</Label>
+                    <Label htmlFor="dateOfBirth">Date of Birth <span className="text-destructive">*</span></Label>
                     <Input
                       id="dateOfBirth"
                       type="date"
                       {...registerProfile('dateOfBirth')}
                     />
+                    {profileErrors.dateOfBirth && (
+                      <p className="text-sm text-destructive">{profileErrors.dateOfBirth.message}</p>
+                    )}
+                  </div>
+                </div>
+
+                <Separator className="my-2" />
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Contact Information
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="contactNumber">Contact Number <span className="text-destructive">*</span></Label>
+                    <Input
+                      id="contactNumber"
+                      placeholder="e.g. 09171234567"
+                      {...registerProfile('contactNumber')}
+                    />
+                    {profileErrors.contactNumber && (
+                      <p className="text-sm text-destructive">{profileErrors.contactNumber.message}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="emergencyContactName">Emergency Contact Name <span className="text-destructive">*</span></Label>
+                    <Input
+                      id="emergencyContactName"
+                      placeholder="e.g. Juan Dela Cruz"
+                      {...registerProfile('emergencyContactName')}
+                    />
+                    {profileErrors.emergencyContactName && (
+                      <p className="text-sm text-destructive">{profileErrors.emergencyContactName.message}</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="emergencyContactPhone">Emergency Contact Phone <span className="text-destructive">*</span></Label>
+                    <Input
+                      id="emergencyContactPhone"
+                      placeholder="e.g. 09181234567"
+                      {...registerProfile('emergencyContactPhone')}
+                    />
+                    {profileErrors.emergencyContactPhone && (
+                      <p className="text-sm text-destructive">{profileErrors.emergencyContactPhone.message}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="emergencyContactRelationship">Relationship <span className="text-destructive">*</span></Label>
+                    <Input
+                      id="emergencyContactRelationship"
+                      placeholder="e.g. Spouse, Parent, Sibling"
+                      {...registerProfile('emergencyContactRelationship')}
+                    />
+                    {profileErrors.emergencyContactRelationship && (
+                      <p className="text-sm text-destructive">{profileErrors.emergencyContactRelationship.message}</p>
+                    )}
                   </div>
                 </div>
 

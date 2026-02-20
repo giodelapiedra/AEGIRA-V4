@@ -9,8 +9,7 @@ import type {
 } from './incident.validator';
 import { prisma } from '../../config/database';
 import { AppError } from '../../shared/errors';
-import { parsePagination } from '../../shared/utils';
-import { DateTime } from 'luxon';
+import { parsePagination, calculateAge } from '../../shared/utils';
 
 function getRepository(companyId: string): IncidentRepository {
   return new IncidentRepository(prisma, companyId);
@@ -20,19 +19,48 @@ function getService(timezone: string): IncidentService {
   return new IncidentService(prisma, timezone);
 }
 
-function calculateAge(dateOfBirth: Date | null, timezone: string): number | null {
-  if (!dateOfBirth) return null;
-  const now = DateTime.now().setZone(timezone);
-  let age = now.year - dateOfBirth.getUTCFullYear();
-  const monthDiff = now.month - (dateOfBirth.getUTCMonth() + 1);
-  if (monthDiff < 0 || (monthDiff === 0 && now.day < dateOfBirth.getUTCDate())) {
-    age--;
-  }
-  return age;
+interface IncidentListItemResponse {
+  id: string;
+  incidentNumber: number;
+  incidentType: string;
+  severity: string;
+  title: string;
+  status: string;
+  reporterName: string;
+  teamName: string;
+  reviewerName: string | null;
+  createdAt: string;
+}
+
+interface IncidentDetailResponse {
+  id: string;
+  incidentNumber: number;
+  reporterId: string;
+  reporterName: string;
+  reporterEmail: string;
+  reporterGender: string | null;
+  reporterAge: number | null;
+  teamName: string;
+  incidentType: string;
+  severity: string;
+  title: string;
+  location: string | null;
+  description: string;
+  status: string;
+  reviewedBy: string | null;
+  reviewerName: string | null;
+  reviewedAt: string | null;
+  rejectionReason: string | null;
+  rejectionExplanation: string | null;
+  caseId: string | null;
+  caseNumber: number | null;
+  caseStatus: string | null;
+  caseNotes: string | null;
+  createdAt: string;
 }
 
 /** Lean mapper for list views — only fields the table renders */
-function mapIncidentToListItem(incident: IncidentListItem): Record<string, unknown> {
+function mapIncidentToListItem(incident: IncidentListItem): IncidentListItemResponse {
   return {
     id: incident.id,
     incidentNumber: incident.incident_number,
@@ -50,7 +78,7 @@ function mapIncidentToListItem(incident: IncidentListItem): Record<string, unkno
 }
 
 /** Full mapper for detail views — includes all fields + computed values */
-function mapIncidentToResponse(incident: IncidentWithRelations, timezone: string): Record<string, unknown> {
+function mapIncidentToResponse(incident: IncidentWithRelations, timezone: string): IncidentDetailResponse {
   return {
     id: incident.id,
     incidentNumber: incident.incident_number,
@@ -114,7 +142,7 @@ export async function getMyIncidents(c: Context): Promise<Response> {
 
   const [result, statusCounts] = await Promise.all([
     repository.findForList({ page, limit, status, reporterId: userId }),
-    repository.countByStatus(userId),
+    repository.countByStatus({ reporterId: userId }),
   ]);
 
   const items = result.items.map(mapIncidentToListItem);
@@ -142,7 +170,7 @@ export async function getIncidents(c: Context): Promise<Response> {
 
   const [result, statusCounts] = await Promise.all([
     repository.findForList({ page, limit, status, severity, type, search }),
-    repository.countByStatus(),
+    repository.countByStatus({ severity, type, search }),
   ]);
 
   const items = result.items.map(mapIncidentToListItem);
@@ -213,14 +241,7 @@ export async function getIncidentTimeline(c: Context): Promise<Response> {
 
   const events = await repository.getTimeline(id);
 
-  const mappedEvents = (events as Array<{
-    id: string;
-    event_type: string;
-    person_id: string | null;
-    person: { id: string; first_name: string; last_name: string } | null;
-    payload: unknown;
-    created_at: Date;
-  }>).map((event) => ({
+  const mappedEvents = events.map((event) => ({
     id: event.id,
     eventType: event.event_type,
     personId: event.person_id,
@@ -236,7 +257,7 @@ export async function getIncidentTimeline(c: Context): Promise<Response> {
 
 /**
  * PATCH /api/v1/incidents/:id/approve
- * Approve an incident and create a case (WHS/ADMIN only).
+ * Approve an incident and create a case (WHS only).
  */
 export async function approveIncident(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
@@ -255,7 +276,7 @@ export async function approveIncident(c: Context): Promise<Response> {
 
 /**
  * PATCH /api/v1/incidents/:id/reject
- * Reject an incident with reason and explanation (WHS/ADMIN only).
+ * Reject an incident with reason and explanation (WHS only).
  */
 export async function rejectIncident(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;

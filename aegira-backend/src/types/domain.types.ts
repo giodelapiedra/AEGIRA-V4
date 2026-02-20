@@ -2,14 +2,11 @@
 // These extend/re-export Prisma types with additional business logic types
 
 import type {
-  Role,
   ReadinessLevel,
-  EventType,
-  NotificationType
 } from '@prisma/client';
 
-// Re-export Prisma enums
-export { Role, ReadinessLevel, EventType, NotificationType };
+// Re-export Prisma enums used by other modules
+export { ReadinessLevel };
 
 // Check-in input data (from user)
 export interface CheckInInput {

@@ -1,24 +1,16 @@
 import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils/cn';
+import { SEMANTIC_STATUS } from '@/lib/constants';
 import type { CaseStatus } from '@/types/incident.types';
+import type { BadgeProps } from '@/components/ui/badge';
 
-const STATUS_CONFIG: Record<CaseStatus, { label: string; className: string }> = {
-  OPEN: {
-    label: 'Open',
-    className: 'bg-blue-100 text-blue-800 border-blue-200',
-  },
-  INVESTIGATING: {
-    label: 'Investigating',
-    className: 'bg-purple-100 text-purple-800 border-purple-200',
-  },
-  RESOLVED: {
-    label: 'Resolved',
-    className: 'bg-green-100 text-green-800 border-green-200',
-  },
-  CLOSED: {
-    label: 'Closed',
-    className: 'bg-slate-100 text-slate-700 border-slate-200',
-  },
+const STATUS_CONFIG: Record<
+  CaseStatus,
+  { label: string; variant: BadgeProps['variant'] }
+> = {
+  OPEN: SEMANTIC_STATUS.CASE_STATUS.OPEN,
+  INVESTIGATING: SEMANTIC_STATUS.CASE_STATUS.INVESTIGATING,
+  RESOLVED: SEMANTIC_STATUS.CASE_STATUS.RESOLVED,
+  CLOSED: SEMANTIC_STATUS.CASE_STATUS.CLOSED,
 };
 
 interface CaseStatusBadgeProps {
@@ -27,9 +19,5 @@ interface CaseStatusBadgeProps {
 
 export function CaseStatusBadge({ status }: CaseStatusBadgeProps) {
   const config = STATUS_CONFIG[status];
-  return (
-    <Badge variant="outline" className={cn(config.className)}>
-      {config.label}
-    </Badge>
-  );
+  return <Badge variant={config.variant}>{config.label}</Badge>;
 }

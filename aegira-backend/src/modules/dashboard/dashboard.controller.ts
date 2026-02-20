@@ -93,8 +93,10 @@ export async function getWhsAnalytics(c: Context): Promise<Response> {
   }
   const period = raw as (typeof validPeriods)[number];
 
+  const teamId = c.req.query('teamId') || undefined;
+
   const service = new WhsAnalyticsService(companyId, c.get('companyTimezone') as string);
-  const result = await service.getAnalytics(period);
+  const result = await service.getAnalytics(period, { teamId });
 
   return c.json({ success: true, data: result });
 }

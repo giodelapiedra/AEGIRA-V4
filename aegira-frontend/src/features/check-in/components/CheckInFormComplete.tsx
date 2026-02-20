@@ -135,9 +135,7 @@ export function CheckInFormComplete() {
     if (currentStep !== STEPS.length - 1) return;
     try {
       const result = await submitMutation.mutateAsync(data);
-      // Backend returns raw Prisma format (snake_case) — access readiness_score directly
-      const raw = result as unknown as Record<string, unknown>;
-      const score = raw.readiness_score ?? (result.readinessResult?.score);
+      const score = result.readinessResult?.score;
       toast({
         title: 'Check-in Submitted!',
         description: score != null ? `Your readiness score: ${score}%` : 'Your check-in has been recorded.',

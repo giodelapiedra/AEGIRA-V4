@@ -39,14 +39,14 @@ export const ROUTES = {
   ADMIN_WORKERS_EDIT: '/admin/workers/:workerId/edit',
   ADMIN_HOLIDAYS: '/admin/holidays',
   ADMIN_SETTINGS: '/admin/settings',
-  ADMIN_INCIDENTS: '/admin/incidents',
-  ADMIN_INCIDENT_DETAIL: '/admin/incidents/:id',
-  ADMIN_CASES: '/admin/cases',
-  ADMIN_CASE_DETAIL: '/admin/cases/:id',
   ADMIN_AUDIT_LOGS: '/admin/audit-logs',
 
   // WHS routes
   WHS_WORKERS: '/whs/workers',
+  WHS_INCIDENTS: '/whs/incidents',
+  WHS_INCIDENT_DETAIL: '/whs/incidents/:id',
+  WHS_CASES: '/whs/cases',
+  WHS_CASE_DETAIL: '/whs/cases/:id',
   WHS_ANALYTICS: '/whs-analytics',
 
   // Person management (admin)

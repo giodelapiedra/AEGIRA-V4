@@ -10,6 +10,7 @@ import { ReadinessIndicator } from '../components/ReadinessIndicator';
 import { useTodayCheckIn } from '../hooks/useTodayCheckIn';
 import { useCheckInStatus } from '../hooks/useCheckInStatus';
 import { ROUTES } from '@/config/routes.config';
+import { SEMANTIC_STATUS, SEMANTIC_SURFACE } from '@/lib/constants';
 import { formatDateTime } from '@/lib/utils/date.utils';
 import { cn } from '@/lib/utils/cn';
 import { formatTime12h, formatScheduleWindow } from '@/lib/utils/format.utils';
@@ -114,37 +115,39 @@ export function CheckInPage() {
                 <div>
                   <h4 className="font-medium mb-3">Readiness Factors</h4>
                   <div className="space-y-2">
-                    {readinessResult.factors.map((factor) => (
-                      <div
-                        key={factor.name}
-                        className="flex items-center justify-between text-sm"
-                      >
-                        <span>{factor.name}</span>
-                        <div className="flex items-center gap-2">
-                          <div className="w-24 bg-secondary rounded-full h-2">
-                            <div
+                    {readinessResult.factors.map((factor) => {
+                      const impactStyles = SEMANTIC_STATUS.READINESS_IMPACT[
+                        factor.impact as keyof typeof SEMANTIC_STATUS.READINESS_IMPACT
+                      ];
+
+                      return (
+                        <div
+                          key={factor.name}
+                          className="flex items-center justify-between text-sm"
+                        >
+                          <span>{factor.name}</span>
+                          <div className="flex items-center gap-2">
+                            <div className="w-24 bg-secondary rounded-full h-2">
+                              <div
+                                className={cn(
+                                  'h-2 rounded-full',
+                                  impactStyles?.bar ?? 'bg-muted-foreground'
+                                )}
+                                style={{ width: `${factor.value * 10}%` }}
+                              />
+                            </div>
+                            <span
                               className={cn(
-                                'h-2 rounded-full',
-                                factor.impact === 'positive' && 'bg-green-500',
-                                factor.impact === 'neutral' && 'bg-yellow-500',
-                                factor.impact === 'negative' && 'bg-red-500'
+                                'w-16 text-right font-medium',
+                                impactStyles?.text
                               )}
-                              style={{ width: `${factor.value * 10}%` }}
-                            />
+                            >
+                              {factor.impact}
+                            </span>
                           </div>
-                          <span
-                            className={cn(
-                              'w-16 text-right font-medium',
-                              factor.impact === 'positive' && 'text-green-600',
-                              factor.impact === 'neutral' && 'text-yellow-600',
-                              factor.impact === 'negative' && 'text-red-600'
-                            )}
-                          >
-                            {factor.impact}
-                          </span>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               </>
@@ -247,7 +250,12 @@ export function CheckInPage() {
         description={isLateCheckIn ? 'Submitting a late check-in' : 'Complete your readiness assessment for today'}
       />
       {isLateCheckIn && (
-        <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400">
+        <div
+          className={cn(
+            'rounded-lg p-3 flex items-center gap-2 text-sm',
+            SEMANTIC_SURFACE.WARNING_SOFT
+          )}
+        >
           <AlertCircle className="h-4 w-4 shrink-0" />
           <span>The check-in window has closed, but you can still submit. This will be marked as a late check-in.</span>
         </div>

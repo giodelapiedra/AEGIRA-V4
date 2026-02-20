@@ -76,9 +76,7 @@ export async function getMissedCheckIns(c: Context): Promise<Response> {
       missesInLast30d: record.misses_in_last_30d,
       missesInLast60d: record.misses_in_last_60d,
       missesInLast90d: record.misses_in_last_90d,
-      baselineCompletionRate: record.baseline_completion_rate,
       isFirstMissIn30d: record.is_first_miss_in_30d,
-      isIncreasingFrequency: record.is_increasing_frequency,
     },
   }));
 

@@ -11,14 +11,13 @@ const router = new Hono();
 router.use('*', authMiddleware);
 router.use('*', tenantMiddleware);
 
-const whsOrAdmin = roleMiddleware(['ADMIN', 'WHS']);
 const whsOnly = roleMiddleware(['WHS']);
 const allAuthenticated = roleMiddleware(['WORKER', 'TEAM_LEAD', 'SUPERVISOR', 'ADMIN', 'WHS']);
 
-// GET /api/v1/cases — list all cases (WHS/ADMIN only)
+// GET /api/v1/cases — list all cases (WHS only)
 router.get(
   '/',
-  whsOrAdmin,
+  whsOnly,
   zValidator('query', getCasesQuerySchema),
   controller.getCases
 );

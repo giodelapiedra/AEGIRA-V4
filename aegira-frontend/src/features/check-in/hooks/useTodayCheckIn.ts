@@ -83,8 +83,8 @@ export function generateFactors(data: BackendCheckIn): ReadinessFactor[] {
   return factors;
 }
 
-// Transform backend response to frontend format
-function transformCheckIn(data: BackendCheckIn | null): CheckIn | null {
+// Transform backend response to frontend format (exported for reuse in submit hook)
+export function transformCheckIn(data: BackendCheckIn | null): CheckIn | null {
   if (!data) return null;
 
   return {

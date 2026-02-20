@@ -10,16 +10,6 @@ import { BaseRepository } from '../../shared/base.repository';
 import { calculateSkip, paginate } from '../../shared/utils';
 import type { PaginationParams, PaginatedResponse } from '../../types/api.types';
 
-export interface CreateIncidentData {
-  incidentNumber: number;
-  reporterId: string;
-  incidentType: IncidentType;
-  severity: IncidentSeverity;
-  title: string;
-  location?: string;
-  description: string;
-}
-
 export interface IncidentFilters extends PaginationParams {
   status?: IncidentStatus;
   severity?: IncidentSeverity;
@@ -57,6 +47,15 @@ export interface IncidentListItem {
     team: { name: string } | null;
   };
   reviewer: { first_name: string; last_name: string } | null;
+}
+
+export interface TimelineEvent {
+  id: string;
+  event_type: string;
+  person_id: string | null;
+  payload: unknown;
+  created_at: Date;
+  person: { id: string; first_name: string; last_name: string } | null;
 }
 
 export class IncidentRepository extends BaseRepository {
@@ -129,7 +128,7 @@ export class IncidentRepository extends BaseRepository {
     }) as Promise<IncidentWithRelations | null>;
   }
 
-  private buildFiltersWhere(filters: IncidentFilters): Prisma.IncidentWhereInput {
+  private buildFiltersWhere(filters: Omit<IncidentFilters, 'page' | 'limit'>): Prisma.IncidentWhereInput {
     return {
       company_id: this.companyId,
       ...(filters.status && { status: filters.status }),
@@ -152,26 +151,10 @@ export class IncidentRepository extends BaseRepository {
     };
   }
 
-  /**
-   * Lean list query — returns only fields the table needs.
-   * When `total` is provided (e.g. derived from statusCounts), skips the COUNT query.
-   */
   async findForList(
-    filters: IncidentFilters,
-    knownTotal?: number
+    filters: IncidentFilters
   ): Promise<PaginatedResponse<IncidentListItem>> {
     const where = this.buildFiltersWhere(filters);
-
-    if (knownTotal !== undefined) {
-      const items = await this.prisma.incident.findMany({
-        where,
-        select: this.selectForList,
-        orderBy: { created_at: 'desc' },
-        skip: calculateSkip(filters),
-        take: filters.limit,
-      });
-      return paginate(items as IncidentListItem[], knownTotal, filters);
-    }
 
     const [items, total] = await Promise.all([
       this.prisma.incident.findMany({
@@ -187,11 +170,10 @@ export class IncidentRepository extends BaseRepository {
     return paginate(items as IncidentListItem[], total, filters);
   }
 
-  async countByStatus(reporterId?: string): Promise<Record<string, number>> {
-    const where: Prisma.IncidentWhereInput = {
-      company_id: this.companyId,
-      ...(reporterId && { reporter_id: reporterId }),
-    };
+  async countByStatus(
+    filters?: Omit<IncidentFilters, 'page' | 'limit' | 'status'>
+  ): Promise<Record<string, number>> {
+    const where = this.buildFiltersWhere(filters ?? {});
 
     const counts = await this.prisma.incident.groupBy({
       by: ['status'],
@@ -212,7 +194,7 @@ export class IncidentRepository extends BaseRepository {
     return result;
   }
 
-  async getTimeline(incidentId: string): Promise<unknown[]> {
+  async getTimeline(incidentId: string): Promise<TimelineEvent[]> {
     return this.prisma.event.findMany({
       where: {
         company_id: this.companyId,
@@ -225,13 +207,12 @@ export class IncidentRepository extends BaseRepository {
         person_id: true,
         payload: true,
         created_at: true,
-        event_time: true,
         person: {
           select: { id: true, first_name: true, last_name: true },
         },
       },
       orderBy: { created_at: 'asc' },
       take: 200,
-    });
+    }) as Promise<TimelineEvent[]>;
   }
 }

@@ -1,11 +1,12 @@
-import { Mail, Shield, Users, CheckCircle, XCircle, User as UserIcon, Cake, Clock, CalendarDays } from 'lucide-react';
+import { DateTime } from 'luxon';
+import { CheckCircle, XCircle } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
-import { Separator } from '@/components/ui/separator';
 import type { Person } from '@/types/person.types';
-import { ROLE_LABELS } from '@/lib/utils/format.utils';
+import { ROLE_LABELS, formatGender, formatScheduleWindow } from '@/lib/utils/format.utils';
 import { formatWorkDays } from '@/lib/utils/string.utils';
+import { useAuth } from '@/lib/hooks/use-auth';
 
 interface MemberInfoCardProps {
   person: Person;
@@ -15,61 +16,69 @@ function getInitials(firstName: string, lastName: string): string {
   return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
 }
 
-function calculateAge(dateOfBirth: string): number {
-  const dob = new Date(dateOfBirth);
-  const today = new Date();
-  let age = today.getFullYear() - dob.getFullYear();
-  const monthDiff = today.getMonth() - dob.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+function calculateAge(dateOfBirth: string, timezone: string): number {
+  const dob = DateTime.fromISO(dateOfBirth, { zone: timezone });
+  const today = DateTime.now().setZone(timezone);
+  let age = today.year - dob.year;
+  if (today.month < dob.month || (today.month === dob.month && today.day < dob.day)) {
     age--;
   }
   return age;
 }
 
-const genderLabels: Record<string, string> = {
-  MALE: 'Male',
-  FEMALE: 'Female',
-};
+const DASH = <span className="text-muted-foreground font-normal">&mdash;</span>;
 
-interface InfoItemProps {
+interface DetailItemProps {
   label: string;
-  value: React.ReactNode;
-  icon?: React.ReactNode;
+  value?: React.ReactNode;
+  note?: string;
 }
 
-function InfoItem({ label, value, icon }: InfoItemProps) {
+function DetailItem({ label, value, note }: DetailItemProps) {
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-sm text-muted-foreground">{label}:</span>
+    <div>
       <div className="flex items-center gap-1.5">
-        {icon}
-        <span className="text-sm font-medium">{value}</span>
+        <p className="text-xs text-muted-foreground">{label}</p>
+        {note && (
+          <Badge variant="amber" className="text-[9px] px-1 py-0 h-3.5 font-medium leading-none">
+            {note}
+          </Badge>
+        )}
       </div>
+      <p className="text-sm font-medium mt-1">{value || DASH}</p>
     </div>
   );
 }
 
 export function MemberInfoCard({ person }: MemberInfoCardProps) {
+  const { user } = useAuth();
+  const timezone = user?.companyTimezone ?? 'Asia/Manila';
   const initials = getInitials(person.first_name, person.last_name);
+  const hasScheduleOverride = !!(person.check_in_start || person.check_in_end);
+  const hasWorkDaysOverride = !!(person.work_days && person.work_days !== person.team?.work_days);
 
   return (
-    <Card className="overflow-hidden">
-      <div className="flex flex-col md:flex-row">
-        {/* Left side - Avatar & Identity */}
-        <div className="flex flex-col items-center justify-center gap-3 border-b md:border-b-0 md:border-r p-8 md:w-64 shrink-0 bg-muted/30">
-          <Avatar className="h-24 w-24 text-2xl">
-            {person.profile_picture_url && (
-              <AvatarImage src={person.profile_picture_url} alt={`${person.first_name} ${person.last_name}`} />
-            )}
-            <AvatarFallback className="bg-primary/10 text-primary text-2xl font-semibold">
-              {initials}
-            </AvatarFallback>
-          </Avatar>
-          <div className="text-center">
-            <h3 className="text-lg font-semibold">
-              {person.first_name} {person.last_name}
-            </h3>
-            <Badge variant={person.is_active ? 'success' : 'destructive'} className="mt-1.5 gap-1">
+    <div className="space-y-6">
+      {/* Identity */}
+      <div className="flex items-start gap-4">
+        <Avatar className="h-14 w-14 shrink-0">
+          {person.profile_picture_url && (
+            <AvatarImage
+              src={person.profile_picture_url}
+              alt={`${person.first_name} ${person.last_name}`}
+            />
+          )}
+          <AvatarFallback className="bg-primary/10 text-primary text-lg font-semibold">
+            {initials}
+          </AvatarFallback>
+        </Avatar>
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {person.first_name} {person.last_name}
+          </h1>
+          <p className="text-sm text-muted-foreground mt-0.5">{person.email}</p>
+          <div className="flex flex-wrap items-center gap-2 mt-2">
+            <Badge variant={person.is_active ? 'success' : 'destructive'} className="gap-1">
               {person.is_active ? (
                 <CheckCircle className="h-3 w-3" />
               ) : (
@@ -77,114 +86,54 @@ export function MemberInfoCard({ person }: MemberInfoCardProps) {
               )}
               {person.is_active ? 'Active' : 'Inactive'}
             </Badge>
+            <span className="text-muted-foreground text-xs">&middot;</span>
+            <span className="text-sm text-muted-foreground">{ROLE_LABELS[person.role]}</span>
+            {person.team && (
+              <>
+                <span className="text-muted-foreground text-xs">&middot;</span>
+                <span className="text-sm text-muted-foreground">{person.team.name}</span>
+              </>
+            )}
           </div>
-        </div>
-
-        {/* Right side - Info sections */}
-        <div className="flex-1 p-6 space-y-0">
-          {/* Account Information */}
-          <div className="py-4 first:pt-0">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              Account Information
-            </p>
-            <div className="flex flex-wrap gap-x-8 gap-y-2">
-              <InfoItem
-                label="Email"
-                value={person.email}
-                icon={<Mail className="h-3.5 w-3.5 text-muted-foreground" />}
-              />
-              <InfoItem
-                label="Role"
-                value={ROLE_LABELS[person.role]}
-                icon={<Shield className="h-3.5 w-3.5 text-muted-foreground" />}
-              />
-            </div>
-          </div>
-
-          <Separator />
-
-          {/* Personal Information */}
-          <div className="py-4">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              Personal Information
-            </p>
-            <div className="flex flex-wrap gap-x-8 gap-y-2">
-              <InfoItem
-                label="Gender"
-                value={person.gender ? genderLabels[person.gender] : 'Not set'}
-                icon={<UserIcon className="h-3.5 w-3.5 text-muted-foreground" />}
-              />
-              <InfoItem
-                label="Age"
-                value={person.date_of_birth ? `${calculateAge(person.date_of_birth)} years old` : 'Not set'}
-                icon={<Cake className="h-3.5 w-3.5 text-muted-foreground" />}
-              />
-            </div>
-          </div>
-
-          <Separator />
-
-          {/* Team Information */}
-          <div className="py-4">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              Team Information
-            </p>
-            <div className="flex flex-wrap gap-x-8 gap-y-2">
-              <InfoItem
-                label="Team"
-                value={person.team?.name || 'Not assigned'}
-                icon={<Users className="h-3.5 w-3.5 text-muted-foreground" />}
-              />
-            </div>
-          </div>
-
-          {person.team && (
-            <>
-              <Separator />
-
-              {/* Check-In Schedule */}
-              <div className="py-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Check-In Schedule
-                  </p>
-                  {(person.check_in_start || person.check_in_end || person.work_days) && (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-medium text-amber-600 border-amber-300 bg-amber-50">
-                      Override
-                    </Badge>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-x-8 gap-y-2">
-                  <InfoItem
-                    label="Check-In Window"
-                    value={
-                      <span className="flex items-center gap-1.5">
-                        <span>{person.check_in_start ?? person.team.check_in_start} – {person.check_in_end ?? person.team.check_in_end}</span>
-                        {(person.check_in_start || person.check_in_end) && (
-                          <span className="text-xs text-muted-foreground">(team: {person.team.check_in_start} – {person.team.check_in_end})</span>
-                        )}
-                      </span>
-                    }
-                    icon={<Clock className="h-3.5 w-3.5 text-muted-foreground" />}
-                  />
-                  <InfoItem
-                    label="Work Days"
-                    value={
-                      <span className="flex items-center gap-1.5">
-                        <span>{formatWorkDays(person.work_days ?? person.team.work_days)}</span>
-                        {person.work_days && person.work_days !== person.team.work_days && (
-                          <span className="text-xs text-muted-foreground">(team: {formatWorkDays(person.team.work_days)})</span>
-                        )}
-                      </span>
-                    }
-                    icon={<CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />}
-                  />
-                </div>
-              </div>
-            </>
-          )}
         </div>
       </div>
-    </Card>
+
+      {/* Details grid */}
+      <Card>
+        <div className="p-5 md:p-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-8 gap-y-5">
+            {person.team && (
+              <>
+                <DetailItem
+                  label="Check-In Window"
+                  value={formatScheduleWindow(
+                    person.check_in_start ?? person.team.check_in_start,
+                    person.check_in_end ?? person.team.check_in_end
+                  )}
+                  note={hasScheduleOverride ? 'Override' : undefined}
+                />
+                <DetailItem
+                  label="Work Days"
+                  value={formatWorkDays(person.work_days ?? person.team.work_days)}
+                  note={hasWorkDaysOverride ? 'Override' : undefined}
+                />
+              </>
+            )}
+            <DetailItem
+              label="Gender"
+              value={person.gender ? formatGender(person.gender) : undefined}
+            />
+            <DetailItem
+              label="Age"
+              value={person.date_of_birth ? `${calculateAge(person.date_of_birth, timezone)} years` : undefined}
+            />
+            <DetailItem label="Contact" value={person.contact_number} />
+            <DetailItem label="Emergency Contact Name" value={person.emergency_contact_name} />
+            <DetailItem label="Emergency Contact Phone" value={person.emergency_contact_phone} />
+            <DetailItem label="Emergency Contact Relationship" value={person.emergency_contact_relationship} />
+          </div>
+        </div>
+      </Card>
+    </div>
   );
 }

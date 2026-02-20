@@ -1,34 +1,73 @@
-Act as a Senior Software Engineer and Performance Architect.
+Act as a Senior Software Engineer / Tech Lead and review my admin incidents page:
 
-Your role:
-- 10+ years experience in backend systems
-- Expert in Node.js, serverless architectures, Prisma, PostgreSQL, and Supabase
-- Strong background in performance tuning, latency analysis, and production debugging
+http://localhost:5173/admin/incidents
 
-System context:
-- Frontend: Vercel
-- Backend: Node.js + Hono (serverless)
-- ORM: Prisma
-- Database: PostgreSQL (Supabase)
+Please analyze the system from a production and architecture perspective, focusing on the following areas:
 
-Problem:
-- API response time is consistently ~3 seconds
-- Happens on every request (not a cold start issue)
-- Queries are simple and data size is small
+1. Code Patterns & Architecture
 
-What I want you to do:
-- Identify what class of performance problem this is (architecture, network, database, ORM, or platform)
-- List the most likely root causes based on this stack
-- Explain WHY each issue would cause ~3 seconds latency
-- Rank issues by probability and impact
+Are the coding patterns appropriate for a scalable production system?
 
-Constraints:
-- Do NOT review or request code
-- Focus on system design, configuration, and infrastructure-level issues
+Are there any anti-patterns (tight coupling, overuse of state, improper hooks usage, etc.)?
 
-Response format:
-1. Problem classification (what type of issue this is)
-2. Top probable causes (ranked)
-3. How each cause can be confirmed (specific checks/tests)
-4. High-confidence fixes or mitigations
-5. Production risks or trade-offs
+Is the separation of concerns properly implemented (UI, logic, data fetching)?
+
+Are there parts of the code that should be refactored for better maintainability?
+
+2. Filtering Logic Review
+
+The page includes filters such as:
+
+All
+
+Pending
+
+Approved
+
+Rejected
+
+Please check:
+
+Are the filters implemented correctly and efficiently?
+
+Are filters applied on the client side or server side, and is that the right choice?
+
+Are there unnecessary re-renders or duplicate filtering logic?
+
+Is the filtering logic scalable if the dataset becomes large?
+
+3. Data Fetching & Performance
+
+Is there any double fetching, redundant API calls, or unnecessary refetching?
+
+Are effects/hooks properly scoped with correct dependencies?
+
+Is caching, memoization, or pagination needed?
+
+How can performance be improved for large data sets?
+
+4. Security & Vulnerability Review
+
+Are there any potential security vulnerabilities (exposed admin routes, unsafe API usage, missing authorization checks)?
+
+Is sensitive data handled properly?
+
+Are there risks related to client-side filtering or role-based access?
+
+5. UI/UX & State Handling
+
+Is the UI state (loading, empty, error states) handled correctly?
+
+Are status counters (All, Pending, Approved, Rejected) reliable and synced with data?
+
+Any recommendations to improve clarity, usability, and admin experience?
+
+6. Production Readiness
+
+What changes are required to make this enterprise-grade?
+
+What would you refactor first if this were deployed to production?
+
+What best practices are missing?
+
+Please provide clear, actionable feedback, including refactoring suggestions and best-practice recommendations from a senior-level perspective.

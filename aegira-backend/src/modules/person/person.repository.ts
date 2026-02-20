@@ -9,7 +9,7 @@ import type { PaginationParams, PaginatedResponse } from '../../types/api.types'
  * Fields returned by all Person read/write queries.
  * Excludes password_hash — it must never leave the repository layer.
  */
-const SAFE_PERSON_SELECT = {
+export const SAFE_PERSON_SELECT = {
   id: true,
   company_id: true,
   email: true,
@@ -18,6 +18,10 @@ const SAFE_PERSON_SELECT = {
   gender: true,
   date_of_birth: true,
   profile_picture_url: true,
+  contact_number: true,
+  emergency_contact_name: true,
+  emergency_contact_phone: true,
+  emergency_contact_relationship: true,
   role: true,
   team_id: true,
   team_assigned_at: true,
@@ -53,6 +57,10 @@ export interface CreatePersonData {
   workDays?: string; // CSV: "0,1,2,3,4,5,6" - worker schedule override
   checkInStart?: string; // HH:mm format - worker schedule override
   checkInEnd?: string; // HH:mm format - worker schedule override
+  contactNumber?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  emergencyContactRelationship?: string;
 }
 
 export interface UpdatePersonData {
@@ -67,6 +75,10 @@ export interface UpdatePersonData {
   workDays?: string | null; // CSV: "0,1,2,3,4,5,6" - worker schedule override (null clears override)
   checkInStart?: string | null; // HH:mm format - worker schedule override (null clears override)
   checkInEnd?: string | null; // HH:mm format - worker schedule override (null clears override)
+  contactNumber?: string | null;
+  emergencyContactName?: string | null;
+  emergencyContactPhone?: string | null;
+  emergencyContactRelationship?: string | null;
   effectiveTeamId?: string | null;
   effectiveTransferDate?: Date | null;
   transferInitiatedBy?: string | null;
@@ -96,6 +108,10 @@ export class PersonRepository extends BaseRepository {
           work_days: data.workDays,
           check_in_start: data.checkInStart,
           check_in_end: data.checkInEnd,
+          contact_number: data.contactNumber,
+          emergency_contact_name: data.emergencyContactName,
+          emergency_contact_phone: data.emergencyContactPhone,
+          emergency_contact_relationship: data.emergencyContactRelationship,
         },
         select: SAFE_PERSON_SELECT,
       });
@@ -248,6 +264,11 @@ export class PersonRepository extends BaseRepository {
           ...(data.workDays !== undefined && { work_days: data.workDays }),
           ...(data.checkInStart !== undefined && { check_in_start: data.checkInStart }),
           ...(data.checkInEnd !== undefined && { check_in_end: data.checkInEnd }),
+          // Contact information
+          ...(data.contactNumber !== undefined && { contact_number: data.contactNumber }),
+          ...(data.emergencyContactName !== undefined && { emergency_contact_name: data.emergencyContactName }),
+          ...(data.emergencyContactPhone !== undefined && { emergency_contact_phone: data.emergencyContactPhone }),
+          ...(data.emergencyContactRelationship !== undefined && { emergency_contact_relationship: data.emergencyContactRelationship }),
           // Effective next-day transfer fields
           ...(data.effectiveTeamId !== undefined && { effective_team_id: data.effectiveTeamId }),
           ...(data.effectiveTransferDate !== undefined && { effective_transfer_date: data.effectiveTransferDate }),
@@ -275,12 +296,6 @@ export class PersonRepository extends BaseRepository {
       }
       throw error;
     }
-  }
-
-  async countActive(): Promise<number> {
-    return this.prisma.person.count({
-      where: this.where({ is_active: true }),
-    });
   }
 
   /**

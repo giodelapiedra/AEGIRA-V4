@@ -1,10 +1,11 @@
-import type { PrismaClient, Case, CaseStatus, Prisma } from '@prisma/client';
+import type { PrismaClient, Case, CaseStatus, IncidentSeverity, Prisma } from '@prisma/client';
 import { BaseRepository } from '../../shared/base.repository';
 import { calculateSkip, paginate } from '../../shared/utils';
 import type { PaginationParams, PaginatedResponse } from '../../types/api.types';
 
 export interface CaseFilters extends PaginationParams {
   status?: CaseStatus;
+  severity?: IncidentSeverity;
   search?: string;
 }
 
@@ -18,6 +19,7 @@ export type CaseWithRelations = Case & {
     location: string | null;
     description: string;
     status: string;
+    created_at: Date;
     reporter: {
       id: string;
       first_name: string;
@@ -92,6 +94,7 @@ export class CaseRepository extends BaseRepository {
         location: true,
         description: true,
         status: true,
+        created_at: true,
         reporter: {
           select: {
             id: true,
@@ -121,6 +124,9 @@ export class CaseRepository extends BaseRepository {
     return {
       company_id: this.companyId,
       ...(filters.status && { status: filters.status }),
+      ...(filters.severity && {
+        incident: { severity: filters.severity },
+      }),
       ...(filters.search && {
         OR: [
           {

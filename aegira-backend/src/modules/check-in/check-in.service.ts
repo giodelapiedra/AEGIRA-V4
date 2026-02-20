@@ -18,7 +18,7 @@ import { buildEventData, emitEvent } from '../event/event.service';
 import { logger } from '../../config/logger';
 
 // Check-in status for worker
-export interface CheckInStatus {
+interface CheckInStatus {
   isWorkDay: boolean;
   isHoliday: boolean;
   holidayName: string | null;

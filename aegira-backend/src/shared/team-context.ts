@@ -1,7 +1,7 @@
 // Shared Team Context - Used by team and missed-check-in controllers
 import { prisma } from '../config/database';
 
-export interface TeamContext {
+interface TeamContext {
   timezone: string;
   teamIds: string[] | null; // null = no filter (ADMIN sees all), [] = no teams assigned, ["id",...] = specific teams
 }

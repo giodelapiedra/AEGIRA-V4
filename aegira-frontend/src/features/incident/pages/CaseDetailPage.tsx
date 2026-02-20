@@ -2,9 +2,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { ArrowLeft, ExternalLink } from 'lucide-react';
+import { ArrowLeft, ExternalLink, ShieldCheck } from 'lucide-react';
 import { PageLoader } from '@/components/common/PageLoader';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -20,7 +20,6 @@ import { SeverityBadge } from '../components/SeverityBadge';
 import { IncidentTimeline } from '../components/IncidentTimeline';
 import { useCase } from '../hooks/useCase';
 import { useUpdateCase } from '../hooks/useUpdateCase';
-import { useWhsOfficers } from '../hooks/useWhsOfficers';
 import { useIncidentTimeline } from '../hooks/useIncidentTimeline';
 import { useToast } from '@/lib/hooks/use-toast';
 import { useAuth } from '@/lib/hooks/use-auth';
@@ -51,7 +50,6 @@ const STATUS_LABELS: Record<CaseStatus, string> = {
 
 const updateCaseSchema = z.object({
   status: z.enum(['OPEN', 'INVESTIGATING', 'RESOLVED', 'CLOSED']).optional(),
-  assignedTo: z.string().nullable().optional(),
   notes: z.string().max(2000).optional(),
 });
 
@@ -81,7 +79,6 @@ export function CaseDetailPage() {
 
   const { data: caseData, isLoading, error } = useCase(id || '');
   const { data: timeline } = useIncidentTimeline(caseData?.incidentId || '');
-  const { data: whsOfficers = [], isLoading: loadingOfficers } = useWhsOfficers();
   const updateCase = useUpdateCase();
 
   const {
@@ -89,17 +86,16 @@ export function CaseDetailPage() {
     handleSubmit,
     setValue,
     watch,
+    formState: { isDirty },
   } = useForm<UpdateCaseFormData>({
     resolver: zodResolver(updateCaseSchema),
     values: {
       status: caseData?.status,
-      assignedTo: caseData?.assignedTo ?? null,
       notes: caseData?.notes || '',
     },
   });
 
   const selectedStatus = watch('status');
-  const selectedAssignee = watch('assignedTo');
 
   const availableTransitions = caseData
     ? VALID_TRANSITIONS[caseData.status] || []
@@ -108,12 +104,10 @@ export function CaseDetailPage() {
   const onSubmit = async (data: UpdateCaseFormData) => {
     if (!id) return;
     try {
-      const assigneeChanged = data.assignedTo !== (caseData?.assignedTo ?? null);
       await updateCase.mutateAsync({
         caseId: id,
         data: {
           ...(data.status && data.status !== caseData?.status && { status: data.status }),
-          ...(assigneeChanged && { assignedTo: data.assignedTo ?? null }),
           ...(data.notes !== undefined && { notes: data.notes }),
         },
       });
@@ -148,7 +142,7 @@ export function CaseDetailPage() {
       </div>
       <div className="flex items-center gap-3">
         {caseData && <CaseStatusBadge status={caseData.status} />}
-        <Button variant="outline" onClick={() => navigate(ROUTES.ADMIN_CASES)}>
+        <Button variant="outline" onClick={() => navigate(ROUTES.WHS_CASES)}>
           <ArrowLeft className="h-4 w-4 mr-2" />
           Back
         </Button>
@@ -216,10 +210,10 @@ export function CaseDetailPage() {
                     variant="outline"
                     size="sm"
                     className="w-full"
-                    onClick={() => navigate(buildRoute(ROUTES.ADMIN_INCIDENT_DETAIL, { id: caseData.incident.id }))}
+                    onClick={() => navigate(buildRoute(ROUTES.WHS_INCIDENT_DETAIL, { id: caseData.incident.id }))}
                   >
                     <ExternalLink className="h-4 w-4 mr-1" />
-                    View Incident {formatIncidentNumber(caseData.incident.incidentNumber, caseData.createdAt)}
+                    View Incident {formatIncidentNumber(caseData.incident.incidentNumber, caseData.incident.createdAt)}
                   </Button>
                 </div>
               </CardContent>
@@ -268,21 +262,27 @@ export function CaseDetailPage() {
           {/* Manage Case — WHS only, Admin is view-only */}
           {isWhs && (
             <Card>
-              <CardContent className="pt-6">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">
+              <CardHeader className="border-b pb-4">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <ShieldCheck className="h-5 w-5 text-muted-foreground" />
                   Manage Case
-                </h3>
+                </CardTitle>
+                <CardDescription>
+                  Update status and keep internal notes for this case.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pt-6">
                 <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
                   {availableTransitions.length > 0 ? (
                     <div className="space-y-2">
-                      <Label>Status</Label>
+                      <Label className="text-sm font-medium">Status</Label>
                       <Select
                         value={selectedStatus || caseData.status}
                         onValueChange={(value) =>
-                          setValue('status', value as CaseStatus)
+                          setValue('status', value as CaseStatus, { shouldDirty: true })
                         }
                       >
-                        <SelectTrigger className="max-w-xs">
+                        <SelectTrigger className="w-full sm:max-w-sm">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -296,6 +296,9 @@ export function CaseDetailPage() {
                           ))}
                         </SelectContent>
                       </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Current status: <span className="font-medium">{STATUS_LABELS[caseData.status]}</span>
+                      </p>
                     </div>
                   ) : (
                     <p className="text-sm text-muted-foreground">
@@ -305,46 +308,34 @@ export function CaseDetailPage() {
                   )}
 
                   <div className="space-y-2">
-                    <Label>Assigned WHS Officer</Label>
-                    <Select
-                      value={selectedAssignee || '__none__'}
-                      onValueChange={(value) =>
-                        setValue('assignedTo', value === '__none__' ? null : value)
-                      }
-                      disabled={loadingOfficers}
-                    >
-                      <SelectTrigger className="max-w-xs">
-                        <SelectValue
-                          placeholder={loadingOfficers ? 'Loading...' : 'Select an officer'}
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">Unassigned</SelectItem>
-                        {whsOfficers.map((officer) => (
-                          <SelectItem key={officer.id} value={officer.id}>
-                            {officer.first_name} {officer.last_name} ({officer.email})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="notes">Notes</Label>
+                    <Label htmlFor="notes" className="text-sm font-medium">Notes</Label>
                     <Textarea
                       id="notes"
                       placeholder="Add case notes..."
                       rows={5}
+                      className="min-h-[140px] resize-y"
                       {...register('notes')}
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Use notes for investigation updates and handoff context.
+                    </p>
                   </div>
 
-                  <Button
-                    type="submit"
-                    disabled={updateCase.isPending}
-                  >
-                    {updateCase.isPending ? 'Saving...' : 'Save Changes'}
-                  </Button>
+                  <div className="flex flex-col-reverse gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => navigate(ROUTES.WHS_CASES)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="submit"
+                      disabled={updateCase.isPending || !isDirty}
+                    >
+                      {updateCase.isPending ? 'Saving...' : 'Save Changes'}
+                    </Button>
+                  </div>
                 </form>
               </CardContent>
             </Card>

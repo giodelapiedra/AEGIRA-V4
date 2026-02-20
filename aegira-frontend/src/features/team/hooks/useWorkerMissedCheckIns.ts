@@ -17,7 +17,7 @@ interface UseWorkerMissedCheckInsParams {
 export function useWorkerMissedCheckIns({ personId, page = 1, limit = 10 }: UseWorkerMissedCheckInsParams) {
   return useQuery({
     queryKey: ['worker-missed-check-ins', personId, page, limit],
-    staleTime: STALE_TIMES.IMMUTABLE,
+    staleTime: STALE_TIMES.STANDARD,
     placeholderData: keepPreviousData,
     queryFn: async () => {
       const params = new URLSearchParams({

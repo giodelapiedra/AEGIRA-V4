@@ -12,9 +12,7 @@ export interface MissedCheckInStateSnapshot {
   missesInLast30d: number | null;
   missesInLast60d: number | null;
   missesInLast90d: number | null;
-  baselineCompletionRate: number | null;
   isFirstMissIn30d: boolean | null;
-  isIncreasingFrequency: boolean | null;
 }
 
 export interface MissedCheckIn {

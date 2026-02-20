@@ -1,7 +1,5 @@
 import { useState } from 'react';
 import type { ColumnDef, PaginationState } from '@tanstack/react-table';
-import { ClipboardList } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { DataTable, SortableHeader } from '@/components/ui/data-table';
 import { ReadinessCategoryBadge, SubmissionStatusBadge } from '@/components/common/badge-utils';
 import { useWorkerCheckIns } from '../hooks/useWorkerCheckIns';
@@ -31,9 +29,7 @@ const columns: ColumnDef<CheckIn>[] = [
     id: 'submissionStatus',
     header: 'Submission',
     cell: ({ row }) => (
-      <SubmissionStatusBadge
-        isLate={row.original.isLate}
-      />
+      <SubmissionStatusBadge isLate={row.original.isLate} />
     ),
   },
   {
@@ -89,30 +85,15 @@ export function MemberCheckInTable({ personId }: MemberCheckInTableProps) {
   const pageCount = data?.totalPages ?? 0;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <ClipboardList className="h-5 w-5" />
-          Check-In Records
-        </CardTitle>
-        <CardDescription>
-          {total > 0
-            ? `${total} total records`
-            : 'View this member\'s check-in history'}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <DataTable
-          columns={columns}
-          data={checkIns}
-          pageCount={pageCount}
-          pagination={pagination}
-          onPaginationChange={setPagination}
-          isLoading={isLoading}
-          totalCount={total}
-          emptyMessage="This member has not submitted any check-ins yet."
-        />
-      </CardContent>
-    </Card>
+    <DataTable
+      columns={columns}
+      data={checkIns}
+      pageCount={pageCount}
+      pagination={pagination}
+      onPaginationChange={setPagination}
+      isLoading={isLoading}
+      totalCount={total}
+      emptyMessage="No check-ins submitted yet."
+    />
   );
 }

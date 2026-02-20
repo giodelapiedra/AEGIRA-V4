@@ -9,6 +9,10 @@ export interface Person {
   gender: 'MALE' | 'FEMALE' | null;
   date_of_birth: string | null; // ISO date "YYYY-MM-DD"
   profile_picture_url: string | null;
+  contact_number: string | null;
+  emergency_contact_name: string | null;
+  emergency_contact_phone: string | null;
+  emergency_contact_relationship: string | null;
   role: UserRole;
   team_id?: string;
   is_active: boolean;
@@ -60,6 +64,10 @@ export interface CreatePersonData {
   workDays?: string;
   checkInStart?: string;
   checkInEnd?: string;
+  contactNumber?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  emergencyContactRelationship?: string;
 }
 
 export interface UpdatePersonData {
@@ -74,4 +82,8 @@ export interface UpdatePersonData {
   workDays?: string | null;
   checkInStart?: string | null;
   checkInEnd?: string | null;
+  contactNumber?: string | null;
+  emergencyContactName?: string | null;
+  emergencyContactPhone?: string | null;
+  emergencyContactRelationship?: string | null;
 }

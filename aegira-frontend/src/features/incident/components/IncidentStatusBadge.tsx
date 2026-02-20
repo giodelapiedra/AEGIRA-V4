@@ -1,20 +1,15 @@
 import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils/cn';
+import { SEMANTIC_STATUS } from '@/lib/constants';
 import type { IncidentStatus } from '@/types/incident.types';
+import type { BadgeProps } from '@/components/ui/badge';
 
-const STATUS_CONFIG: Record<IncidentStatus, { label: string; className: string }> = {
-  PENDING: {
-    label: 'Pending',
-    className: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-  },
-  APPROVED: {
-    label: 'Approved',
-    className: 'bg-green-100 text-green-800 border-green-200',
-  },
-  REJECTED: {
-    label: 'Rejected',
-    className: 'bg-red-100 text-red-800 border-red-200',
-  },
+const STATUS_CONFIG: Record<
+  IncidentStatus,
+  { label: string; variant: BadgeProps['variant'] }
+> = {
+  PENDING: SEMANTIC_STATUS.INCIDENT_STATUS.PENDING,
+  APPROVED: SEMANTIC_STATUS.INCIDENT_STATUS.APPROVED,
+  REJECTED: SEMANTIC_STATUS.INCIDENT_STATUS.REJECTED,
 };
 
 interface IncidentStatusBadgeProps {
@@ -23,9 +18,5 @@ interface IncidentStatusBadgeProps {
 
 export function IncidentStatusBadge({ status }: IncidentStatusBadgeProps) {
   const config = STATUS_CONFIG[status];
-  return (
-    <Badge variant="outline" className={cn(config.className)}>
-      {config.label}
-    </Badge>
-  );
+  return <Badge variant={config.variant}>{config.label}</Badge>;
 }

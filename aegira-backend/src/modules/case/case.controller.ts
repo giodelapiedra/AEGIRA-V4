@@ -4,8 +4,7 @@ import { CaseService } from './case.service';
 import type { GetCasesQuery, UpdateCaseInput } from './case.validator';
 import { prisma } from '../../config/database';
 import { AppError } from '../../shared/errors';
-import { parsePagination } from '../../shared/utils';
-import { DateTime } from 'luxon';
+import { parsePagination, calculateAge } from '../../shared/utils';
 
 function getRepository(companyId: string): CaseRepository {
   return new CaseRepository(prisma, companyId);
@@ -16,19 +15,46 @@ function getService(companyId: string, timezone: string): CaseService {
   return new CaseService(prisma, repository, timezone);
 }
 
-function calculateAge(dateOfBirth: Date | null, timezone: string): number | null {
-  if (!dateOfBirth) return null;
-  const now = DateTime.now().setZone(timezone);
-  let age = now.year - dateOfBirth.getUTCFullYear();
-  const monthDiff = now.month - (dateOfBirth.getUTCMonth() + 1);
-  if (monthDiff < 0 || (monthDiff === 0 && now.day < dateOfBirth.getUTCDate())) {
-    age--;
-  }
-  return age;
+interface CaseListItemResponse {
+  id: string;
+  caseNumber: number;
+  incident: { title: string; severity: string; reporterName: string };
+  status: string;
+  assigneeName: string | null;
+  createdAt: string;
+}
+
+interface CaseDetailResponse {
+  id: string;
+  caseNumber: number;
+  incidentId: string;
+  incident: {
+    id: string;
+    incidentNumber: number;
+    incidentType: string;
+    severity: string;
+    title: string;
+    location: string | null;
+    description: string;
+    status: string;
+    reporterId: string;
+    reporterName: string;
+    reporterEmail: string;
+    reporterGender: string | null;
+    reporterAge: number | null;
+    teamName: string;
+    createdAt: string;
+  };
+  assignedTo: string | null;
+  assigneeName: string | null;
+  status: string;
+  notes: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
 }
 
 /** Lean mapper for list views — only fields the table renders */
-function mapCaseToListItem(caseRecord: CaseListItem): Record<string, unknown> {
+function mapCaseToListItem(caseRecord: CaseListItem): CaseListItemResponse {
   return {
     id: caseRecord.id,
     caseNumber: caseRecord.case_number,
@@ -45,7 +71,7 @@ function mapCaseToListItem(caseRecord: CaseListItem): Record<string, unknown> {
   };
 }
 
-function mapCaseToResponse(caseRecord: CaseWithRelations, timezone: string): Record<string, unknown> {
+function mapCaseToResponse(caseRecord: CaseWithRelations, timezone: string): CaseDetailResponse {
   return {
     id: caseRecord.id,
     caseNumber: caseRecord.case_number,
@@ -65,6 +91,7 @@ function mapCaseToResponse(caseRecord: CaseWithRelations, timezone: string): Rec
       reporterGender: caseRecord.incident.reporter.gender,
       reporterAge: calculateAge(caseRecord.incident.reporter.date_of_birth, timezone),
       teamName: caseRecord.incident.reporter.team?.name ?? 'Unassigned',
+      createdAt: caseRecord.incident.created_at.toISOString(),
     },
     assignedTo: caseRecord.assigned_to,
     assigneeName: caseRecord.assignee
@@ -84,12 +111,12 @@ function mapCaseToResponse(caseRecord: CaseWithRelations, timezone: string): Rec
 export async function getCases(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const { page, limit } = parsePagination(c.req.query('page'), c.req.query('limit'));
-  const { status, search } = c.req.valid('query' as never) as GetCasesQuery;
+  const { status, severity, search } = c.req.valid('query' as never) as GetCasesQuery;
 
   const repository = getRepository(companyId);
 
   const [result, statusCounts] = await Promise.all([
-    repository.findForList({ page, limit, status, search }),
+    repository.findForList({ page, limit, status, severity, search }),
     repository.countByStatus(),
   ]);
 
@@ -138,7 +165,7 @@ export async function getCaseById(c: Context): Promise<Response> {
 
 /**
  * PATCH /api/v1/cases/:id
- * Update case (status, assignment, notes). WHS/ADMIN only.
+ * Update case (status, notes). WHS only.
  */
 export async function updateCase(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;

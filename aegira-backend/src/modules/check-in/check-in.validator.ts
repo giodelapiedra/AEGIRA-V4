@@ -29,4 +29,3 @@ export const getCheckInHistorySchema = z.object({
 });
 
 export type SubmitCheckInInput = z.infer<typeof submitCheckInSchema>;
-export type GetCheckInHistoryInput = z.infer<typeof getCheckInHistorySchema>;

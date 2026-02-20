@@ -16,6 +16,11 @@ export const createPersonSchema = z
     workDays: z.string().regex(WORK_DAYS_REGEX, 'Invalid work days format (e.g., "1,3,5")').optional(),
     checkInStart: z.string().regex(TIME_REGEX, 'Invalid time format (HH:MM)').optional(),
     checkInEnd: z.string().regex(TIME_REGEX, 'Invalid time format (HH:MM)').optional(),
+    // Contact information (optional)
+    contactNumber: z.string().max(20).trim().optional(),
+    emergencyContactName: z.string().max(100).trim().optional(),
+    emergencyContactPhone: z.string().max(20).trim().optional(),
+    emergencyContactRelationship: z.string().max(50).trim().optional(),
   })
   .refine(
     (data) => {
@@ -56,6 +61,11 @@ export const updatePersonSchema = z
     workDays: z.string().regex(WORK_DAYS_REGEX, 'Invalid work days format (e.g., "1,3,5")').nullable().optional(),
     checkInStart: z.string().regex(TIME_REGEX, 'Invalid time format (HH:MM)').nullable().optional(),
     checkInEnd: z.string().regex(TIME_REGEX, 'Invalid time format (HH:MM)').nullable().optional(),
+    // Contact information (optional, nullable to clear)
+    contactNumber: z.string().max(20).trim().nullable().optional(),
+    emergencyContactName: z.string().max(100).trim().nullable().optional(),
+    emergencyContactPhone: z.string().max(20).trim().nullable().optional(),
+    emergencyContactRelationship: z.string().max(50).trim().nullable().optional(),
   })
   .refine(
     (data) => {
@@ -109,6 +119,10 @@ export const updateProfileSchema = z.object({
   lastName: z.string().min(1).max(100).trim().optional(),
   gender: z.enum(['MALE', 'FEMALE']).nullable().optional(),
   dateOfBirth: z.string().nullable().optional(),
+  contactNumber: z.string().max(20).trim().nullable().optional(),
+  emergencyContactName: z.string().max(100).trim().nullable().optional(),
+  emergencyContactPhone: z.string().max(20).trim().nullable().optional(),
+  emergencyContactRelationship: z.string().max(50).trim().nullable().optional(),
 });
 
 export type CreatePersonInput = z.infer<typeof createPersonSchema>;

@@ -53,8 +53,12 @@ model Person {
   last_name           String
   gender              Gender?
   date_of_birth       DateTime? @db.Date
-  profile_picture_url String?
-  role                Role      @default(WORKER)
+  profile_picture_url              String?
+  contact_number                   String?
+  emergency_contact_name           String?
+  emergency_contact_phone          String?
+  emergency_contact_relationship   String?
+  role                             Role      @default(WORKER)
   team_id             String?
   team_assigned_at    DateTime? // When worker was assigned to current team
 

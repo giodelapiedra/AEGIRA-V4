@@ -1,4 +1,4 @@
-import { ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PieChart as PieIcon } from 'lucide-react';
@@ -49,6 +49,15 @@ export function IncidentTypeChart({ data }: IncidentTypeChartProps) {
                       <Cell key={entry.type} fill={INCIDENT_TYPE_COLORS[entry.type] ?? '#cbd5e1'} />
                     ))}
                   </Pie>
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--card))',
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px',
+                      fontSize: 12,
+                    }}
+                    formatter={(value) => [value, 'Count']}
+                  />
                 </PieChart>
               </ResponsiveContainer>
               {/* Center label */}

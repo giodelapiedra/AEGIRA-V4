@@ -3,8 +3,10 @@ import type { PrismaClient, Company, Holiday, Person, Prisma, Role } from '@pris
 import { BaseRepository } from '../../shared/base.repository';
 import { calculateSkip, paginate } from '../../shared/utils';
 import type { PaginationParams, PaginatedResponse } from '../../types/api.types';
+import { SAFE_PERSON_SELECT } from '../person/person.repository';
+import type { SafePerson } from '../person/person.repository';
 
-export interface UpdateCompanyData {
+interface UpdateCompanyData {
   name?: string;
   timezone?: string;
   industry?: string | null;
@@ -18,30 +20,30 @@ export interface UpdateCompanyData {
   addressCountry?: string;
 }
 
-export interface CreateHolidayData {
+interface CreateHolidayData {
   name: string;
   date: Date;
   isRecurring?: boolean;
 }
 
-export interface UpdateHolidayData {
+interface UpdateHolidayData {
   name?: string;
   date?: Date;
   isRecurring?: boolean;
 }
 
-export interface AuditLogFilters {
+interface AuditLogFilters {
   type?: string;
   search?: string;
   dateFilter?: string;
 }
 
-export interface PersonFilters {
+interface PersonFilters {
   search?: string;
 }
 
 /** Person summary for admin list view (minimal fields) */
-export interface AdminPersonSummary {
+interface AdminPersonSummary {
   id: string;
   email: string;
   first_name: string;
@@ -53,7 +55,7 @@ export interface AdminPersonSummary {
 }
 
 /** Audit log with partial person info (safe subset for API responses) */
-export interface AuditLogWithPerson {
+interface AuditLogWithPerson {
   id: string;
   company_id: string;
   person_id: string | null;
@@ -81,7 +83,7 @@ export class AdminRepository extends BaseRepository {
   // ==================== Company Operations ====================
 
   async findCompanyById(): Promise<Company | null> {
-    return this.prisma.company.findUnique({
+    return this.prisma.company.findFirst({
       where: { id: this.companyId },
     });
   }
@@ -159,12 +161,6 @@ export class AdminRepository extends BaseRepository {
     return this.prisma.holiday.update({
       where: { id: existing.id },
       data: updateData,
-    });
-  }
-
-  async findHolidayById(id: string): Promise<Holiday | null> {
-    return this.prisma.holiday.findFirst({
-      where: this.where({ id }),
     });
   }
 
@@ -278,7 +274,7 @@ export class AdminRepository extends BaseRepository {
     return paginate(items, total, pagination);
   }
 
-  async updatePersonRole(id: string, role: Role): Promise<Person | null> {
+  async updatePersonRole(id: string, role: Role): Promise<SafePerson | null> {
     // Verify person exists in this company (minimal select — never fetch password_hash)
     const existing = await this.prisma.person.findFirst({
       where: this.where({ id }),
@@ -293,12 +289,14 @@ export class AdminRepository extends BaseRepository {
     return this.prisma.person.update({
       where: { id: existing.id },
       data: { role },
+      select: SAFE_PERSON_SELECT,
     });
   }
 
-  async findPersonById(id: string): Promise<Person | null> {
+  async findPersonById(id: string): Promise<SafePerson | null> {
     return this.prisma.person.findFirst({
       where: this.where({ id }),
+      select: SAFE_PERSON_SELECT,
     });
   }
 }

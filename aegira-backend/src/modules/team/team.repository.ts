@@ -4,21 +4,21 @@ import { BaseRepository } from '../../shared/base.repository';
 import { calculateSkip, paginate } from '../../shared/utils';
 import type { PaginationParams, PaginatedResponse } from '../../types/api.types';
 
-export interface CreateTeamData {
+interface CreateTeamData {
   name: string;
   description?: string;
-  leaderId: string;  // Required - every team must have a leader
-  supervisorId?: string | null;  // Optional supervisor assignment
+  leaderId: string;
+  supervisorId?: string | null;
   checkInStart?: string;
   checkInEnd?: string;
   workDays?: string;
 }
 
-export interface UpdateTeamData {
+interface UpdateTeamData {
   name?: string;
   description?: string;
-  leaderId?: string;  // Can change leader but cannot remove (always required)
-  supervisorId?: string | null;  // Can assign/change/remove supervisor
+  leaderId?: string;
+  supervisorId?: string | null;
   isActive?: boolean;
   checkInStart?: string;
   checkInEnd?: string;

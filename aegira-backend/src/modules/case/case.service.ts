@@ -13,7 +13,6 @@ const VALID_TRANSITIONS: Record<CaseStatus, CaseStatus[]> = {
 
 interface UpdateCaseInput {
   status?: CaseStatus;
-  assignedTo?: string | null;
   notes?: string;
 }
 
@@ -30,22 +29,8 @@ export class CaseService {
     updaterId: string,
     data: UpdateCaseInput
   ): Promise<CaseWithRelations> {
-    // Validate assignee outside transaction (user input validation)
-    if (data.assignedTo !== undefined && data.assignedTo !== null) {
-      const assignee = await this.prisma.person.findFirst({
-        where: { id: data.assignedTo, company_id: companyId },
-        select: { id: true, role: true, is_active: true },
-      });
-      if (!assignee) {
-        throw new AppError('INVALID_ASSIGNEE', 'Assignee not found', 400);
-      }
-      if (!['WHS', 'ADMIN'].includes(assignee.role)) {
-        throw new AppError('INVALID_ASSIGNEE_ROLE', 'Assignee must have WHS or ADMIN role', 400);
-      }
-      if (!assignee.is_active) {
-        throw new AppError('INVALID_ASSIGNEE', 'Assignee account is inactive', 400);
-      }
-    }
+    // Track effective status outside transaction for audit log
+    let effectiveStatus: CaseStatus | undefined;
 
     // Update with event sourcing inside transaction
     // All case existence checks and status validation are inside transaction to avoid TOCTOU race
@@ -60,7 +45,7 @@ export class CaseService {
         throw new AppError('NOT_FOUND', 'Case not found', 404);
       }
 
-      // Validate status transition if status change requested
+      // Determine effective status: strip same-status no-ops without mutating input
       if (data.status && data.status !== existing.status) {
         const allowed = VALID_TRANSITIONS[existing.status] || [];
         if (!allowed.includes(data.status)) {
@@ -70,26 +55,16 @@ export class CaseService {
             400
           );
         }
-      } else if (data.status && data.status === existing.status) {
-        // No-op: same status — strip it so we don't create misleading audit events
-        data.status = undefined;
+        effectiveStatus = data.status;
       }
 
       // Build update data
       const updateData: Prisma.CaseUpdateInput = {};
 
-      if (data.status !== undefined) {
-        updateData.status = data.status;
-        if (data.status === 'RESOLVED' || data.status === 'CLOSED') {
+      if (effectiveStatus !== undefined) {
+        updateData.status = effectiveStatus;
+        if (effectiveStatus === 'RESOLVED' || effectiveStatus === 'CLOSED') {
           updateData.resolved_at = new Date();
-        }
-      }
-
-      if (data.assignedTo !== undefined) {
-        if (data.assignedTo === null) {
-          updateData.assignee = { disconnect: true };
-        } else {
-          updateData.assignee = { connect: { id: data.assignedTo } };
         }
       }
 
@@ -111,6 +86,7 @@ export class CaseService {
               location: true,
               description: true,
               status: true,
+              created_at: true,
               reporter: {
                 select: {
                   id: true,
@@ -131,7 +107,7 @@ export class CaseService {
       });
 
       // Determine event type (RESOLVED and CLOSED are both terminal — use CASE_RESOLVED for both)
-      const eventType = (data.status === 'RESOLVED' || data.status === 'CLOSED')
+      const eventType = (effectiveStatus === 'RESOLVED' || effectiveStatus === 'CLOSED')
         ? 'CASE_RESOLVED'
         : 'CASE_UPDATED';
 
@@ -146,8 +122,7 @@ export class CaseService {
           payload: {
             caseId: caseRecord.id,
             caseNumber: caseRecord.case_number,
-            ...(data.status && { status: data.status, previousStatus: existing.status }),
-            ...(data.assignedTo !== undefined && { assignedTo: data.assignedTo }),
+            ...(effectiveStatus && { status: effectiveStatus, previousStatus: existing.status }),
             ...(data.notes !== undefined && { notesUpdated: true }),
           },
           timezone: this.timezone,
@@ -161,15 +136,14 @@ export class CaseService {
     logAudit({
       companyId,
       personId: updaterId,
-      action: (data.status === 'RESOLVED' || data.status === 'CLOSED')
+      action: (effectiveStatus === 'RESOLVED' || effectiveStatus === 'CLOSED')
         ? 'CASE_RESOLVED'
         : 'CASE_UPDATED',
       entityType: 'case',
       entityId: caseId,
       details: {
         caseNumber: updated.case_number,
-        ...(data.status && { status: data.status }),
-        ...(data.assignedTo !== undefined && { assignedTo: data.assignedTo }),
+        ...(effectiveStatus && { status: effectiveStatus }),
       },
     });
 

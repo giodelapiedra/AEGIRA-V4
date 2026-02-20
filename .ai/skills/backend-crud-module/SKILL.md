@@ -72,7 +72,7 @@ const timezone = c.get('companyTimezone') as string;  // From tenantMiddleware
 - [ ] Returns `{ success: true, data: ... }` format
 - [ ] Exports inferred types from validators
 - [ ] Places specific routes before dynamic `/:id` routes
-- [ ] Uses `findUnique` for primary key lookups
+- [ ] Uses `findFirst` with `this.where()` for primary key lookups (never `findUnique` — it doesn't support compound `company_id` filtering)
 - [ ] Validates path params with `zValidator('param', idSchema)`
 - [ ] Maps camelCase input to snake_case DB columns in create
 - [ ] Includes fire-and-forget `logAudit()` in create/update/delete

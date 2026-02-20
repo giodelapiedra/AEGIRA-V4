@@ -32,9 +32,7 @@ interface NavItem {
   href: string;
 }
 
-// Simplified nav items - grouped by role
 const getNavItems = (role: string): NavItem[] => {
-  // Common for all
   const common: NavItem[] = [
     {
       label: 'Dashboard',
@@ -43,7 +41,6 @@ const getNavItems = (role: string): NavItem[] => {
     },
   ];
 
-  // Worker items
   if (role === 'WORKER') {
     return [
       ...common,
@@ -65,7 +62,6 @@ const getNavItems = (role: string): NavItem[] => {
     ];
   }
 
-  // Team Lead items
   if (role === 'TEAM_LEAD') {
     return [
       ...common,
@@ -92,7 +88,6 @@ const getNavItems = (role: string): NavItem[] => {
     ];
   }
 
-  // Supervisor items
   if (role === 'SUPERVISOR') {
     return [
       ...common,
@@ -119,7 +114,6 @@ const getNavItems = (role: string): NavItem[] => {
     ];
   }
 
-  // WHS items — incident & case management + worker lookup
   if (role === 'WHS') {
     return [
       ...common,
@@ -131,12 +125,12 @@ const getNavItems = (role: string): NavItem[] => {
       {
         label: 'Incidents',
         icon: <ShieldAlert className="h-5 w-5" />,
-        href: ROUTES.ADMIN_INCIDENTS,
+        href: ROUTES.WHS_INCIDENTS,
       },
       {
         label: 'Cases',
         icon: <FolderOpen className="h-5 w-5" />,
-        href: ROUTES.ADMIN_CASES,
+        href: ROUTES.WHS_CASES,
       },
       {
         label: 'Analytics',
@@ -146,7 +140,6 @@ const getNavItems = (role: string): NavItem[] => {
     ];
   }
 
-  // Admin items
   if (role === 'ADMIN') {
     return [
       ...common,
@@ -159,16 +152,6 @@ const getNavItems = (role: string): NavItem[] => {
         label: 'Workers',
         icon: <UserCircle className="h-5 w-5" />,
         href: ROUTES.ADMIN_WORKERS,
-      },
-      {
-        label: 'Incidents',
-        icon: <ShieldAlert className="h-5 w-5" />,
-        href: ROUTES.ADMIN_INCIDENTS,
-      },
-      {
-        label: 'Cases',
-        icon: <FolderOpen className="h-5 w-5" />,
-        href: ROUTES.ADMIN_CASES,
       },
       {
         label: 'Holidays',
@@ -191,7 +174,6 @@ const getNavItems = (role: string): NavItem[] => {
   return common;
 };
 
-// Max visible items in mobile bottom nav (excluding "More" and "Settings")
 const MOBILE_VISIBLE_COUNT = 3;
 
 export function Sidebar() {
@@ -204,7 +186,6 @@ export function Sidebar() {
     location.pathname === href ||
     (href !== ROUTES.DASHBOARD && location.pathname.startsWith(href));
 
-  // Mobile: split items into visible and overflow
   const mobileVisibleItems = navItems.slice(0, MOBILE_VISIBLE_COUNT);
   const mobileOverflowItems = navItems.slice(MOBILE_VISIBLE_COUNT);
   const hasOverflow = mobileOverflowItems.length > 0;
@@ -212,94 +193,144 @@ export function Sidebar() {
 
   return (
     <>
-      {/* Desktop Sidebar - hidden on mobile */}
-      <aside className="hidden md:flex fixed left-0 top-0 z-40 h-screen w-20 bg-card border-r border-border/50 flex-col">
+      {/* ── Desktop Sidebar ── */}
+      <aside className="hidden md:flex fixed left-0 top-0 z-40 h-screen w-[72px] bg-card/80 backdrop-blur-sm border-r border-border/40 flex-col">
         {/* Logo */}
-        <div className="flex h-16 items-center justify-center">
-          <Link to={ROUTES.DASHBOARD} className="flex h-10 w-10 items-center justify-center rounded-md bg-primary text-lg font-bold text-primary-foreground transition-transform hover:scale-105">
+        <div className="flex h-16 items-center justify-center shrink-0">
+          <Link
+            to={ROUTES.DASHBOARD}
+            className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-sm font-bold text-primary transition-all duration-200 hover:bg-primary/15 hover:scale-105"
+          >
             A
           </Link>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto py-6 px-3" role="navigation" aria-label="Main navigation">
-          <div className="space-y-1">
-            {navItems.map((item) => (
-              <Link
-                key={item.href}
-                to={item.href}
-                className={cn(
-                  'flex flex-col items-center gap-1 rounded-md px-2 py-3 text-center transition-all duration-200 ease-in-out',
-                  isActive(item.href)
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                )}
-                aria-label={item.label}
-                aria-current={isActive(item.href) ? 'page' : undefined}
-              >
-                {item.icon}
-                <span className="text-xs font-medium leading-tight">{item.label}</span>
-              </Link>
-            ))}
+        {/* Main Navigation */}
+        <nav className="flex-1 overflow-y-auto px-2.5 pt-2 pb-4" role="navigation" aria-label="Main navigation">
+          <div className="flex flex-col gap-0.5">
+            {navItems.map((item) => {
+              const active = isActive(item.href);
+              return (
+                <Link
+                  key={item.href}
+                  to={item.href}
+                  className={cn(
+                    'relative flex flex-col items-center gap-1 rounded-lg px-2 py-2.5 text-center transition-all duration-200',
+                    active
+                      ? 'text-primary'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                  )}
+                  aria-label={item.label}
+                  aria-current={active ? 'page' : undefined}
+                >
+                  {/* Active indicator bar */}
+                  {active && (
+                    <span className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-[3px] rounded-r-full bg-primary" />
+                  )}
+                  <span className={cn(
+                    'flex items-center justify-center rounded-md h-8 w-8 transition-colors duration-200',
+                    active && 'bg-primary/10',
+                  )}>
+                    {item.icon}
+                  </span>
+                  <span className={cn(
+                    'text-[10px] leading-tight transition-colors duration-200',
+                    active ? 'font-semibold' : 'font-medium'
+                  )}>
+                    {item.label}
+                  </span>
+                </Link>
+              );
+            })}
           </div>
         </nav>
 
+        {/* Divider */}
+        <div className="mx-4 border-t border-border/40" />
+
         {/* Bottom - Settings */}
-        <div className="shrink-0 p-3 pb-6">
+        <div className="shrink-0 px-2.5 py-4">
           <Link
             to={ROUTES.SETTINGS}
             className={cn(
-              'flex flex-col items-center gap-1 rounded-md px-2 py-3 text-center transition-all duration-200 ease-in-out',
+              'relative flex flex-col items-center gap-1 rounded-lg px-2 py-2.5 text-center transition-all duration-200',
               isActive(ROUTES.SETTINGS)
-                ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                ? 'text-primary'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
             )}
             aria-label="Settings"
             aria-current={isActive(ROUTES.SETTINGS) ? 'page' : undefined}
           >
-            <Settings className="h-5 w-5" />
-            <span className="text-xs font-medium leading-tight">Settings</span>
+            {isActive(ROUTES.SETTINGS) && (
+              <span className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-[3px] rounded-r-full bg-primary" />
+            )}
+            <span className={cn(
+              'flex items-center justify-center rounded-md h-8 w-8 transition-colors duration-200',
+              isActive(ROUTES.SETTINGS) && 'bg-primary/10',
+            )}>
+              <Settings className="h-5 w-5" />
+            </span>
+            <span className={cn(
+              'text-[10px] leading-tight transition-colors duration-200',
+              isActive(ROUTES.SETTINGS) ? 'font-semibold' : 'font-medium'
+            )}>
+              Settings
+            </span>
           </Link>
         </div>
       </aside>
 
-      {/* Mobile Bottom Navigation */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t bg-card safe-area-bottom" role="navigation" aria-label="Mobile navigation">
-        <div className="flex justify-around items-center h-16 px-2">
-          {/* Visible nav items */}
-          {mobileVisibleItems.map((item) => (
-            <Link
-              key={item.href}
-              to={item.href}
-              className={cn(
-                'flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors min-w-[60px]',
-                isActive(item.href)
-                  ? 'text-primary'
-                  : 'text-muted-foreground'
-              )}
-              aria-label={item.label}
-              aria-current={isActive(item.href) ? 'page' : undefined}
-            >
-              {item.icon}
-              <span className="text-xs font-medium">{item.label}</span>
-            </Link>
-          ))}
+      {/* ── Mobile Bottom Navigation ── */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-border/40 bg-card/90 backdrop-blur-md safe-area-bottom" role="navigation" aria-label="Mobile navigation">
+        <div className="flex justify-around items-end h-16 px-1">
+          {mobileVisibleItems.map((item) => {
+            const active = isActive(item.href);
+            return (
+              <Link
+                key={item.href}
+                to={item.href}
+                className={cn(
+                  'relative flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg transition-colors min-w-[56px]',
+                  active ? 'text-primary' : 'text-muted-foreground'
+                )}
+                aria-label={item.label}
+                aria-current={active ? 'page' : undefined}
+              >
+                {/* Active dot indicator */}
+                {active && (
+                  <span className="absolute top-0.5 left-1/2 -translate-x-1/2 h-[3px] w-5 rounded-full bg-primary" />
+                )}
+                {item.icon}
+                <span className={cn(
+                  'text-[10px]',
+                  active ? 'font-semibold' : 'font-medium'
+                )}>
+                  {item.label}
+                </span>
+              </Link>
+            );
+          })}
 
-          {/* More menu for overflow items */}
           {hasOverflow && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
                   className={cn(
-                    'flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors min-w-[60px]',
-                    isOverflowActive
-                      ? 'text-primary'
-                      : 'text-muted-foreground'
+                    'relative flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg transition-colors min-w-[56px]',
+                    isOverflowActive ? 'text-primary' : 'text-muted-foreground'
                   )}
                   aria-label="More navigation items"
                 >
+                  {isOverflowActive && (
+                    <span className="absolute top-0.5 left-1/2 -translate-x-1/2 h-[3px] w-5 rounded-full bg-primary" />
+                  )}
                   <MoreHorizontal className="h-5 w-5" />
-                  <span className="text-xs font-medium">More</span>
+                  <span className={cn(
+                    'text-[10px]',
+                    isOverflowActive ? 'font-semibold' : 'font-medium'
+                  )}>
+                    More
+                  </span>
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" side="top" className="mb-2 w-48">
@@ -308,7 +339,7 @@ export function Sidebar() {
                     <Link
                       to={item.href}
                       className={cn(
-                        'flex items-center gap-2',
+                        'flex items-center gap-2.5',
                         isActive(item.href) && 'text-primary font-medium'
                       )}
                     >
@@ -321,20 +352,25 @@ export function Sidebar() {
             </DropdownMenu>
           )}
 
-          {/* Settings - always visible */}
           <Link
             to={ROUTES.SETTINGS}
             className={cn(
-              'flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors min-w-[60px]',
-              isActive(ROUTES.SETTINGS)
-                ? 'text-primary'
-                : 'text-muted-foreground'
+              'relative flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg transition-colors min-w-[56px]',
+              isActive(ROUTES.SETTINGS) ? 'text-primary' : 'text-muted-foreground'
             )}
             aria-label="Settings"
             aria-current={isActive(ROUTES.SETTINGS) ? 'page' : undefined}
           >
+            {isActive(ROUTES.SETTINGS) && (
+              <span className="absolute top-0.5 left-1/2 -translate-x-1/2 h-[3px] w-5 rounded-full bg-primary" />
+            )}
             <Settings className="h-5 w-5" />
-            <span className="text-xs font-medium">Settings</span>
+            <span className={cn(
+              'text-[10px]',
+              isActive(ROUTES.SETTINGS) ? 'font-semibold' : 'font-medium'
+            )}>
+              Settings
+            </span>
           </Link>
         </div>
       </nav>

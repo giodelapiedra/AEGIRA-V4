@@ -24,9 +24,21 @@ src/modules/<feature>/<feature>.service.ts
 
 <!-- @pattern: backend/controller-pattern -->
 
+## Event Sourcing (buildEventData / emitEvent)
+
+<!-- @pattern: backend/event-sourcing -->
+
+## Schedule Resolution (Worker Override + Team Fallback)
+
+<!-- @pattern: backend/schedule-resolution -->
+
 ## Error Handling
 
 <!-- @pattern: backend/error-handling -->
+
+## Snapshot Service (Batch State Capture for Analytics)
+
+<!-- @pattern: shared/snapshot-service-pattern -->
 
 ## Checklist
 

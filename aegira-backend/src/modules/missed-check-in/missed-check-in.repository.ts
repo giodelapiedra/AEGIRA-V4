@@ -2,14 +2,21 @@
 import type { PrismaClient, MissedCheckIn, Prisma, Role } from '@prisma/client';
 import { BaseRepository } from '../../shared/base.repository';
 import { calculateSkip, paginate } from '../../shared/utils';
-import type { PaginationParams, PaginatedResponse } from '../../types/api.types';
+import type { PaginatedResponse } from '../../types/api.types';
 
-export interface CreateMissedCheckInData {
+interface MissedCheckInFilters {
+  page: number;
+  limit: number;
+  teamIds?: string[];
+  personId?: string;
+  resolved?: boolean; // true = resolved only, false = unresolved only, undefined = all
+}
+
+interface CreateMissedCheckInData {
   personId: string;
   teamId: string;
   missedDate: Date;
   scheduleWindow: string;
-  // State snapshot fields (optional for backward compatibility)
   workerRoleAtMiss?: Role | null;
   teamLeaderIdAtMiss?: string | null;
   teamLeaderNameAtMiss?: string | null;
@@ -22,17 +29,11 @@ export interface CreateMissedCheckInData {
   missesInLast30d?: number;
   missesInLast60d?: number;
   missesInLast90d?: number;
-  baselineCompletionRate?: number;
+  baselineCompletionRate?: number | null;
   isFirstMissIn30d?: boolean;
   isIncreasingFrequency?: boolean;
   reminderSent?: boolean;
   reminderFailed?: boolean;
-}
-
-export interface MissedCheckInFilters extends PaginationParams {
-  teamIds?: string[];
-  personId?: string;
-  resolved?: boolean; // true = resolved only, false = unresolved only, undefined = all
 }
 
 type MissedCheckInWithRelations = MissedCheckIn & {
@@ -119,9 +120,7 @@ export class MissedCheckInRepository extends BaseRepository {
           misses_in_last_30d: true,
           misses_in_last_60d: true,
           misses_in_last_90d: true,
-          baseline_completion_rate: true,
           is_first_miss_in_30d: true,
-          is_increasing_frequency: true,
           // Resolution tracking
           resolved_by_check_in_id: true,
           resolved_at: true,

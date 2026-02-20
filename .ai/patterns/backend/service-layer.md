@@ -36,9 +36,9 @@ import {
   getTodayInTimezone,
   getCurrentTimeInTimezone,
   getDayOfWeekInTimezone,
-  isTimeWithinWindow,
   parseDateInTimezone,
 } from '../../shared/utils';
+import { getEffectiveSchedule } from '../../shared/schedule.utils';
 
 export class CheckInService {
   constructor(
@@ -58,16 +58,18 @@ export class CheckInService {
     // 2. Business rule checks
     const person = await this.repository.getPersonWithTeam(personId);
     if (person?.team) {
+      const schedule = getEffectiveSchedule(person, person.team);
       const dayOfWeek = getDayOfWeekInTimezone(this.timezone).toString();
       if (!schedule.workDays.includes(dayOfWeek)) {
         throw new AppError('NOT_WORK_DAY', 'Today is not a scheduled work day', 400);
       }
 
+      // Only reject "too early" — late submissions are allowed
       const currentTime = getCurrentTimeInTimezone(this.timezone);
-      if (!isTimeWithinWindow(currentTime, schedule.checkInStart, schedule.checkInEnd)) {
+      if (currentTime < schedule.checkInStart) {
         throw new AppError(
-          'OUTSIDE_CHECK_IN_WINDOW',
-          `Check-in allowed between ${schedule.checkInStart} and ${schedule.checkInEnd}`,
+          'TOO_EARLY',
+          `Check-in opens at ${schedule.checkInStart}`,
           400
         );
       }
@@ -203,6 +205,97 @@ export async function getTeamAnalytics(c: Context): Promise<Response> {
   const analytics = await teamService.getTeamAnalytics(period, timezone, teamIds);
 
   return c.json({ success: true, data: analytics });
+}
+```
+
+### Timezone Management
+```typescript
+// Company timezone is cached by tenant middleware (5-min TTL).
+// Always use c.get('companyTimezone') — never query DB for timezone.
+export async function submitCheckIn(c: Context): Promise<Response> {
+  const companyId = c.get('companyId') as string;
+  const timezone = c.get('companyTimezone') as string; // Cached, no DB query
+
+  const service = getService(companyId, timezone);
+  // ...
+}
+
+// After admin updates company settings, invalidate the cache:
+import { invalidateCompanyCache } from '../../middleware/tenant';
+
+export async function updateCompanySettings(c: Context): Promise<Response> {
+  const companyId = c.get('companyId') as string;
+  const result = await repository.updateCompany(data);
+
+  invalidateCompanyCache(companyId); // Clear cached timezone for this company
+  return c.json({ success: true, data: result });
+}
+```
+
+### Schedule-Aware Aggregations
+```typescript
+// Dashboard/analytics services must account for schedules and holidays
+// when calculating metrics like "expected check-ins" or "completion rate".
+// Use getEffectiveSchedule() + holiday date sets — never use raw worker count.
+
+import { getEffectiveSchedule } from '../../shared/schedule.utils';
+import { buildHolidayDateSet } from '../../shared/holiday.utils';
+
+async getTeamSummary(teamId: string, timezone: string) {
+  const [workers, holidayDates] = await Promise.all([
+    this.getActiveWorkers(teamId),
+    buildHolidayDateSet(this.prisma, this.companyId, startDate, endDate),
+  ]);
+
+  // Count expected check-ins (schedule + holiday aware)
+  let expectedCheckIns = 0;
+  for (const worker of workers) {
+    const schedule = getEffectiveSchedule(worker, worker.team);
+    if (schedule.workDays.includes(todayDow) && !holidayDates.has(todayStr)) {
+      expectedCheckIns++;
+    }
+  }
+
+  // Use expectedCheckIns (not workers.length) for completion rate
+  const completionRate = expectedCheckIns > 0
+    ? (actualCheckIns / expectedCheckIns) * 100
+    : 100;
+}
+```
+
+### Job Service Pattern
+```typescript
+// Background jobs (cron) follow a specific pattern:
+// 1. Guard against concurrent runs (in-memory lock)
+// 2. Iterate over active companies (multi-tenant)
+// 3. Process per-company in their own timezone
+// 4. Inner try/catch per item (one failure doesn't stop the batch)
+// 5. Fire-and-forget side effects (notifications, events)
+
+let isRunning = false;
+
+export async function detectMissedCheckIns(prisma: PrismaClient): Promise<void> {
+  if (isRunning) return; // Guard against overlapping runs
+  isRunning = true;
+
+  try {
+    const companies = await prisma.company.findMany({ where: { is_active: true } });
+
+    for (const company of companies) {
+      try {
+        const timezone = company.timezone ?? 'Asia/Manila';
+        // ... process this company's workers ...
+
+        // Fire-and-forget notifications
+        emitEvent(prisma, { companyId: company.id, eventType: 'MISSED_CHECK_IN_DETECTED', ... });
+      } catch (error) {
+        // Log and continue — don't stop processing other companies
+        logger.error({ error, companyId: company.id }, 'Failed to process company');
+      }
+    }
+  } finally {
+    isRunning = false; // Always release lock
+  }
 }
 ```
 

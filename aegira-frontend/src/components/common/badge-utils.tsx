@@ -7,16 +7,13 @@
  */
 
 import { Badge } from '@/components/ui/badge';
+import { SEMANTIC_STATUS } from '@/lib/constants';
 
 /**
  * Readiness Level Badge (GREEN/YELLOW/RED)
  */
 export function ReadinessBadge({ level }: { level: 'GREEN' | 'YELLOW' | 'RED' }) {
-  const config = {
-    GREEN: { variant: 'success' as const, label: 'Green' },
-    YELLOW: { variant: 'warning' as const, label: 'Yellow' },
-    RED: { variant: 'destructive' as const, label: 'Red' },
-  };
+  const config = SEMANTIC_STATUS.READINESS_LEVEL;
 
   const { variant, label } = config[level] || { variant: 'secondary' as const, label: level };
 
@@ -30,18 +27,14 @@ export function ReadinessBadge({ level }: { level: 'GREEN' | 'YELLOW' | 'RED' })
 export function ReadinessCategoryBadge({ category }: { category?: string }) {
   if (!category) return <Badge variant="outline">-</Badge>;
 
-  switch (category) {
-    case 'ready':
-      return <Badge variant="success">Ready</Badge>;
-    case 'modified_duty':
-      return <Badge variant="warning">Modified Duty</Badge>;
-    case 'needs_attention':
-      return <Badge className="border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-800 dark:bg-orange-950 dark:text-orange-400">Needs Attention</Badge>;
-    case 'not_ready':
-      return <Badge variant="destructive">Not Ready</Badge>;
-    default:
-      return <Badge variant="outline">{category}</Badge>;
-  }
+  const statusConfig =
+    SEMANTIC_STATUS.READINESS_CATEGORY[
+      category as keyof typeof SEMANTIC_STATUS.READINESS_CATEGORY
+    ];
+
+  if (!statusConfig) return <Badge variant="outline">{category}</Badge>;
+
+  return <Badge variant={statusConfig.variant}>{statusConfig.label}</Badge>;
 }
 
 /**
@@ -49,9 +42,17 @@ export function ReadinessCategoryBadge({ category }: { category?: string }) {
  */
 export function MissedCheckInStatusBadge({ resolvedAt }: { resolvedAt?: string | null }) {
   if (resolvedAt) {
-    return <Badge className="border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400">Resolved (Late)</Badge>;
+    return (
+      <Badge variant={SEMANTIC_STATUS.MISSED_CHECK_IN_STATUS.RESOLVED_LATE.variant}>
+        {SEMANTIC_STATUS.MISSED_CHECK_IN_STATUS.RESOLVED_LATE.label}
+      </Badge>
+    );
   }
-  return <Badge variant="destructive">Unresolved</Badge>;
+  return (
+    <Badge variant={SEMANTIC_STATUS.MISSED_CHECK_IN_STATUS.UNRESOLVED.variant}>
+      {SEMANTIC_STATUS.MISSED_CHECK_IN_STATUS.UNRESOLVED.label}
+    </Badge>
+  );
 }
 
 /**

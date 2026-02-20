@@ -365,9 +365,9 @@ import {
   getTodayInTimezone,
   getCurrentTimeInTimezone,
   getDayOfWeekInTimezone,
-  isTimeWithinWindow,
   parseDateInTimezone,
 } from '../../shared/utils';
+import { getEffectiveSchedule } from '../../shared/schedule.utils';
 
 export class CheckInService {
   constructor(
@@ -387,16 +387,18 @@ export class CheckInService {
     // 2. Business rule checks
     const person = await this.repository.getPersonWithTeam(personId);
     if (person?.team) {
+      const schedule = getEffectiveSchedule(person, person.team);
       const dayOfWeek = getDayOfWeekInTimezone(this.timezone).toString();
       if (!schedule.workDays.includes(dayOfWeek)) {
         throw new AppError('NOT_WORK_DAY', 'Today is not a scheduled work day', 400);
       }
 
+      // Only reject "too early" — late submissions are allowed
       const currentTime = getCurrentTimeInTimezone(this.timezone);
-      if (!isTimeWithinWindow(currentTime, schedule.checkInStart, schedule.checkInEnd)) {
+      if (currentTime < schedule.checkInStart) {
         throw new AppError(
-          'OUTSIDE_CHECK_IN_WINDOW',
-          `Check-in allowed between ${schedule.checkInStart} and ${schedule.checkInEnd}`,
+          'TOO_EARLY',
+          `Check-in opens at ${schedule.checkInStart}`,
           400
         );
       }
@@ -532,6 +534,97 @@ export async function getTeamAnalytics(c: Context): Promise<Response> {
   const analytics = await teamService.getTeamAnalytics(period, timezone, teamIds);
 
   return c.json({ success: true, data: analytics });
+}
+```
+
+### Timezone Management
+```typescript
+// Company timezone is cached by tenant middleware (5-min TTL).
+// Always use c.get('companyTimezone') — never query DB for timezone.
+export async function submitCheckIn(c: Context): Promise<Response> {
+  const companyId = c.get('companyId') as string;
+  const timezone = c.get('companyTimezone') as string; // Cached, no DB query
+
+  const service = getService(companyId, timezone);
+  // ...
+}
+
+// After admin updates company settings, invalidate the cache:
+import { invalidateCompanyCache } from '../../middleware/tenant';
+
+export async function updateCompanySettings(c: Context): Promise<Response> {
+  const companyId = c.get('companyId') as string;
+  const result = await repository.updateCompany(data);
+
+  invalidateCompanyCache(companyId); // Clear cached timezone for this company
+  return c.json({ success: true, data: result });
+}
+```
+
+### Schedule-Aware Aggregations
+```typescript
+// Dashboard/analytics services must account for schedules and holidays
+// when calculating metrics like "expected check-ins" or "completion rate".
+// Use getEffectiveSchedule() + holiday date sets — never use raw worker count.
+
+import { getEffectiveSchedule } from '../../shared/schedule.utils';
+import { buildHolidayDateSet } from '../../shared/holiday.utils';
+
+async getTeamSummary(teamId: string, timezone: string) {
+  const [workers, holidayDates] = await Promise.all([
+    this.getActiveWorkers(teamId),
+    buildHolidayDateSet(this.prisma, this.companyId, startDate, endDate),
+  ]);
+
+  // Count expected check-ins (schedule + holiday aware)
+  let expectedCheckIns = 0;
+  for (const worker of workers) {
+    const schedule = getEffectiveSchedule(worker, worker.team);
+    if (schedule.workDays.includes(todayDow) && !holidayDates.has(todayStr)) {
+      expectedCheckIns++;
+    }
+  }
+
+  // Use expectedCheckIns (not workers.length) for completion rate
+  const completionRate = expectedCheckIns > 0
+    ? (actualCheckIns / expectedCheckIns) * 100
+    : 100;
+}
+```
+
+### Job Service Pattern
+```typescript
+// Background jobs (cron) follow a specific pattern:
+// 1. Guard against concurrent runs (in-memory lock)
+// 2. Iterate over active companies (multi-tenant)
+// 3. Process per-company in their own timezone
+// 4. Inner try/catch per item (one failure doesn't stop the batch)
+// 5. Fire-and-forget side effects (notifications, events)
+
+let isRunning = false;
+
+export async function detectMissedCheckIns(prisma: PrismaClient): Promise<void> {
+  if (isRunning) return; // Guard against overlapping runs
+  isRunning = true;
+
+  try {
+    const companies = await prisma.company.findMany({ where: { is_active: true } });
+
+    for (const company of companies) {
+      try {
+        const timezone = company.timezone ?? 'Asia/Manila';
+        // ... process this company's workers ...
+
+        // Fire-and-forget notifications
+        emitEvent(prisma, { companyId: company.id, eventType: 'MISSED_CHECK_IN_DETECTED', ... });
+      } catch (error) {
+        // Log and continue — don't stop processing other companies
+        logger.error({ error, companyId: company.id }, 'Failed to process company');
+      }
+    }
+  } finally {
+    isRunning = false; // Always release lock
+  }
 }
 ```
 
@@ -712,12 +805,34 @@ export async function getPersonById(c: Context): Promise<Response> {
 }
 ```
 
+### Validated Input Extraction (Zod Transforms)
+```typescript
+// CRITICAL: Use c.req.valid() instead of c.req.json() to ensure Zod transforms
+// (trim, toLowerCase) are applied before the controller sees the data.
+// The 'json' as never cast is a Hono generic Context workaround.
+
+export async function createPerson(c: Context): Promise<Response> {
+  const companyId = c.get('companyId') as string;
+  const userId = c.get('userId') as string;
+
+  // CORRECT — Zod transforms applied (trim, toLowerCase on emails)
+  const data = c.req.valid('json' as never) as CreatePersonInput;
+
+  // WRONG — raw JSON, Zod transforms NOT applied
+  // const data = await c.req.json() as CreatePersonInput;
+
+  const repository = getRepository(companyId);
+  const result = await repository.create(data);
+  return c.json({ success: true, data: result }, 201);
+}
+```
+
 ### Create Controller (with Audit)
 ```typescript
 export async function createPerson(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const userId = c.get('userId') as string;
-  const data = await c.req.json() as CreatePersonInput;
+  const data = c.req.valid('json' as never) as CreatePersonInput;
 
   const repository = getRepository(companyId);
   const result = await repository.create(data);
@@ -742,7 +857,7 @@ export async function updatePerson(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const userId = c.get('userId') as string;
   const id = c.req.param('id');
-  const data = await c.req.json() as UpdatePersonInput;
+  const data = c.req.valid('json' as never) as UpdatePersonInput;
 
   if (!id) {
     throw new AppError('VALIDATION_ERROR', 'Person ID is required', 400);
@@ -779,7 +894,7 @@ function getService(companyId: string, timezone: string): CheckInService {
 }
 
 export async function submitCheckIn(c: Context): Promise<Response> {
-  const data = await c.req.json() as CheckInInput;
+  const data = c.req.valid('json' as never) as CheckInInput;
   const user = c.get('user') as AuthenticatedUser;
   const companyId = c.get('companyId') as string;
 
@@ -842,6 +957,8 @@ export async function createTeam(c: Context): Promise<Response> {
 - ✅ DO extract `userId` from `c.get('userId')` for audit trails
 - ✅ DO use a `getRepository()` or `getService()` helper factory function
 - ✅ DO use `as string` for context getters: `c.get('companyId') as string`
+- ✅ DO use `c.req.valid('json' as never) as InputType` for validated body — ensures Zod transforms apply
+- ❌ NEVER use `c.req.json()` for validated endpoints — Zod transforms (trim, toLowerCase) won't apply
 - ❌ NEVER put business logic in controllers (delegate to service)
 - ❌ NEVER put Prisma queries in controllers (delegate to repository)
 - ❌ NEVER `await` audit logging or notification calls
@@ -854,7 +971,7 @@ export async function createTeam(c: Context): Promise<Response> {
 ```typescript
 export async function createTeam(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
-  const body = await c.req.json();
+  const body = c.req.valid('json' as never) as CreateTeamInput;
 
   // WRONG - direct Prisma query in controller
   const team = await prisma.team.create({
@@ -870,7 +987,7 @@ export async function createTeam(c: Context): Promise<Response> {
 export async function createTeam(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const userId = c.get('userId') as string;
-  const body = await c.req.json() as CreateTeamInput;
+  const body = c.req.valid('json' as never) as CreateTeamInput;
 
   const repository = getRepository(companyId);
   const team = await repository.create(body);
@@ -940,6 +1057,362 @@ export async function listTeams(c: Context): Promise<Response> {
   // CORRECT - wrapped in { success, data }
   return c.json({ success: true, data: result });
 }
+```
+
+
+## Event Sourcing (buildEventData / emitEvent)
+
+<!-- BUILT FROM: .ai/patterns/backend/event-sourcing.md -->
+# Event Sourcing Pattern
+> Centralized event creation with time tracking, late detection, and fire-and-forget emission
+
+## When to Use
+- Recording state changes as immutable Event records (check-in submitted, missed check-in detected, transfer executed)
+- Inside `$transaction` blocks where events must be atomic with the data mutation
+- Fire-and-forget event emission for non-critical state tracking (e.g., job-detected events)
+- Any operation that needs late detection relative to a schedule window
+
+## Canonical Implementation
+
+### buildEventData — Data Builder (Transaction-Safe)
+```typescript
+import { buildEventData } from '../../modules/event/event.service';
+import type { CreateEventInput } from '../../modules/event/event.service';
+
+// Inside a $transaction — use buildEventData() to create the data object,
+// then pass it to tx.event.create(). This keeps the event atomic with the mutation.
+const result = await prisma.$transaction(async (tx) => {
+  const eventData = buildEventData({
+    companyId,
+    personId,
+    eventType: 'CHECK_IN_SUBMITTED',
+    entityType: 'check_in',
+    payload: { ...input, readiness },
+    timezone,
+    scheduleWindow: { start: schedule.checkInStart, end: schedule.checkInEnd },
+  });
+
+  const event = await tx.event.create({ data: eventData });
+
+  return tx.checkIn.create({
+    data: {
+      company_id: companyId,
+      person_id: personId,
+      event_id: event.id,
+      check_in_date: today,
+      // ... other fields
+    },
+  });
+});
+```
+
+### emitEvent — Fire-and-Forget (Outside Transactions)
+```typescript
+import { emitEvent } from '../../modules/event/event.service';
+
+// For non-critical events that don't need atomicity.
+// Logs errors internally, never throws. Safe to call without await.
+emitEvent(prisma, {
+  companyId,
+  personId: worker.personId,
+  eventType: 'MISSED_CHECK_IN_DETECTED',
+  entityType: 'missed_check_in',
+  entityId: missedRecord.id,
+  payload: { teamId: worker.teamId, missedDate: dateStr },
+  timezone,
+});
+```
+
+### Post-Transaction Event Emission
+```typescript
+// When an event must be emitted AFTER a transaction succeeds
+// but is not itself part of the transaction (to prevent orphan events):
+const result = await prisma.$transaction(async (tx) => {
+  // ... atomic mutations ...
+  return updated;
+});
+
+// OUTSIDE the transaction — only fires if tx succeeded
+emitEvent(prisma, {
+  companyId,
+  eventType: 'MISSED_CHECK_IN_RESOLVED',
+  entityType: 'missed_check_in',
+  entityId: result.id,
+  payload: { resolvedBy: 'late_check_in' },
+  timezone,
+});
+```
+
+### CreateEventInput Interface
+```typescript
+interface CreateEventInput {
+  companyId: string;
+  personId?: string;
+  eventType: EventType;       // Prisma enum: CHECK_IN_SUBMITTED, MISSED_CHECK_IN_DETECTED, etc.
+  entityType: string;         // 'check_in', 'missed_check_in', 'team', 'person'
+  entityId?: string;
+  payload: Record<string, unknown>;
+  timezone: string;           // From c.get('companyTimezone')
+  scheduleWindow?: { start: string; end: string }; // HH:mm — triggers late detection
+}
+```
+
+### Event Fields Created Automatically
+| Field | Source | Description |
+|-------|--------|-------------|
+| `event_time` | `DateTime.now().setZone(timezone)` | When event occurred in company timezone |
+| `ingested_at` | `new Date()` | UTC server receive time |
+| `event_timezone` | Input `timezone` | Company timezone for reference |
+| `is_late` | Late detection | `true` if current time > `scheduleWindow.end` |
+| `late_by_minutes` | Late detection | Minutes past deadline, or `null` if on time |
+
+### Late Detection Logic
+```typescript
+// Late detection compares current HH:mm against scheduleWindow.end.
+// Only triggered when scheduleWindow is provided.
+//
+// currentTime "10:15" vs window.end "10:00" → isLate: true, lateByMinutes: 15
+// currentTime "09:45" vs window.end "10:00" → isLate: false, lateByMinutes: null
+// No scheduleWindow provided                → isLate: false, lateByMinutes: null
+```
+
+## Rules
+- ✅ **DO** use `buildEventData()` inside `$transaction` blocks — returns `Prisma.EventUncheckedCreateInput`
+- ✅ **DO** use `emitEvent()` for fire-and-forget events outside transactions
+- ✅ **DO** pass `timezone` from `c.get('companyTimezone')` — never hardcode
+- ✅ **DO** pass `scheduleWindow` when the event relates to a check-in window (enables late detection)
+- ✅ **DO** emit post-transaction events OUTSIDE the `$transaction` block to prevent orphan events
+- ✅ **DO** include meaningful `payload` with context (IDs, scores, reasons)
+- ❌ **NEVER** use raw `tx.event.create({ data: { ... } })` — required fields will be missing
+- ❌ **NEVER** `await` `emitEvent()` — it's fire-and-forget by design
+- ❌ **NEVER** emit events inside a transaction if failure of the event should NOT roll back the transaction
+
+## Common Mistakes
+
+### WRONG: Raw event.create (missing required fields)
+```typescript
+await tx.event.create({
+  data: {
+    company_id: companyId,
+    event_type: 'CHECK_IN_SUBMITTED',
+    entity_type: 'check_in',
+    payload: input,
+    // WRONG — missing event_time, ingested_at, event_timezone, is_late, late_by_minutes
+  },
+});
+```
+
+### CORRECT: Use buildEventData
+```typescript
+const eventData = buildEventData({
+  companyId,
+  personId,
+  eventType: 'CHECK_IN_SUBMITTED',
+  entityType: 'check_in',
+  payload: input,
+  timezone,
+  scheduleWindow: { start: schedule.checkInStart, end: schedule.checkInEnd },
+});
+await tx.event.create({ data: eventData });
+```
+
+### WRONG: Event inside transaction that should survive tx failure
+```typescript
+await prisma.$transaction(async (tx) => {
+  await tx.missedCheckIn.update({ ... });
+  // WRONG — if tx fails, this event is orphaned (created then rolled back)
+  emitEvent(prisma, { eventType: 'MISSED_CHECK_IN_RESOLVED', ... });
+});
+```
+
+### CORRECT: Event after transaction
+```typescript
+const result = await prisma.$transaction(async (tx) => {
+  return tx.missedCheckIn.update({ ... });
+});
+// CORRECT — only fires if transaction succeeded
+emitEvent(prisma, {
+  eventType: 'MISSED_CHECK_IN_RESOLVED',
+  entityId: result.id,
+  ...
+});
+```
+
+
+## Schedule Resolution (Worker Override + Team Fallback)
+
+<!-- BUILT FROM: .ai/patterns/backend/schedule-resolution.md -->
+# Schedule Resolution Pattern
+> Worker schedule override with team fallback — per-field resolution with runtime safety guards
+
+## When to Use
+- Determining a worker's effective schedule (work days, check-in window)
+- Checking if today is a work day for a specific worker
+- Any operation that needs to know when a worker should check in
+- Missed check-in detection, dashboard calculations, check-in eligibility
+
+## Canonical Implementation
+
+### getEffectiveSchedule — Resolve Worker Override + Team Fallback
+```typescript
+import {
+  getEffectiveSchedule,
+  isWorkDay,
+  type PersonSchedule,
+  type TeamSchedule,
+  type EffectiveSchedule,
+} from '../../shared/schedule.utils';
+
+// Worker has optional overrides; team has required defaults.
+// Each field resolves independently — partial overrides are supported.
+const schedule: EffectiveSchedule = getEffectiveSchedule(
+  {
+    work_days: worker.work_days,         // "1,3,5" or null
+    check_in_start: worker.check_in_start, // "07:00" or null
+    check_in_end: worker.check_in_end,     // "09:00" or null
+  },
+  {
+    work_days: team.work_days,           // "1,2,3,4,5" (required)
+    check_in_start: team.check_in_start, // "06:00" (required)
+    check_in_end: team.check_in_end,     // "10:00" (required)
+  }
+);
+
+// Result:
+// schedule.workDays     → ["1", "3", "5"]  (worker override)
+// schedule.checkInStart → "07:00"          (worker override)
+// schedule.checkInEnd   → "09:00"          (worker override)
+```
+
+### Partial Override Example
+```typescript
+// Worker overrides ONLY work_days, keeps team's check-in times
+const schedule = getEffectiveSchedule(
+  { work_days: "1,3,5", check_in_start: null, check_in_end: null },
+  { work_days: "1,2,3,4,5", check_in_start: "06:00", check_in_end: "10:00" }
+);
+// → { workDays: ["1","3","5"], checkInStart: "06:00", checkInEnd: "10:00" }
+```
+
+### isWorkDay — Quick Day Check
+```typescript
+import { isWorkDay } from '../../shared/schedule.utils';
+
+const dayOfWeek = todayDt.weekday === 7 ? '0' : String(todayDt.weekday);
+// "0" = Sunday, "1" = Monday, ..., "6" = Saturday
+
+const isScheduledToday = isWorkDay(
+  dayOfWeek,
+  { work_days: worker.work_days },
+  { work_days: team.work_days, check_in_start: team.check_in_start, check_in_end: team.check_in_end }
+);
+```
+
+### Using in Services (Check-In Eligibility)
+```typescript
+async submit(input: CheckInInput, personId: string, companyId: string) {
+  const person = await this.repository.getPersonWithTeam(personId);
+  if (!person?.team) throw new AppError('NO_TEAM', 'Worker not assigned to a team', 400);
+
+  const schedule = getEffectiveSchedule(person, person.team);
+
+  // Check if today is a work day
+  const dayOfWeek = getDayOfWeekInTimezone(this.timezone).toString();
+  if (!schedule.workDays.includes(dayOfWeek)) {
+    throw new AppError('NOT_WORK_DAY', 'Today is not a scheduled work day', 400);
+  }
+
+  // Check if current time is within the check-in window
+  const currentTime = getCurrentTimeInTimezone(this.timezone);
+  if (currentTime < schedule.checkInStart) {
+    throw new AppError('TOO_EARLY', `Check-in opens at ${schedule.checkInStart}`, 400);
+  }
+  // Late submissions are allowed — only "too early" is rejected
+}
+```
+
+### Interfaces
+```typescript
+// Worker schedule fields — all nullable (override is optional)
+interface PersonSchedule {
+  work_days?: string | null;      // CSV: "1,3,5" or null
+  check_in_start?: string | null; // HH:mm or null
+  check_in_end?: string | null;   // HH:mm or null
+}
+
+// Team schedule fields — all required (always has defaults)
+interface TeamSchedule {
+  work_days: string;      // CSV: "1,2,3,4,5"
+  check_in_start: string; // HH:mm: "06:00"
+  check_in_end: string;   // HH:mm: "10:00"
+}
+
+// Resolved schedule — always complete
+interface EffectiveSchedule {
+  workDays: string[];   // ["1", "2", "3", "4", "5"]
+  checkInStart: string; // "06:00"
+  checkInEnd: string;   // "10:00"
+}
+```
+
+### Runtime Safety Guard
+```typescript
+// If a partial override creates an inverted window (start >= end),
+// getEffectiveSchedule() automatically falls back to the team's window.
+//
+// Example: worker overrides check_in_start to "11:00" but keeps team's
+// check_in_end "10:00" → inverted! Falls back to team's "06:00"–"10:00".
+```
+
+## Validation Constants
+```typescript
+// Time format (HH:MM, zero-padded for consistent string comparison)
+export const TIME_REGEX = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
+
+// Work days (CSV of 0-6, no duplicates)
+export const WORK_DAYS_REGEX = /^[0-6](,[0-6])*$/;
+```
+
+## Rules
+- ✅ **DO** always use `getEffectiveSchedule()` — never manually resolve worker vs team schedule
+- ✅ **DO** pass the full `PersonSchedule` and `TeamSchedule` objects (not individual fields)
+- ✅ **DO** handle the inverted window guard transparently (it's built-in)
+- ✅ **DO** use `isWorkDay()` for simple day-of-week checks (avoids parsing the full schedule)
+- ✅ **DO** use Luxon weekday mapping: `weekday === 7 ? "0" : String(weekday)` for Sunday
+- ❌ **NEVER** manually check `person.work_days ?? team.work_days` in business code — use the utility
+- ❌ **NEVER** assume cross-midnight windows work — validator enforces `checkInEnd > checkInStart`
+- ❌ **NEVER** skip the team fallback — even if the worker has SOME overrides, missing fields must fall back
+
+## Common Mistakes
+
+### WRONG: Manual field-by-field resolution
+```typescript
+// WRONG — doesn't handle partial overrides or inverted window guard
+const workDays = (worker.work_days || team.work_days).split(',');
+const start = worker.check_in_start || team.check_in_start;
+const end = worker.check_in_end || team.check_in_end;
+```
+
+### CORRECT: Use getEffectiveSchedule
+```typescript
+const schedule = getEffectiveSchedule(
+  { work_days: worker.work_days, check_in_start: worker.check_in_start, check_in_end: worker.check_in_end },
+  { work_days: team.work_days, check_in_start: team.check_in_start, check_in_end: team.check_in_end }
+);
+// schedule.workDays, schedule.checkInStart, schedule.checkInEnd — always valid
+```
+
+### WRONG: Using empty string as falsy for override check
+```typescript
+// WRONG — empty string "" is falsy but different from null (means "no override")
+const workDays = worker.work_days || team.work_days;
+```
+
+### CORRECT: Use nullish coalescing (built into getEffectiveSchedule)
+```typescript
+// CORRECT — getEffectiveSchedule uses ?? (nullish coalescing), not || (logical or)
+// Empty string is treated as a value, null/undefined triggers fallback
+const schedule = getEffectiveSchedule(worker, team);
 ```
 
 
@@ -1246,6 +1719,225 @@ try {
   }
   // CORRECT - re-throw so global handler catches it
   throw error;
+}
+```
+
+
+## Snapshot Service (Batch State Capture for Analytics)
+
+<!-- BUILT FROM: .ai/patterns/shared/snapshot-service-pattern.md -->
+# Snapshot Service Pattern
+> Batch state capture at business events — immutable context snapshots for analytics and audit
+
+## When to Use
+- Capturing worker context at the moment of a business event (missed check-in, incident, case)
+- Batch processing multiple workers efficiently (avoid N+1 queries)
+- Building analytics that require point-in-time state (streak, completion rate, frequency)
+- Any feature that needs to "freeze" the state for later analysis
+
+## Canonical Implementation
+
+### Snapshot Service Class Structure
+```typescript
+import type { PrismaClient } from '@prisma/client';
+import { DateTime } from 'luxon';
+import { precomputeDateRange, buildDateLookup, formatDateInTimezone } from '../../shared/utils';
+import { getEffectiveSchedule } from '../../shared/schedule.utils';
+
+interface StateSnapshot {
+  // Point-in-time context
+  dayOfWeek: number;
+  weekOfMonth: number;
+  // Historical metrics
+  daysSinceLastCheckIn: number | null;
+  checkInStreakBefore: number;
+  recentReadinessAvg: number | null;
+  // Frequency metrics
+  missesInLast30d: number;
+  missesInLast60d: number;
+  missesInLast90d: number;
+  baselineCompletionRate: number;
+  // Pattern indicators
+  isFirstMissIn30d: boolean;
+  isIncreasingFrequency: boolean;
+}
+
+export class SnapshotService {
+  constructor(
+    private readonly prisma: PrismaClient,
+    private readonly companyId: string,
+    private readonly timezone: string
+  ) {}
+
+  async calculateBatch(
+    workers: WorkerContext[],
+    eventDate: Date,
+    holidayDates: Set<string>
+  ): Promise<Map<string, StateSnapshot>> {
+    if (workers.length === 0) return new Map();
+
+    const personIds = workers.map((w) => w.personId);
+
+    // 1. Parallel batch queries — one query per data type, not per worker
+    const [checkInsMap, missedMap] = await Promise.all([
+      this.getCheckInsLast90Days(personIds, eventDate),
+      this.getMissedLast90Days(personIds, eventDate),
+    ]);
+
+    // 2. Pre-compute shared date range ONCE (not per worker)
+    const ninetyDaysAgo = new Date(eventDate.getTime() - 90 * 24 * 60 * 60 * 1000);
+    const dateRange90d = precomputeDateRange(ninetyDaysAgo, 90, this.timezone);
+
+    // 3. Calculate per-worker snapshots using shared data
+    const results = new Map<string, StateSnapshot>();
+    for (const worker of workers) {
+      const checkIns = checkInsMap.get(worker.personId) || [];
+      const misses = missedMap.get(worker.personId) || [];
+      results.set(worker.personId, this.calculateForWorker(worker, checkIns, misses, eventDate, holidayDates, dateRange90d));
+    }
+
+    return results;
+  }
+}
+```
+
+### Key Design Principles
+
+#### 1. Batch Queries (Avoid N+1)
+```typescript
+// WRONG — N+1 queries (one per worker)
+for (const worker of workers) {
+  const checkIns = await prisma.checkIn.findMany({ where: { person_id: worker.id } });
+}
+
+// CORRECT — Single batch query for all workers
+const checkIns = await prisma.checkIn.findMany({
+  where: {
+    company_id: this.companyId,
+    person_id: { in: personIds }, // All workers in one query
+  },
+});
+// Then group by person_id using a Map
+```
+
+#### 2. Pre-computed Date Ranges
+```typescript
+import { precomputeDateRange, type PrecomputedDate } from '../../shared/utils';
+
+// Pre-compute ONCE — stores dateStr + dow (day of week) for each date
+const dateRange90d: PrecomputedDate[] = precomputeDateRange(startDate, 90, timezone);
+
+// Each PrecomputedDate has:
+// { dateStr: "2026-02-15", dow: "6" }  // Saturday
+
+// Use for streak calculation, completion rate — no per-iteration Luxon calls
+for (const day of dateRange90d) {
+  if (workDays.includes(day.dow) && !holidayDates.has(day.dateStr)) {
+    requiredDays++;
+  }
+}
+```
+
+#### 3. Date Lookup Maps (Efficient Timezone Conversion)
+```typescript
+import { buildDateLookup } from '../../shared/utils';
+
+// Convert Date objects to timezone-aware strings in batch
+const uniqueDates = [...new Set(checkIns.map(ci => ci.check_in_date.getTime()))].map(t => new Date(t));
+const dateLookup: Map<number, string> = buildDateLookup(uniqueDates, timezone);
+
+// O(1) lookup instead of per-record Luxon call
+const dateStr = dateLookup.get(ci.check_in_date.getTime()) ?? formatDateInTimezone(ci.check_in_date, timezone);
+```
+
+#### 4. Immutable Snapshots
+```typescript
+// Snapshots are immutable — they capture state at a point in time.
+// Store with the event record (e.g., missed_check_in.snapshot JSON column).
+// Never update a snapshot after creation.
+
+await tx.missedCheckIn.create({
+  data: {
+    // ... missed check-in fields
+    snapshot: snapshot as Prisma.InputJsonValue, // Frozen state
+  },
+});
+```
+
+## Rules
+- ✅ **DO** use batch queries with `person_id: { in: personIds }` — never query per worker
+- ✅ **DO** pre-compute date ranges with `precomputeDateRange()` — shared across all workers
+- ✅ **DO** use `buildDateLookup()` for efficient timezone conversion of dates
+- ✅ **DO** use `getEffectiveSchedule()` for worker-specific schedule resolution
+- ✅ **DO** make snapshots immutable — store as JSON, never update after creation
+- ✅ **DO** include both raw metrics (counts) and derived indicators (isIncreasingFrequency)
+- ❌ **NEVER** create one query per worker (N+1 problem) — always batch
+- ❌ **NEVER** call `DateTime.fromJSDate()` inside a loop when processing dates — use pre-computed lookups
+- ❌ **NEVER** mutate a snapshot after creation — it represents a frozen point in time
+
+## Common Mistakes
+
+### WRONG: Per-worker queries (N+1)
+```typescript
+async calculateBatch(workers: WorkerContext[]) {
+  const results = new Map();
+  for (const worker of workers) {
+    // WRONG — fires N queries for N workers
+    const checkIns = await this.prisma.checkIn.findMany({
+      where: { person_id: worker.personId },
+    });
+    results.set(worker.personId, this.calculate(checkIns));
+  }
+  return results;
+}
+```
+
+### CORRECT: Batch query + group
+```typescript
+async calculateBatch(workers: WorkerContext[]) {
+  const personIds = workers.map(w => w.personId);
+
+  // CORRECT — single query for all workers
+  const allCheckIns = await this.prisma.checkIn.findMany({
+    where: { person_id: { in: personIds } },
+  });
+
+  // Group by person_id
+  const checkInsMap = new Map<string, CheckInRecord[]>();
+  for (const ci of allCheckIns) {
+    const list = checkInsMap.get(ci.person_id) ?? [];
+    list.push(ci);
+    checkInsMap.set(ci.person_id, list);
+  }
+
+  // Calculate per-worker using pre-grouped data
+  const results = new Map();
+  for (const worker of workers) {
+    results.set(worker.personId, this.calculate(checkInsMap.get(worker.personId) ?? []));
+  }
+  return results;
+}
+```
+
+### WRONG: Luxon inside loop
+```typescript
+for (const day = startDate; day < endDate; day.setDate(day.getDate() + 1)) {
+  // WRONG — creating DateTime objects per iteration is expensive
+  const dt = DateTime.fromJSDate(day).setZone(timezone);
+  const dateStr = dt.toFormat('yyyy-MM-dd');
+  const dow = dt.weekday === 7 ? '0' : String(dt.weekday);
+}
+```
+
+### CORRECT: Pre-computed date range
+```typescript
+// CORRECT — all dates computed once
+const dateRange = precomputeDateRange(startDate, 90, timezone);
+for (const day of dateRange) {
+  // day.dateStr and day.dow already computed
+  if (workDays.includes(day.dow) && !holidays.has(day.dateStr)) {
+    requiredDays++;
+  }
 }
 ```
 

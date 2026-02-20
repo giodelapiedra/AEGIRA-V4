@@ -1,4 +1,5 @@
 // WHS Analytics Service - Historical Trends & Distributions
+import { Prisma } from '@prisma/client';
 import { prisma } from '../../config/database';
 import { DateTime } from 'luxon';
 
@@ -22,11 +23,18 @@ const REJECTION_REASON_LABELS: Record<string, string> = {
 
 type AnalyticsPeriod = '7d' | '30d' | '90d';
 
+interface AnalyticsFilters {
+  teamId?: string;
+}
+
 const VALID_SEVERITY_KEYS = new Set(['low', 'medium', 'high', 'critical']);
+
+interface TeamOption { id: string; name: string }
 
 interface WhsAnalyticsResult {
   period: AnalyticsPeriod;
   dateRange: { start: string; end: string };
+  filterOptions: { teams: TeamOption[] };
   summary: {
     totalIncidents: number;
     totalCasesCreated: number;
@@ -39,12 +47,20 @@ interface WhsAnalyticsResult {
   incidentsByType: { type: string; label: string; count: number; percentage: number }[];
   incidentsBySeverity: { severity: string; count: number; percentage: number }[];
   incidentsByTeam: { teamId: string; teamName: string; count: number; severityBreakdown: { low: number; medium: number; high: number; critical: number } }[];
+  incidentsByGender: { gender: string; label: string; count: number; percentage: number }[];
   rejectionsByReason: { reason: string; label: string; count: number; percentage: number }[];
 }
+
+const GENDER_LABELS: Record<string, string> = {
+  MALE: 'Male',
+  FEMALE: 'Female',
+  UNSPECIFIED: 'Not Specified',
+};
 
 // Raw SQL result types
 interface TrendRow { date: string; status: string; count: number }
 interface TeamSeverityRow { team_id: string; team_name: string; severity: string; count: number }
+interface GenderRow { gender: string; count: number }
 interface AvgRow { avg_hours: number | null }
 
 function periodToDays(period: AnalyticsPeriod): number {
@@ -61,7 +77,7 @@ export class WhsAnalyticsService {
     private readonly timezone: string = 'Asia/Manila'
   ) {}
 
-  async getAnalytics(period: AnalyticsPeriod = '30d'): Promise<WhsAnalyticsResult> {
+  async getAnalytics(period: AnalyticsPeriod = '30d', filters: AnalyticsFilters = {}): Promise<WhsAnalyticsResult> {
     const days = periodToDays(period);
     const now = DateTime.now().setZone(this.timezone);
     const endDate = now.startOf('day').plus({ days: 1 }).toJSDate(); // start of tomorrow
@@ -69,8 +85,23 @@ export class WhsAnalyticsService {
 
     const companyId = this.companyId;
     const tz = this.timezone;
+    const { teamId } = filters;
 
-    // 9 parallel queries — all aggregation done in PostgreSQL
+    // Team filter for Prisma queries — filter incidents by reporter's team
+    const teamWhere = teamId ? { reporter: { team_id: teamId } } : {};
+
+    // Team filter fragments for raw SQL — parameterized via Prisma.sql
+    const incidentTeamSql = teamId
+      ? Prisma.sql`AND i.reporter_id IN (SELECT id FROM persons WHERE team_id = ${teamId})`
+      : Prisma.sql``;
+    const personTeamSql = teamId
+      ? Prisma.sql`AND p.team_id = ${teamId}`
+      : Prisma.sql``;
+    const caseTeamSql = teamId
+      ? Prisma.sql`AND c.incident_id IN (SELECT id FROM incidents WHERE reporter_id IN (SELECT id FROM persons WHERE team_id = ${teamId}))`
+      : Prisma.sql``;
+
+    // 11 parallel queries — all aggregation done in PostgreSQL
     const [
       statusGroups,
       trendRows,
@@ -81,11 +112,13 @@ export class WhsAnalyticsService {
       avgResponseRows,
       casesCreatedCount,
       avgResolutionRows,
+      allTeams,
+      genderRows,
     ] = await Promise.all([
       // Q1: Incidents grouped by status (for summary counts + rates)
       prisma.incident.groupBy({
         by: ['status'],
-        where: { company_id: companyId, created_at: { gte: startDate, lt: endDate } },
+        where: { company_id: companyId, created_at: { gte: startDate, lt: endDate }, ...teamWhere },
         _count: { id: true },
       }),
 
@@ -99,6 +132,7 @@ export class WhsAnalyticsService {
         WHERE i.company_id = ${companyId}
           AND i.created_at >= ${startDate}
           AND i.created_at < ${endDate}
+          ${incidentTeamSql}
         GROUP BY 1, 2
         ORDER BY 1
       `,
@@ -116,20 +150,21 @@ export class WhsAnalyticsService {
         WHERE i.company_id = ${companyId}
           AND i.created_at >= ${startDate}
           AND i.created_at < ${endDate}
+          ${personTeamSql}
         GROUP BY t.id, t.name, i.severity
       `,
 
       // Q3: Incidents grouped by type
       prisma.incident.groupBy({
         by: ['incident_type'],
-        where: { company_id: companyId, created_at: { gte: startDate, lt: endDate } },
+        where: { company_id: companyId, created_at: { gte: startDate, lt: endDate }, ...teamWhere },
         _count: { id: true },
       }),
 
       // Q4: Incidents grouped by severity
       prisma.incident.groupBy({
         by: ['severity'],
-        where: { company_id: companyId, created_at: { gte: startDate, lt: endDate } },
+        where: { company_id: companyId, created_at: { gte: startDate, lt: endDate }, ...teamWhere },
         _count: { id: true },
       }),
 
@@ -141,6 +176,7 @@ export class WhsAnalyticsService {
           created_at: { gte: startDate, lt: endDate },
           status: 'REJECTED',
           rejection_reason: { not: null },
+          ...teamWhere,
         },
         _count: { id: true },
       }),
@@ -154,11 +190,16 @@ export class WhsAnalyticsService {
           AND i.created_at >= ${startDate}
           AND i.created_at < ${endDate}
           AND i.reviewed_at IS NOT NULL
+          ${incidentTeamSql}
       `,
 
-      // Q7: Cases created count
+      // Q7: Cases created count (filter by incident's reporter team)
       prisma.case.count({
-        where: { company_id: companyId, created_at: { gte: startDate, lt: endDate } },
+        where: {
+          company_id: companyId,
+          created_at: { gte: startDate, lt: endDate },
+          ...(teamId ? { incident: { reporter: { team_id: teamId } } } : {}),
+        },
       }),
 
       // Q8: Avg resolution time — computed in PostgreSQL
@@ -170,6 +211,28 @@ export class WhsAnalyticsService {
           AND c.created_at >= ${startDate}
           AND c.created_at < ${endDate}
           AND c.resolved_at IS NOT NULL
+          ${caseTeamSql}
+      `,
+
+      // Q9: All active teams for filter dropdown (always unfiltered)
+      prisma.team.findMany({
+        where: { company_id: companyId, is_active: true },
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' },
+      }),
+
+      // Q10: Incidents grouped by reporter gender
+      prisma.$queryRaw<GenderRow[]>`
+        SELECT
+          COALESCE(p.gender::text, 'UNSPECIFIED') AS gender,
+          COUNT(*)::int AS count
+        FROM incidents i
+        JOIN persons p ON p.id = i.reporter_id
+        WHERE i.company_id = ${companyId}
+          AND i.created_at >= ${startDate}
+          AND i.created_at < ${endDate}
+          ${incidentTeamSql}
+        GROUP BY 1
       `,
     ]);
 
@@ -227,8 +290,8 @@ export class WhsAnalyticsService {
       }
     }
     const incidentsByTeam = Array.from(teamMap.entries())
-      .map(([teamId, vals]) => ({
-        teamId,
+      .map(([tId, vals]) => ({
+        teamId: tId,
         teamName: vals.teamName,
         count: vals.count,
         severityBreakdown: { low: vals.low, medium: vals.medium, high: vals.high, critical: vals.critical },
@@ -268,11 +331,25 @@ export class WhsAnalyticsService {
       }))
       .sort((a, b) => b.count - a.count);
 
+    // --- Process Q10: Incidents by gender ---
+    const totalByGender = genderRows.reduce((s, g) => s + g.count, 0);
+    const incidentsByGender = genderRows
+      .map((g) => ({
+        gender: g.gender,
+        label: GENDER_LABELS[g.gender] ?? g.gender,
+        count: g.count,
+        percentage: totalByGender > 0 ? (g.count / totalByGender) * 100 : 0,
+      }))
+      .sort((a, b) => b.count - a.count);
+
     return {
       period,
       dateRange: {
         start: startDate.toISOString(),
         end: endDate.toISOString(),
+      },
+      filterOptions: {
+        teams: allTeams.map((t) => ({ id: t.id, name: t.name })),
       },
       summary: {
         totalIncidents,
@@ -286,6 +363,7 @@ export class WhsAnalyticsService {
       incidentsByType,
       incidentsBySeverity,
       incidentsByTeam,
+      incidentsByGender,
       rejectionsByReason,
     };
   }

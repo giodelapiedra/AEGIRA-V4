@@ -34,7 +34,7 @@ export function CasesByStatus({ casesByStatus }: CasesByStatusProps) {
             key={key}
             type="button"
             className="flex w-full items-center justify-between rounded-lg border p-3 transition-colors hover:bg-muted/50"
-            onClick={() => navigate(`${ROUTES.ADMIN_CASES}?status=${status}`)}
+            onClick={() => navigate(`${ROUTES.WHS_CASES}?status=${status}`)}
           >
             <CaseStatusBadge status={status} />
             <span className="text-2xl font-bold tabular-nums">

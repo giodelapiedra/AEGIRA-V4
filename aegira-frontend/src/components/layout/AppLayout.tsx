@@ -7,7 +7,7 @@ export function AppLayout() {
     <div className="min-h-screen bg-background bg-dot-pattern">
       <Sidebar />
       {/* Desktop: left padding for sidebar, Mobile: bottom padding for bottom nav */}
-      <div className="md:pl-20 pb-20 md:pb-0">
+      <div className="md:pl-[72px] pb-20 md:pb-0">
         <Header />
         <main className="p-4 md:p-6">
           <Outlet />

@@ -15,7 +15,7 @@ import type { PrecomputedDate } from '../../shared/utils';
  * State snapshot captured at the moment a missed check-in is detected.
  * This data is immutable - preserves the worker's state for analytics.
  */
-export interface StateSnapshot {
+interface StateSnapshot {
   workerRoleAtMiss: Role | null;
   dayOfWeek: number;
   weekOfMonth: number;
@@ -26,7 +26,7 @@ export interface StateSnapshot {
   missesInLast30d: number;
   missesInLast60d: number;
   missesInLast90d: number;
-  baselineCompletionRate: number;
+  baselineCompletionRate: number | null;
   isFirstMissIn30d: boolean;
   isIncreasingFrequency: boolean;
 }
@@ -35,16 +35,14 @@ export interface StateSnapshot {
  * Worker context needed for snapshot calculation.
  * Includes worker schedule override fields with team fallback.
  */
-export interface WorkerContext {
+interface WorkerContext {
   personId: string;
   teamId: string;
   role: Role;
   teamAssignedAt: Date | null;
-  // Worker schedule override (optional)
   workDays?: string | null;
   checkInStart?: string | null;
   checkInEnd?: string | null;
-  // Team schedule (for fallback)
   team: {
     work_days: string;
     check_in_start: string;
@@ -214,7 +212,9 @@ export class MissedCheckInSnapshotService {
       missesInLast30d,
       missesInLast60d,
       missesInLast90d,
-      baselineCompletionRate: Math.round(baselineCompletionRate * 10) / 10,
+      baselineCompletionRate: baselineCompletionRate != null
+        ? Math.round(baselineCompletionRate * 10) / 10
+        : null,
       isFirstMissIn30d,
       isIncreasingFrequency,
     };
@@ -277,9 +277,9 @@ export class MissedCheckInSnapshotService {
     holidayDates: Set<string>,
     dateRange90d: PrecomputedDate[],
     todayStr: string
-  ): number {
+  ): number | null {
     if (!worker.teamAssignedAt) {
-      return 0;
+      return null;
     }
 
     const assignedDateStr = formatDateInTimezone(worker.teamAssignedAt, this.timezone);
@@ -296,7 +296,7 @@ export class MissedCheckInSnapshotService {
     }
 
     if (requiredDays === 0) {
-      return 100; // No days required yet = 100% completion
+      return null; // No work days elapsed yet — insufficient data
     }
 
     // Count check-ins since assignment (excluding today)

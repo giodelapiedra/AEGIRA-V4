@@ -101,9 +101,7 @@ export function AdminTeamsPage() {
   };
 
   const teams = teamsData?.items || [];
-  const pageCount = teamsData?.pagination
-    ? Math.ceil(teamsData.pagination.total / pagination.pageSize)
-    : 0;
+  const pageCount = teamsData?.pagination?.totalPages ?? 0;
 
   return (
     <PageLoader isLoading={isLoading} error={error} skeleton="table">

@@ -11,6 +11,7 @@ import { DataTable, SortableHeader } from '@/components/ui/data-table';
 import { PageLoader } from '@/components/common/PageLoader';
 import { apiClient } from '@/lib/api/client';
 import { ENDPOINTS } from '@/lib/api/endpoints';
+import { SEMANTIC_STATUS } from '@/lib/constants';
 import { STALE_TIMES } from '@/config/query.config';
 
 interface CheckInRecord {
@@ -36,18 +37,6 @@ interface AnalyticsResponse {
   records: CheckInRecord[];
 }
 
-const readinessLevelVariant: Record<string, 'success' | 'warning' | 'destructive'> = {
-  GREEN: 'success',
-  YELLOW: 'warning',
-  RED: 'destructive',
-};
-
-const readinessLevelLabel: Record<string, string> = {
-  GREEN: 'Ready',
-  YELLOW: 'Modified Duty',
-  RED: 'Not Ready',
-};
-
 const columns: ColumnDef<CheckInRecord>[] = [
   {
     accessorKey: 'name',
@@ -66,11 +55,14 @@ const columns: ColumnDef<CheckInRecord>[] = [
   {
     accessorKey: 'readinessLevel',
     header: 'Status',
-    cell: ({ row }) => (
-      <Badge variant={readinessLevelVariant[row.original.readinessLevel] || 'secondary'}>
-        {readinessLevelLabel[row.original.readinessLevel] || row.original.readinessLevel}
-      </Badge>
-    ),
+    cell: ({ row }) => {
+      const readinessConfig = SEMANTIC_STATUS.READINESS_LEVEL[row.original.readinessLevel];
+      return (
+        <Badge variant={readinessConfig?.variant ?? 'secondary'}>
+          {readinessConfig?.label ?? row.original.readinessLevel}
+        </Badge>
+      );
+    },
   },
   {
     accessorKey: 'submitTime',
@@ -161,7 +153,9 @@ export function TeamAnalyticsPage() {
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-green-500 rounded-full" />
+              <div
+                className={`w-3 h-3 rounded-full ${SEMANTIC_STATUS.READINESS_LEVEL.GREEN.indicator}`}
+              />
               <span className="text-2xl font-bold">{summary.readinessDistribution.green}</span>
             </div>
             <p className="text-sm text-muted-foreground">Green (Ready)</p>
@@ -170,7 +164,9 @@ export function TeamAnalyticsPage() {
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-yellow-500 rounded-full" />
+              <div
+                className={`w-3 h-3 rounded-full ${SEMANTIC_STATUS.READINESS_LEVEL.YELLOW.indicator}`}
+              />
               <span className="text-2xl font-bold">{summary.readinessDistribution.yellow}</span>
             </div>
             <p className="text-sm text-muted-foreground">Yellow (Modified Duty)</p>
@@ -179,7 +175,9 @@ export function TeamAnalyticsPage() {
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-red-500 rounded-full" />
+              <div
+                className={`w-3 h-3 rounded-full ${SEMANTIC_STATUS.READINESS_LEVEL.RED.indicator}`}
+              />
               <span className="text-2xl font-bold">{summary.readinessDistribution.red}</span>
             </div>
             <p className="text-sm text-muted-foreground">Red (Not Ready)</p>

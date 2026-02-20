@@ -1,6 +1,8 @@
 import { useNavigate } from 'react-router-dom';
-import { Activity } from 'lucide-react';
+import { Activity, ChevronRight } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { EmptyState } from '@/components/common/EmptyState';
 import { cn } from '@/lib/utils/cn';
 import { getRelativeTime } from '@/lib/utils/date.utils';
@@ -10,13 +12,14 @@ interface RecentActivityProps {
   events: ActivityEvent[];
 }
 
-const EVENT_DOT_COLORS: Record<string, string> = {
-  INCIDENT_CREATED: 'bg-yellow-500',
-  INCIDENT_APPROVED: 'bg-green-500',
-  INCIDENT_REJECTED: 'bg-red-500',
-  CASE_CREATED: 'bg-blue-500',
-  CASE_UPDATED: 'bg-purple-500',
-  CASE_RESOLVED: 'bg-green-500',
+const getEventInitials = (eventType: string): string => {
+  const parts = eventType
+    .split('_')
+    .filter(Boolean)
+    .slice(0, 2);
+
+  if (parts.length === 0) return 'AC';
+  return parts.map((part) => part[0]).join('').toUpperCase();
 };
 
 export function RecentActivity({ events }: RecentActivityProps) {
@@ -24,10 +27,18 @@ export function RecentActivity({ events }: RecentActivityProps) {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Recent Activity</CardTitle>
+      <CardHeader className="border-b pb-4">
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle className="flex items-center gap-2">
+            <Activity className="h-5 w-5 text-muted-foreground" />
+            Recent Activity
+          </CardTitle>
+          <Badge variant="outline" className="font-medium tabular-nums">
+            {events.length} event{events.length === 1 ? '' : 's'}
+          </Badge>
+        </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="pt-4">
         {events.length === 0 ? (
           <EmptyState
             icon={<Activity className="h-12 w-12" />}
@@ -36,9 +47,8 @@ export function RecentActivity({ events }: RecentActivityProps) {
             className="py-8"
           />
         ) : (
-          <div className="max-h-[400px] space-y-1 overflow-y-auto pr-1">
+          <div className="max-h-[400px] space-y-2 overflow-y-auto pr-1">
             {events.map((event) => {
-              const dotColor = EVENT_DOT_COLORS[event.type] || 'bg-slate-400';
               const isClickable = !!event.actionUrl;
 
               return (
@@ -47,16 +57,25 @@ export function RecentActivity({ events }: RecentActivityProps) {
                   type="button"
                   disabled={!isClickable}
                   className={cn(
-                    'flex w-full items-start gap-3 rounded-lg p-2.5 text-left transition-colors',
-                    isClickable && 'hover:bg-muted/50 cursor-pointer',
+                    'group relative flex w-full items-start gap-3 rounded-lg border border-transparent p-3 text-left transition-all',
+                    isClickable && 'cursor-pointer hover:border-border/70 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                     !isClickable && 'cursor-default'
                   )}
                   onClick={() => isClickable && event.actionUrl && navigate(event.actionUrl)}
                 >
-                  <div className={cn('mt-1.5 h-2 w-2 shrink-0 rounded-full', dotColor)} />
+                  <Avatar className="mt-0.5 h-8 w-8 border bg-background">
+                    <AvatarFallback className="text-[10px] font-semibold text-muted-foreground">
+                      {getEventInitials(event.type)}
+                    </AvatarFallback>
+                  </Avatar>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm leading-snug">{event.message}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm leading-snug">{event.message}</p>
+                      {isClickable && (
+                        <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+                      )}
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
                       {getRelativeTime(event.timestamp)}
                     </p>
                   </div>

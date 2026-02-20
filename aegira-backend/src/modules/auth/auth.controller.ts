@@ -33,6 +33,10 @@ interface UserWithCompany {
   gender: string | null;
   date_of_birth: Date | null;
   profile_picture_url: string | null;
+  contact_number: string | null;
+  emergency_contact_name: string | null;
+  emergency_contact_phone: string | null;
+  emergency_contact_relationship: string | null;
   role: string;
   company_id: string;
   company: { name: string; timezone: string };
@@ -47,6 +51,10 @@ function formatUserResponse(person: UserWithCompany) {
     gender: person.gender,
     dateOfBirth: person.date_of_birth ? person.date_of_birth.toISOString().split('T')[0] : null,
     profilePictureUrl: person.profile_picture_url || null,
+    contactNumber: person.contact_number || null,
+    emergencyContactName: person.emergency_contact_name || null,
+    emergencyContactPhone: person.emergency_contact_phone || null,
+    emergencyContactRelationship: person.emergency_contact_relationship || null,
     role: person.role,
     companyId: person.company_id,
     companyName: person.company.name,
@@ -80,6 +88,10 @@ export async function login(c: Context): Promise<Response> {
       gender: true,
       date_of_birth: true,
       profile_picture_url: true,
+      contact_number: true,
+      emergency_contact_name: true,
+      emergency_contact_phone: true,
+      emergency_contact_relationship: true,
       role: true,
       company_id: true,
       password_hash: true,
@@ -144,6 +156,10 @@ export async function getMe(c: Context): Promise<Response> {
       gender: true,
       date_of_birth: true,
       profile_picture_url: true,
+      contact_number: true,
+      emergency_contact_name: true,
+      emergency_contact_phone: true,
+      emergency_contact_relationship: true,
       role: true,
       company_id: true,
       company: { select: { name: true, timezone: true } },
@@ -343,6 +359,10 @@ export async function signup(c: Context): Promise<Response> {
           gender: null,
           dateOfBirth: null,
           profilePictureUrl: null,
+          contactNumber: null,
+          emergencyContactName: null,
+          emergencyContactPhone: null,
+          emergencyContactRelationship: null,
           role: result.admin.role,
           companyId: result.company.id,
           companyName: result.company.name,

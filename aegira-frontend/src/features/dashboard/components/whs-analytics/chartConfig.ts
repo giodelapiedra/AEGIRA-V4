@@ -23,7 +23,18 @@ export const INCIDENT_TYPE_COLORS: Record<string, string> = {
   OTHER: '#cbd5e1',             // slate-300
 };
 
-export const REJECTION_COLORS = ['#fca5a5', '#fdba74', '#fcd34d', '#cbd5e1'];
+export const GENDER_COLORS: Record<string, string> = {
+  MALE: '#93c5fd',        // blue-300
+  FEMALE: '#f9a8d4',      // pink-300
+  UNSPECIFIED: '#cbd5e1',  // slate-300
+};
+
+export const REJECTION_COLORS: Record<string, string> = {
+  DUPLICATE_REPORT: '#fca5a5',       // red-300
+  INSUFFICIENT_INFORMATION: '#fdba74', // orange-300
+  NOT_WORKPLACE_INCIDENT: '#fcd34d', // amber-300
+  OTHER: '#cbd5e1',                  // slate-300
+};
 
 export const SEVERITY_LABELS: Record<string, string> = {
   LOW: 'Low',

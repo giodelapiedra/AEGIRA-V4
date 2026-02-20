@@ -62,12 +62,34 @@ export async function getPersonById(c: Context): Promise<Response> {
 }
 ```
 
+### Validated Input Extraction (Zod Transforms)
+```typescript
+// CRITICAL: Use c.req.valid() instead of c.req.json() to ensure Zod transforms
+// (trim, toLowerCase) are applied before the controller sees the data.
+// The 'json' as never cast is a Hono generic Context workaround.
+
+export async function createPerson(c: Context): Promise<Response> {
+  const companyId = c.get('companyId') as string;
+  const userId = c.get('userId') as string;
+
+  // CORRECT — Zod transforms applied (trim, toLowerCase on emails)
+  const data = c.req.valid('json' as never) as CreatePersonInput;
+
+  // WRONG — raw JSON, Zod transforms NOT applied
+  // const data = await c.req.json() as CreatePersonInput;
+
+  const repository = getRepository(companyId);
+  const result = await repository.create(data);
+  return c.json({ success: true, data: result }, 201);
+}
+```
+
 ### Create Controller (with Audit)
 ```typescript
 export async function createPerson(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const userId = c.get('userId') as string;
-  const data = await c.req.json() as CreatePersonInput;
+  const data = c.req.valid('json' as never) as CreatePersonInput;
 
   const repository = getRepository(companyId);
   const result = await repository.create(data);
@@ -92,7 +114,7 @@ export async function updatePerson(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const userId = c.get('userId') as string;
   const id = c.req.param('id');
-  const data = await c.req.json() as UpdatePersonInput;
+  const data = c.req.valid('json' as never) as UpdatePersonInput;
 
   if (!id) {
     throw new AppError('VALIDATION_ERROR', 'Person ID is required', 400);
@@ -129,7 +151,7 @@ function getService(companyId: string, timezone: string): CheckInService {
 }
 
 export async function submitCheckIn(c: Context): Promise<Response> {
-  const data = await c.req.json() as CheckInInput;
+  const data = c.req.valid('json' as never) as CheckInInput;
   const user = c.get('user') as AuthenticatedUser;
   const companyId = c.get('companyId') as string;
 
@@ -192,6 +214,8 @@ export async function createTeam(c: Context): Promise<Response> {
 - ✅ DO extract `userId` from `c.get('userId')` for audit trails
 - ✅ DO use a `getRepository()` or `getService()` helper factory function
 - ✅ DO use `as string` for context getters: `c.get('companyId') as string`
+- ✅ DO use `c.req.valid('json' as never) as InputType` for validated body — ensures Zod transforms apply
+- ❌ NEVER use `c.req.json()` for validated endpoints — Zod transforms (trim, toLowerCase) won't apply
 - ❌ NEVER put business logic in controllers (delegate to service)
 - ❌ NEVER put Prisma queries in controllers (delegate to repository)
 - ❌ NEVER `await` audit logging or notification calls
@@ -204,7 +228,7 @@ export async function createTeam(c: Context): Promise<Response> {
 ```typescript
 export async function createTeam(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
-  const body = await c.req.json();
+  const body = c.req.valid('json' as never) as CreateTeamInput;
 
   // WRONG - direct Prisma query in controller
   const team = await prisma.team.create({
@@ -220,7 +244,7 @@ export async function createTeam(c: Context): Promise<Response> {
 export async function createTeam(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
   const userId = c.get('userId') as string;
-  const body = await c.req.json() as CreateTeamInput;
+  const body = c.req.valid('json' as never) as CreateTeamInput;
 
   const repository = getRepository(companyId);
   const team = await repository.create(body);

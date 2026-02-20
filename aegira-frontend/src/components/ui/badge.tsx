@@ -19,6 +19,14 @@ const badgeVariants = cva(
           'border-transparent bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
         info:
           'border-transparent bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+        violet:
+          'border-transparent bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300',
+        amber:
+          'border-transparent bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
+        orange:
+          'border-transparent bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
+        slate:
+          'border-transparent bg-slate-100 text-slate-800 dark:bg-slate-900/30 dark:text-slate-400',
         outline: 'text-foreground',
       },
     },

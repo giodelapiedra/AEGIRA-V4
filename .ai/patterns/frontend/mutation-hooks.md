@@ -114,6 +114,38 @@ export function useDeleteTeam() {
 - ❌ **NEVER** swallow errors silently
 - ❌ **NEVER** use `onError` in mutation hook for toast (do it in page)
 
+## Error Handling in Pages
+
+Mutation errors are handled in the PAGE using `mutateAsync` + try/catch. The `ApiError` class provides structured error info.
+
+```typescript
+import { ApiError } from '@/lib/api/client';
+
+const onSubmit = async (data: FormData) => {
+  try {
+    await createTeam.mutateAsync(data);
+    toast({ title: 'Success', description: 'Team created successfully' });
+    navigate(ROUTES.ADMIN_TEAMS);
+  } catch (error) {
+    // ApiError has .code and .statusCode for specific handling
+    const message = error instanceof Error ? error.message : 'An error occurred';
+    toast({ title: 'Error', description: message, variant: 'destructive' });
+  }
+};
+```
+
+### ApiError Type Narrowing
+```typescript
+// For specific error handling (e.g., duplicate detection):
+catch (error) {
+  if (error instanceof ApiError && error.code === 'DUPLICATE_CHECK_IN') {
+    toast({ title: 'Already checked in', description: error.message, variant: 'destructive' });
+  } else {
+    toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed', variant: 'destructive' });
+  }
+}
+```
+
 ## Common Mistakes
 
 ### ❌ WRONG: Toast in mutation hook

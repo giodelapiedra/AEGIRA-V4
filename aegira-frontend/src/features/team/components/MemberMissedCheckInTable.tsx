@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react';
 import type { ColumnDef, PaginationState } from '@tanstack/react-table';
-import { AlertTriangle, Eye, Flame, TrendingUp, TrendingDown, Calendar, AlertCircle, Target } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Eye, Flame, TrendingUp, Calendar, AlertCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { MissedCheckInStatusBadge } from '@/components/common/badge-utils';
 import { Button } from '@/components/ui/button';
@@ -73,38 +72,23 @@ export function MemberMissedCheckInTable({ personId }: MemberMissedCheckInTableP
   const total = data?.pagination?.total ?? 0;
   const pageCount = data?.pagination?.totalPages ?? 0;
 
-  const columns = useMemo(() => getColumns(setSelectedRecord), [setSelectedRecord]);
+  const columns = useMemo(() => getColumns(setSelectedRecord), []);
   const snapshot = selectedRecord?.stateSnapshot;
 
   return (
     <>
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5" />
-            Missed Check-Ins
-          </CardTitle>
-          <CardDescription>
-            {total > 0
-              ? `${total} total records`
-              : 'View this member\'s missed check-in history'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <DataTable
-            columns={columns}
-            data={items}
-            pageCount={pageCount}
-            pagination={pagination}
-            onPaginationChange={setPagination}
-            isLoading={isLoading}
-            totalCount={total}
-            emptyMessage="This member has no missed check-in records."
-          />
-        </CardContent>
-      </Card>
+      <DataTable
+        columns={columns}
+        data={items}
+        pageCount={pageCount}
+        pagination={pagination}
+        onPaginationChange={setPagination}
+        isLoading={isLoading}
+        totalCount={total}
+        emptyMessage="No missed check-in records."
+      />
 
-      {/* State Snapshot Detail Sheet */}
+      {/* Detail Sheet */}
       <Sheet open={!!selectedRecord} onOpenChange={(open) => !open && setSelectedRecord(null)}>
         <SheetContent className="sm:max-w-md">
           <SheetHeader>
@@ -115,151 +99,126 @@ export function MemberMissedCheckInTable({ personId }: MemberMissedCheckInTableP
           </SheetHeader>
 
           <div className="mt-6 space-y-6">
-            {/* Basic Info */}
-            <div className="space-y-3">
-              <h4 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Basic Info</h4>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <p className="text-muted-foreground">Status</p>
-                  <div className="mt-1">
-                    <MissedCheckInStatusBadge resolvedAt={selectedRecord?.resolvedAt} />
-                  </div>
+            {/* Basic info grid */}
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <p className="text-xs text-muted-foreground">Status</p>
+                <div className="mt-1">
+                  <MissedCheckInStatusBadge resolvedAt={selectedRecord?.resolvedAt} />
                 </div>
-                <div>
-                  <p className="text-muted-foreground">Team Leader</p>
-                  <p className="font-medium">{selectedRecord?.teamLeaderName || 'Not assigned'}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Schedule</p>
-                  <p className="font-medium">{selectedRecord?.scheduleWindow}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Day</p>
-                  <p className="font-medium">{snapshot?.dayOfWeek != null ? DAY_NAMES[snapshot.dayOfWeek] : '-'}</p>
-                </div>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Team Leader</p>
+                <p className="font-medium mt-1">{selectedRecord?.teamLeaderName || 'Not assigned'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Schedule</p>
+                <p className="font-medium mt-1">{selectedRecord?.scheduleWindow}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Day</p>
+                <p className="font-medium mt-1">{snapshot?.dayOfWeek != null ? DAY_NAMES[snapshot.dayOfWeek] : '—'}</p>
               </div>
             </div>
 
             <Separator />
 
-            {/* Worker State at Time of Miss */}
-            <div className="space-y-3">
-              <h4 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">State When Missed</h4>
+            {/* Snapshot */}
+            <div className="space-y-4">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Context at time of miss</p>
 
               {snapshot ? (
                 <div className="space-y-4">
-                  {/* Streak & Readiness */}
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="flex items-start gap-2">
+                    <div className="flex items-start gap-2.5">
                       <div className="p-1.5 rounded-md bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400">
                         <Flame className="h-4 w-4" />
                       </div>
                       <div>
-                        <p className="text-xs text-muted-foreground">Streak Before</p>
-                        <p className="font-semibold">
-                          {snapshot.checkInStreakBefore != null ? `${snapshot.checkInStreakBefore} days` : <span className="text-muted-foreground font-normal text-xs">No data</span>}
+                        <p className="text-xs text-muted-foreground">Streak</p>
+                        <p className="text-sm font-semibold">
+                          {snapshot.checkInStreakBefore != null
+                            ? `${snapshot.checkInStreakBefore}d`
+                            : <span className="text-muted-foreground font-normal">—</span>}
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-start gap-2">
+                    <div className="flex items-start gap-2.5">
                       <div className="p-1.5 rounded-md bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
                         <TrendingUp className="h-4 w-4" />
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Avg Readiness</p>
-                        <p className="font-semibold">
-                          {snapshot.recentReadinessAvg != null ? `${snapshot.recentReadinessAvg.toFixed(1)}%` : <span className="text-muted-foreground font-normal text-xs">Insufficient data</span>}
+                        <p className="text-sm font-semibold">
+                          {snapshot.recentReadinessAvg != null
+                            ? `${snapshot.recentReadinessAvg.toFixed(1)}%`
+                            : <span className="text-muted-foreground font-normal">—</span>}
                         </p>
                       </div>
                     </div>
                   </div>
 
-                  {/* Days since */}
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="flex items-start gap-2">
+                    <div className="flex items-start gap-2.5">
                       <div className="p-1.5 rounded-md bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400">
                         <Calendar className="h-4 w-4" />
                       </div>
                       <div>
-                        <p className="text-xs text-muted-foreground">Days Since Last Check-in</p>
-                        <p className="font-semibold">
-                          {snapshot.daysSinceLastCheckIn != null ? snapshot.daysSinceLastCheckIn : <span className="text-muted-foreground font-normal text-xs">No prior check-in</span>}
+                        <p className="text-xs text-muted-foreground">Since Last Check-in</p>
+                        <p className="text-sm font-semibold">
+                          {snapshot.daysSinceLastCheckIn != null
+                            ? `${snapshot.daysSinceLastCheckIn}d`
+                            : <span className="text-muted-foreground font-normal">—</span>}
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-start gap-2">
+                    <div className="flex items-start gap-2.5">
                       <div className="p-1.5 rounded-md bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">
                         <AlertCircle className="h-4 w-4" />
                       </div>
                       <div>
-                        <p className="text-xs text-muted-foreground">Days Since Last Miss</p>
-                        <p className="font-semibold">
-                          {snapshot.daysSinceLastMiss != null ? snapshot.daysSinceLastMiss : <span className="text-muted-foreground font-normal text-xs">First miss</span>}
+                        <p className="text-xs text-muted-foreground">Since Last Miss</p>
+                        <p className="text-sm font-semibold">
+                          {snapshot.daysSinceLastMiss != null
+                            ? `${snapshot.daysSinceLastMiss}d`
+                            : <span className="text-muted-foreground font-normal">First</span>}
                         </p>
                       </div>
                     </div>
                   </div>
 
-                  {/* Miss history */}
-                  <div className="bg-muted/50 rounded-lg p-3 space-y-2">
-                    <p className="text-xs font-medium text-muted-foreground uppercase">Miss History</p>
+                  {/* Miss frequency */}
+                  <div className="bg-muted/50 rounded-lg p-3">
+                    <p className="text-xs text-muted-foreground mb-2">Miss Frequency</p>
                     <div className="grid grid-cols-3 gap-2 text-center">
                       <div>
                         <p className="text-lg font-bold">{snapshot.missesInLast30d ?? 0}</p>
-                        <p className="text-xs text-muted-foreground">Last 30d</p>
+                        <p className="text-xs text-muted-foreground">30d</p>
                       </div>
                       <div>
                         <p className="text-lg font-bold">{snapshot.missesInLast60d ?? 0}</p>
-                        <p className="text-xs text-muted-foreground">Last 60d</p>
+                        <p className="text-xs text-muted-foreground">60d</p>
                       </div>
                       <div>
                         <p className="text-lg font-bold">{snapshot.missesInLast90d ?? 0}</p>
-                        <p className="text-xs text-muted-foreground">Last 90d</p>
+                        <p className="text-xs text-muted-foreground">90d</p>
                       </div>
                     </div>
                   </div>
 
-                  {/* Completion rate */}
-                  <div className="flex items-start gap-2">
-                    <div className="p-1.5 rounded-md bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400">
-                      <Target className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Baseline Completion Rate</p>
-                      <p className="font-semibold">
-                        {snapshot.baselineCompletionRate != null ? `${snapshot.baselineCompletionRate.toFixed(1)}%` : <span className="text-muted-foreground font-normal text-xs">Insufficient data</span>}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Pattern indicators */}
-                  <div className="flex flex-wrap gap-2">
-                    {snapshot.isFirstMissIn30d && (
-                      <Badge variant="outline" className="gap-1">
-                        <AlertCircle className="h-3 w-3" />
-                        First miss in 30 days
-                      </Badge>
-                    )}
-                    {snapshot.isIncreasingFrequency && (
-                      <Badge variant="destructive" className="gap-1">
-                        <TrendingDown className="h-3 w-3" />
-                        Increasing frequency
-                      </Badge>
-                    )}
-                    {!snapshot.isFirstMissIn30d && !snapshot.isIncreasingFrequency && (
-                      <Badge variant="secondary" className="gap-1">
-                        No pattern detected
-                      </Badge>
-                    )}
-                  </div>
+                  {snapshot.isFirstMissIn30d && (
+                    <Badge variant="outline" className="gap-1">
+                      <AlertCircle className="h-3 w-3" />
+                      First miss in 30 days
+                    </Badge>
+                  )}
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground italic">
-                  State snapshot not available for this record.
+                  Snapshot not available for this record.
                 </p>
               )}
             </div>
-
           </div>
         </SheetContent>
       </Sheet>

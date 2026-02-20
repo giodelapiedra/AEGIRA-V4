@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { ArrowLeft, UserCog, Calendar, Clock } from 'lucide-react';
+import { ArrowLeft, UserCog, Calendar, Clock, Phone } from 'lucide-react';
 import { formatDate } from '@/lib/utils/date.utils';
 import { formatWorkDays } from '@/lib/utils/string.utils';
 import { isEndTimeAfterStart, TIME_REGEX, WORK_DAYS_REGEX } from '@/lib/utils/format.utils';
@@ -30,6 +30,8 @@ import { ROUTES } from '@/config/routes.config';
 import type { Person } from '@/types/person.types';
 import type { Team } from '@/types/team.types';
 import { WORK_DAYS_OPTIONS } from '@/types/team.types';
+import { SEMANTIC_SURFACE } from '@/lib/constants';
+import { cn } from '@/lib/utils/cn';
 
 const updateWorkerSchema = z
   .object({
@@ -42,6 +44,11 @@ const updateWorkerSchema = z
     workDays: z.string().regex(WORK_DAYS_REGEX, 'Invalid work days format').optional().or(z.literal('')),
     checkInStart: z.string().regex(TIME_REGEX, 'Invalid time format (HH:MM)').optional().or(z.literal('')),
     checkInEnd: z.string().regex(TIME_REGEX, 'Invalid time format (HH:MM)').optional().or(z.literal('')),
+    // Contact information (optional)
+    contactNumber: z.string().max(20).optional().or(z.literal('')),
+    emergencyContactName: z.string().max(100).optional().or(z.literal('')),
+    emergencyContactPhone: z.string().max(20).optional().or(z.literal('')),
+    emergencyContactRelationship: z.string().max(50).optional().or(z.literal('')),
   })
   .refine(
     (data) => {
@@ -125,6 +132,10 @@ function WorkerEditForm({ person, teams }: WorkerEditFormProps) {
       workDays: person.work_days || '',
       checkInStart: person.check_in_start || '',
       checkInEnd: person.check_in_end || '',
+      contactNumber: person.contact_number || '',
+      emergencyContactName: person.emergency_contact_name || '',
+      emergencyContactPhone: person.emergency_contact_phone || '',
+      emergencyContactRelationship: person.emergency_contact_relationship || '',
     },
   });
 
@@ -175,6 +186,10 @@ function WorkerEditForm({ person, teams }: WorkerEditFormProps) {
       updates.checkInStart = currentStart;
       updates.checkInEnd = currentEnd;
     }
+    if ((data.contactNumber || '') !== (person.contact_number || '')) updates.contactNumber = data.contactNumber || null;
+    if ((data.emergencyContactName || '') !== (person.emergency_contact_name || '')) updates.emergencyContactName = data.emergencyContactName || null;
+    if ((data.emergencyContactPhone || '') !== (person.emergency_contact_phone || '')) updates.emergencyContactPhone = data.emergencyContactPhone || null;
+    if ((data.emergencyContactRelationship || '') !== (person.emergency_contact_relationship || '')) updates.emergencyContactRelationship = data.emergencyContactRelationship || null;
     return updates;
   };
 
@@ -245,7 +260,12 @@ function WorkerEditForm({ person, teams }: WorkerEditFormProps) {
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             {/* Pending Transfer Badge */}
             {person.effective_team && (
-              <div className="flex items-center gap-2 p-3 rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/20">
+              <div
+                className={cn(
+                  'flex items-center gap-2 p-3 rounded-lg',
+                  SEMANTIC_SURFACE.WARNING_SOFT
+                )}
+              >
                 <Clock className="h-4 w-4 text-amber-600 shrink-0" />
                 <span className="text-sm flex-1">
                   Transferring to <strong>{person.effective_team.name}</strong> on{' '}
@@ -445,6 +465,54 @@ function WorkerEditForm({ person, teams }: WorkerEditFormProps) {
               </Card>
             )}
 
+            {/* Contact Information */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Phone className="h-5 w-5" />
+                  Contact Information (Optional)
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="contactNumber">Contact Number</Label>
+                    <Input
+                      id="contactNumber"
+                      placeholder="e.g. 09171234567"
+                      {...register('contactNumber')}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="emergencyContactName">Emergency Contact Name</Label>
+                    <Input
+                      id="emergencyContactName"
+                      placeholder="e.g. Juan Dela Cruz"
+                      {...register('emergencyContactName')}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="emergencyContactPhone">Emergency Contact Phone</Label>
+                    <Input
+                      id="emergencyContactPhone"
+                      placeholder="e.g. 09181234567"
+                      {...register('emergencyContactPhone')}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="emergencyContactRelationship">Relationship</Label>
+                    <Input
+                      id="emergencyContactRelationship"
+                      placeholder="e.g. Spouse, Parent, Sibling"
+                      {...register('emergencyContactRelationship')}
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             <div className="flex items-center space-x-4 rounded-lg border p-4">
               <Switch
                 id="isActive"
@@ -486,9 +554,9 @@ function WorkerEditForm({ person, teams }: WorkerEditFormProps) {
         title="Transfer Worker"
         description={`${person.first_name} ${person.last_name} will be transferred from ${person.team?.name ?? 'current team'} to ${teams.find(t => t.id === pendingFormData?.teamId)?.name ?? 'the new team'}. The transfer takes effect tomorrow.`}
         confirmLabel="Confirm Transfer"
-        onConfirm={() => {
+        onConfirm={async () => {
           if (pendingFormData) {
-            submitUpdate(pendingFormData);
+            await submitUpdate(pendingFormData);
             setPendingFormData(null);
           }
         }}

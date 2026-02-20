@@ -510,7 +510,7 @@ const handleSearch = () => {
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
 import { ENDPOINTS } from '@/lib/api/endpoints';
-import { STALE_TIMES } from '@/lib/api/stale-times';
+import { STALE_TIMES } from '@/config/query.config';
 import type { PaginatedResponse, Team } from '@/types';
 
 export function useTeams(
@@ -588,7 +588,7 @@ export function useIncidentTrends(period: '7d' | '30d' | '90d') {
 ## Stale Time Constants Reference
 
 ```typescript
-// From @/lib/api/stale-times.ts
+// From @/config/query.config.ts
 export const STALE_TIMES = {
   REALTIME: 30_000,    // 30s  - Dashboards, live metrics
   STANDARD: 120_000,   // 2m   - Standard lists, detail pages
@@ -629,6 +629,41 @@ export const STALE_TIMES = {
 - ✅ **DO** return the entire `useQuery` result (includes `data`, `isLoading`, `error`, etc.)
 - ❌ **NEVER** return only `data` from the hook
 - ❌ **NEVER** use `any` types
+
+## Error Handling
+
+The `apiClient` throws `ApiError` on non-2xx responses. Query hooks let errors bubble to `PageLoader`.
+
+```typescript
+import { ApiError } from '@/lib/api/client';
+
+// In pages — PageLoader handles query errors automatically:
+const { data, isLoading, error } = useTeams(page, limit);
+return (
+  <PageLoader isLoading={isLoading} error={error} skeleton="table">
+    {/* PageLoader shows ErrorMessage when error is truthy */}
+  </PageLoader>
+);
+```
+
+### ApiError Structure
+```typescript
+class ApiError extends Error {
+  readonly code: string;       // 'NOT_FOUND', 'VALIDATION_ERROR', etc.
+  readonly statusCode: number; // 404, 400, etc.
+}
+// 401 handling: apiClient clears auth store + redirects to login (except auth endpoints)
+// Timeout: throws ApiError with code 'TIMEOUT', statusCode 408
+```
+
+### When to Use retry
+```typescript
+// Session check — never retry (prevents infinite loop on expired session)
+useQuery({ queryKey: ['auth', 'session'], retry: false });
+
+// Regular data queries — use default retry (3 attempts with backoff)
+useQuery({ queryKey: ['teams', page], /* retry defaults to 3 */ });
+```
 
 ## Common Mistakes
 

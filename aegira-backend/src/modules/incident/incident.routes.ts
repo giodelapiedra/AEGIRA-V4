@@ -16,7 +16,6 @@ const router = new Hono();
 router.use('*', authMiddleware);
 router.use('*', tenantMiddleware);
 
-const whsOrAdmin = roleMiddleware(['ADMIN', 'WHS']);
 const whsOnly = roleMiddleware(['WHS']);
 const allAuthenticated = roleMiddleware(['WORKER', 'TEAM_LEAD', 'SUPERVISOR', 'ADMIN', 'WHS']);
 
@@ -38,10 +37,10 @@ router.post(
   controller.createIncident
 );
 
-// GET /api/v1/incidents — list all incidents (WHS/ADMIN only)
+// GET /api/v1/incidents — list all incidents (WHS only)
 router.get(
   '/',
-  whsOrAdmin,
+  whsOnly,
   zValidator('query', getIncidentsQuerySchema),
   controller.getIncidents
 );

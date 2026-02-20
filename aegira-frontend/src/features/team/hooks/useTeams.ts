@@ -5,15 +5,13 @@ import { STALE_TIMES } from '@/config/query.config';
 import type { PaginatedResponse } from '@/types/common.types';
 import type {
   Team,
-  TeamMember,
   TeamWithMembers,
   CreateTeamData,
   UpdateTeamData,
-  AddTeamMemberData,
 } from '@/types/team.types';
 
 // Re-export types for convenience
-export type { Team, TeamMember, TeamWithMembers, CreateTeamData, UpdateTeamData, AddTeamMemberData };
+export type { Team, TeamWithMembers, CreateTeamData, UpdateTeamData };
 
 /**
  * Fetch all teams with pagination
@@ -63,28 +61,6 @@ export function useTeamDetail(teamId: string) {
 }
 
 /**
- * Fetch team members with pagination
- */
-export function useTeamMembers(teamId: string, page = 1, limit = 20) {
-  return useQuery({
-    queryKey: ['team', teamId, 'members', page, limit],
-    staleTime: STALE_TIMES.STANDARD,
-    placeholderData: keepPreviousData,
-    queryFn: async () => {
-      const params = new URLSearchParams({
-        page: String(page),
-        limit: String(limit),
-      });
-      const response = await apiClient.get<PaginatedResponse<TeamMember>>(
-        `${ENDPOINTS.TEAM.MEMBERS(teamId)}?${params.toString()}`
-      );
-      return response;
-    },
-    enabled: !!teamId,
-  });
-}
-
-/**
  * Create a new team
  */
 export function useCreateTeam() {
@@ -117,53 +93,3 @@ export function useUpdateTeam() {
   });
 }
 
-/**
- * Delete a team
- */
-export function useDeleteTeam() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (teamId: string) =>
-      apiClient.delete(ENDPOINTS.TEAM.DETAIL(teamId)),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['teams'] });
-      queryClient.invalidateQueries({ queryKey: ['persons'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-    },
-  });
-}
-
-/**
- * Add member to team
- */
-export function useAddTeamMember(teamId: string) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (data: AddTeamMemberData) =>
-      apiClient.post(ENDPOINTS.TEAM.MEMBERS(teamId), data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['team', teamId] });
-      queryClient.invalidateQueries({ queryKey: ['teams'] });
-      queryClient.invalidateQueries({ queryKey: ['persons'] });
-    },
-  });
-}
-
-/**
- * Remove member from team
- */
-export function useRemoveTeamMember(teamId: string) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (personId: string) =>
-      apiClient.delete(ENDPOINTS.TEAM.MEMBER(teamId, personId)),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['team', teamId] });
-      queryClient.invalidateQueries({ queryKey: ['teams'] });
-      queryClient.invalidateQueries({ queryKey: ['persons'] });
-    },
-  });
-}

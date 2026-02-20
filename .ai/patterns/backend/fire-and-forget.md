@@ -267,6 +267,31 @@ async findByPerson(
 }
 ```
 
+### Notification Service (sendNotification / sendNotifications)
+```typescript
+import { sendNotification, sendNotifications } from '../../modules/notification/notification.service';
+
+// Single notification — fire-and-forget, errors logged internally
+sendNotification(prisma, companyId, {
+  personId: leaderId,
+  type: 'TEAM_ALERT',
+  title: 'Team Leadership Assignment',
+  message: `You have been assigned as the team lead of ${teamName}.`,
+});
+
+// Batch notifications — same pattern, accepts array
+sendNotifications(prisma, companyId, [
+  { personId: worker1Id, type: 'TEAM_ALERT', title: 'Team Update', message: '...' },
+  { personId: worker2Id, type: 'TEAM_ALERT', title: 'Team Update', message: '...' },
+]);
+```
+
+The notification service follows the same fire-and-forget contract as `logAudit()`:
+- Returns `void` (not `Promise<void>` to callers)
+- Internal `.catch()` with `logger.error` — never throws
+- Safe to call without `await`
+- Empty array input short-circuits (no DB call)
+
 ### Common Audit Action Codes
 
 | Action | Entity Type | When |

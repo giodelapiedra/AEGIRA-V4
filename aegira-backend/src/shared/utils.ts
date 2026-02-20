@@ -111,9 +111,25 @@ export function formatTime12h(time24: string): string {
 }
 
 /**
+ * Calculate a person's age from their date of birth, timezone-aware.
+ * Uses Luxon to get the current date in the company timezone so that
+ * age doesn't flip a day early/late near midnight across timezones.
+ */
+export function calculateAge(dateOfBirth: Date | null, timezone: string): number | null {
+  if (!dateOfBirth) return null;
+  const now = DateTime.now().setZone(timezone);
+  let age = now.year - dateOfBirth.getUTCFullYear();
+  const monthDiff = now.month - (dateOfBirth.getUTCMonth() + 1);
+  if (monthDiff < 0 || (monthDiff === 0 && now.day < dateOfBirth.getUTCDate())) {
+    age--;
+  }
+  return age;
+}
+
+/**
  * Clamps a value between min and max
  */
-export function clamp(value: number, min: number, max: number): number {
+function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 

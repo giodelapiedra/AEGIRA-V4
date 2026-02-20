@@ -58,6 +58,8 @@ interface DataTableProps<TData, TValue> {
   emptyMessage?: string;
   // Total count for display
   totalCount?: number;
+  // Row click handler
+  onRowClick?: (row: TData) => void;
 }
 
 export function DataTable<TData, TValue>({
@@ -72,6 +74,7 @@ export function DataTable<TData, TValue>({
   isLoading = false,
   emptyMessage = 'No results found.',
   totalCount,
+  onRowClick,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -173,6 +176,8 @@ export function DataTable<TData, TValue>({
                   <TableRow
                     key={row.id}
                     data-state={row.getIsSelected() && 'selected'}
+                    onClick={onRowClick ? () => onRowClick(row.original) : undefined}
+                    className={onRowClick ? 'cursor-pointer' : undefined}
                   >
                     {row.getVisibleCells().map((cell) => {
                       const meta = cell.column.columnDef.meta as { className?: string } | undefined;

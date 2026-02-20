@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { RouteGuard } from './RouteGuard';
+import { GuestGuard } from './GuestGuard';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { ROUTES } from '@/config/routes.config';
@@ -189,9 +190,9 @@ export function AppRoutes() {
   return (
     <Suspense fallback={<PageLoader />}>
       <Routes>
-        {/* Public routes */}
-        <Route path={ROUTES.LOGIN} element={<LoginPage />} />
-        <Route path={ROUTES.SIGNUP} element={<SignupPage />} />
+        {/* Guest-only routes — redirect to dashboard if already authenticated */}
+        <Route path={ROUTES.LOGIN} element={<GuestGuard><LoginPage /></GuestGuard>} />
+        <Route path={ROUTES.SIGNUP} element={<GuestGuard><SignupPage /></GuestGuard>} />
         <Route path={ROUTES.UNAUTHORIZED} element={<UnauthorizedPage />} />
 
         {/* Protected routes - All authenticated users */}
@@ -250,14 +251,14 @@ export function AppRoutes() {
           </Route>
 
           {/* ============================================ */}
-          {/* WHS + ADMIN ROUTES                          */}
+          {/* WHS ONLY ROUTES                             */}
           {/* Incident and case management                */}
           {/* ============================================ */}
-          <Route element={<RouteGuard allowedRoles={['ADMIN', 'WHS']} />}>
-            <Route path={ROUTES.ADMIN_INCIDENTS} element={<AdminIncidentsPage />} />
-            <Route path={ROUTES.ADMIN_INCIDENT_DETAIL} element={<IncidentDetailPage />} />
-            <Route path={ROUTES.ADMIN_CASES} element={<AdminCasesPage />} />
-            <Route path={ROUTES.ADMIN_CASE_DETAIL} element={<CaseDetailPage />} />
+          <Route element={<RouteGuard allowedRoles={['WHS']} />}>
+            <Route path={ROUTES.WHS_INCIDENTS} element={<AdminIncidentsPage />} />
+            <Route path={ROUTES.WHS_INCIDENT_DETAIL} element={<IncidentDetailPage />} />
+            <Route path={ROUTES.WHS_CASES} element={<AdminCasesPage />} />
+            <Route path={ROUTES.WHS_CASE_DETAIL} element={<CaseDetailPage />} />
           </Route>
 
           {/* ============================================ */}

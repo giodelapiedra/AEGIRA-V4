@@ -34,10 +34,6 @@ export const signupSchema = z.object({
   addressCountry: z.string().min(1, 'Country is required').max(100).trim(),
 });
 
-export const refreshTokenSchema = z.object({
-  refreshToken: z.string(),
-});
-
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, 'Current password is required'),
   newPassword: z.string()
@@ -53,6 +49,5 @@ export const verifyPasswordSchema = z.object({
 
 export type LoginInput = z.infer<typeof loginSchema>;
 export type SignupInput = z.infer<typeof signupSchema>;
-export type RefreshTokenInput = z.infer<typeof refreshTokenSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export type VerifyPasswordInput = z.infer<typeof verifyPasswordSchema>;

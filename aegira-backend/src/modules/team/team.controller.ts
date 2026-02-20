@@ -11,10 +11,6 @@ import { logger } from '../../config/logger';
 import { logAudit } from '../../shared/audit';
 import { getTeamContext } from '../../shared/team-context';
 import {
-  getTodayInTimezone,
-  getDayOfWeekInTimezone,
-  parseDateInTimezone,
-  formatDateInTimezone,
   parsePagination,
 } from '../../shared/utils';
 import type { CreateTeamInput, UpdateTeamInput } from './team.validator';

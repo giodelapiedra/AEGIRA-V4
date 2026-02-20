@@ -1,12 +1,11 @@
 import type {
   PrismaClient,
-  Incident,
-  IncidentType,
   IncidentSeverity,
   IncidentStatus,
-  RejectionReason,
 } from '@prisma/client';
 import type { IncidentWithRelations } from './incident.repository';
+import type { CreateIncidentInput, RejectIncidentInput } from './incident.validator';
+import { DateTime } from 'luxon';
 import { AppError } from '../../shared/errors';
 import { logAudit } from '../../shared/audit';
 import { sendNotification, sendNotifications } from '../notification/notification.service';
@@ -18,19 +17,6 @@ const VALID_TRANSITIONS: Record<IncidentStatus, IncidentStatus[]> = {
   APPROVED: [],
   REJECTED: [],
 };
-
-interface CreateIncidentInput {
-  incidentType: IncidentType;
-  severity: IncidentSeverity;
-  title: string;
-  location?: string;
-  description: string;
-}
-
-interface RejectIncidentInput {
-  rejectionReason: RejectionReason;
-  rejectionExplanation: string;
-}
 
 export class IncidentService {
   constructor(
@@ -413,12 +399,12 @@ export class IncidentService {
   }
 
   private formatIncidentRef(num: number, createdAt: Date): string {
-    const year = createdAt.getFullYear();
+    const year = DateTime.fromJSDate(createdAt).setZone(this.timezone).year;
     return `INC-${year}-${String(num).padStart(4, '0')}`;
   }
 
   private formatCaseRef(num: number): string {
-    const year = new Date().getFullYear();
+    const year = DateTime.now().setZone(this.timezone).toFormat('yyyy');
     return `CASE-${year}-${String(num).padStart(4, '0')}`;
   }
 

@@ -1,5 +1,4 @@
 import type { UserRole } from '@/types/auth.types';
-import type { ReadinessCategory } from '@/types/check-in.types';
 
 /**
  * Format number with locale
@@ -13,45 +12,6 @@ export function formatNumber(value: number, locale = 'en-US'): string {
  */
 export function formatPercentage(value: number, decimals = 0): string {
   return `${value.toFixed(decimals)}%`;
-}
-
-/**
- * Format currency
- */
-export function formatCurrency(
-  value: number,
-  currency = 'USD',
-  locale = 'en-US'
-): string {
-  return new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency,
-  }).format(value);
-}
-
-/**
- * Truncate text with ellipsis
- */
-export function truncate(text: string, maxLength: number): string {
-  if (text.length <= maxLength) return text;
-  return `${text.slice(0, maxLength)}...`;
-}
-
-/**
- * Capitalize first letter
- */
-export function capitalize(text: string): string {
-  return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
-}
-
-/**
- * Format readiness score with color class
- */
-export function getReadinessColor(score: number): string {
-  if (score >= 80) return 'text-green-600';
-  if (score >= 60) return 'text-yellow-600';
-  if (score >= 40) return 'text-orange-600';
-  return 'text-red-600';
 }
 
 /**
@@ -72,19 +32,6 @@ export function formatTime12h(time24: string): string {
  */
 export function formatScheduleWindow(start: string, end: string): string {
   return `${formatTime12h(start || '06:00')} - ${formatTime12h(end || '10:00')}`;
-}
-
-/**
- * Get readiness category label
- */
-export function getReadinessLabel(category: ReadinessCategory): string {
-  const labels: Record<ReadinessCategory, string> = {
-    ready: 'Ready',
-    modified_duty: 'Modified Duty',
-    needs_attention: 'Needs Attention',
-    not_ready: 'Not Ready',
-  };
-  return labels[category];
 }
 
 /**

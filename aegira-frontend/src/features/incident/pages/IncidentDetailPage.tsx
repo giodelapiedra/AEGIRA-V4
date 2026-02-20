@@ -10,6 +10,7 @@ import { PageLoader } from '@/components/common/PageLoader';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { IncidentStatusBadge } from '../components/IncidentStatusBadge';
 import { SeverityBadge } from '../components/SeverityBadge';
 import { CaseStatusBadge } from '../components/CaseStatusBadge';
@@ -58,7 +59,6 @@ export function IncidentDetailPage() {
   const { data: timeline } = useIncidentTimeline(id || '');
   const approveIncident = useApproveIncident();
 
-  const isWhsOrAdmin = user?.role === 'ADMIN' || user?.role === 'WHS';
   const isWhs = user?.role === 'WHS';
   const isPending = incident?.status === 'PENDING';
 
@@ -81,7 +81,7 @@ export function IncidentDetailPage() {
     }
   };
 
-  const backRoute = isWhsOrAdmin ? ROUTES.ADMIN_INCIDENTS : ROUTES.MY_INCIDENTS;
+  const backRoute = isWhs ? ROUTES.WHS_INCIDENTS : ROUTES.MY_INCIDENTS;
 
   return (
     <>
@@ -217,13 +217,13 @@ export function IncidentDetailPage() {
                     ) : (
                       <InfoRow label="Notes" value="No notes yet" />
                     )}
-                    {isWhsOrAdmin && incident.caseId && (
+                    {isWhs && incident.caseId && (
                       <div className="pt-3">
                         <Button
                           variant="outline"
                           size="sm"
                           className="w-full"
-                          onClick={() => navigate(buildRoute(ROUTES.ADMIN_CASE_DETAIL, { id: incident.caseId! }))}
+                          onClick={() => navigate(buildRoute(ROUTES.WHS_CASE_DETAIL, { id: incident.caseId! }))}
                         >
                           <ExternalLink className="h-4 w-4 mr-1" />
                           View Full Case
@@ -252,9 +252,9 @@ export function IncidentDetailPage() {
                 )}
                 {incident.status === 'PENDING' && (
                   <div className="mt-2">
-                    <span className="inline-block text-xs font-medium uppercase tracking-wider text-yellow-700 bg-yellow-50 border border-yellow-200 rounded px-2 py-1">
+                    <Badge variant="warning" className="uppercase tracking-wider">
                       Pending Review
-                    </span>
+                    </Badge>
                   </div>
                 )}
               </CardContent>

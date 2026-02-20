@@ -172,6 +172,10 @@ export async function createPerson(c: Context): Promise<Response> {
     workDays: data.workDays,
     checkInStart: data.checkInStart,
     checkInEnd: data.checkInEnd,
+    contactNumber: data.contactNumber,
+    emergencyContactName: data.emergencyContactName,
+    emergencyContactPhone: data.emergencyContactPhone,
+    emergencyContactRelationship: data.emergencyContactRelationship,
   };
 
   const result = await repository.create(personData);
@@ -751,6 +755,10 @@ export async function updateProfile(c: Context): Promise<Response> {
     lastName: data.lastName,
     gender: data.gender,
     dateOfBirth: data.dateOfBirth,
+    contactNumber: data.contactNumber,
+    emergencyContactName: data.emergencyContactName,
+    emergencyContactPhone: data.emergencyContactPhone,
+    emergencyContactRelationship: data.emergencyContactRelationship,
   });
 
   return c.json({ success: true, data: result });

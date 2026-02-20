@@ -1,4 +1,4 @@
-import { ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { EmptyState } from '@/components/common/EmptyState';
 import { AlertTriangle } from 'lucide-react';
@@ -49,6 +49,15 @@ export function SeverityDistributionChart({ data }: SeverityDistributionChartPro
                       <Cell key={entry.severity} fill={SEVERITY_COLORS[entry.severity] ?? '#cbd5e1'} />
                     ))}
                   </Pie>
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--card))',
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px',
+                      fontSize: 12,
+                    }}
+                    formatter={(value) => [value, 'Count']}
+                  />
                 </PieChart>
               </ResponsiveContainer>
               {/* Center label */}

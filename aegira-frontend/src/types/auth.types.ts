@@ -21,6 +21,10 @@ export interface User {
   gender: 'MALE' | 'FEMALE' | null;
   dateOfBirth: string | null;
   profilePictureUrl: string | null;
+  contactNumber: string | null;
+  emergencyContactName: string | null;
+  emergencyContactPhone: string | null;
+  emergencyContactRelationship: string | null;
   role: UserRole;
   companyId: string;
   companyName: string;

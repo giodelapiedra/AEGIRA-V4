@@ -32,6 +32,10 @@ aegira-frontend/src/features/dashboard/
 
 <!-- @pattern: ui/component-usage -->
 
+## Team Context (Role-Based Filtering)
+
+<!-- @pattern: backend/team-context -->
+
 ## Query Hook Pattern
 
 <!-- @pattern: frontend/query-hooks -->
@@ -51,7 +55,7 @@ aegira-frontend/src/features/dashboard/
 ## Key Rules
 
 - ONE hook, ONE endpoint, ONE fetch per dashboard — sub-components receive data as props
-- ALWAYS use `STALE_TIMES.STANDARD` (2min) for operational dashboards
+- ALWAYS use `STALE_TIMES.REALTIME` (30s) for operational dashboards
 - ALWAYS use `PageLoader` with `skeleton="dashboard"`
 - ALWAYS use `StatCard` from `features/dashboard/components/StatCard.tsx` — never recreate
 - ALWAYS use `Promise.all` in backend services (parallel queries)

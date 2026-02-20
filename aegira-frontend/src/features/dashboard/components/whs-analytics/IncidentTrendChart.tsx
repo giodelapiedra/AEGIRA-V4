@@ -59,9 +59,8 @@ export function IncidentTrendChart({ data }: IncidentTrendChartProps) {
                 tickLine={false}
                 tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
                 tickFormatter={(val: string) => {
-                  const d = new Date(val);
-                  const day = d.getDate();
-                  return `${day} ${MONTH_NAMES_SHORT[d.getMonth()]}`;
+                  const [, mm, dd] = val.split('-');
+                  return `${Number(dd)} ${MONTH_NAMES_SHORT[Number(mm) - 1]}`;
                 }}
               />
               <YAxis

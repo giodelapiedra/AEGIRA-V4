@@ -94,6 +94,7 @@ export interface Case {
     reporterGender: Gender | null;
     reporterAge: number | null;
     teamName: string;
+    createdAt: string;
   };
   assignedTo: string | null;
   assigneeName: string | null;
@@ -117,7 +118,6 @@ export interface RejectIncidentData {
 }
 
 export interface UpdateCaseData {
-  assignedTo?: string | null;
   status?: CaseStatus;
   notes?: string;
 }

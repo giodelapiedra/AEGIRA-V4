@@ -110,7 +110,7 @@ export function PendingIncidentsTable({ incidents }: PendingIncidentsTableProps)
                         variant="ghost"
                         size="sm"
                         onClick={() =>
-                          navigate(buildRoute(ROUTES.ADMIN_INCIDENT_DETAIL, { id: incident.id }))
+                          navigate(buildRoute(ROUTES.WHS_INCIDENT_DETAIL, { id: incident.id }))
                         }
                         aria-label={`View incident ${incident.incidentNumber}`}
                       >
@@ -146,7 +146,7 @@ export function PendingIncidentsTable({ incidents }: PendingIncidentsTableProps)
             variant="ghost"
             size="sm"
             className="text-muted-foreground"
-            onClick={() => navigate(`${ROUTES.ADMIN_INCIDENTS}?status=PENDING`)}
+            onClick={() => navigate(`${ROUTES.WHS_INCIDENTS}?status=PENDING`)}
           >
             View all pending incidents
             <ArrowRight className="ml-1 h-4 w-4" />
