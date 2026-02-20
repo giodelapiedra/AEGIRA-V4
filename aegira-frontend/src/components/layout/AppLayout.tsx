@@ -4,13 +4,14 @@ import { Header } from './Header';
 
 export function AppLayout() {
   return (
-    <div className="min-h-screen bg-background bg-dot-pattern">
+    <div className="min-h-screen bg-dot-pattern">
       <Sidebar />
-      {/* Desktop: left padding for sidebar, Mobile: bottom padding for bottom nav */}
-      <div className="md:pl-[72px] pb-20 md:pb-0">
+      <div className="pb-20 md:pb-0 md:pl-[84px]">
         <Header />
-        <main className="p-4 md:p-6">
-          <Outlet />
+        <main className="content-shell py-6 md:py-8">
+          <div className="section-stack">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>

@@ -1,87 +1,170 @@
-import { Bell, ClipboardCheck, Users, AlertCircle, AlertTriangle, CheckCircle2, XCircle, Info } from 'lucide-react';
+import {
+  Bell,
+  ClipboardCheck,
+  Users,
+  AlertCircle,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  Info,
+} from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { getRelativeTime } from '@/lib/utils/date.utils';
 import type { Notification, NotificationType } from '@/types/common.types';
-import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 
 interface NotificationItemProps {
   notification: Notification;
   onClick?: () => void;
+  compact?: boolean;
 }
 
-const iconConfig: Record<NotificationType, { icon: typeof Bell; bgColor: string; iconColor: string }> = {
+const typeConfig: Record<
+  NotificationType,
+  {
+    icon: typeof Bell;
+    label: string;
+    bgColor: string;
+    iconColor: string;
+    accentColor: string;
+  }
+> = {
   CHECK_IN_REMINDER: {
     icon: ClipboardCheck,
-    bgColor: 'bg-blue-100 dark:bg-blue-900/30',
+    label: 'Reminder',
+    bgColor: 'bg-blue-50 dark:bg-blue-950/40',
     iconColor: 'text-blue-600 dark:text-blue-400',
+    accentColor: 'border-l-blue-500',
   },
   MISSED_CHECK_IN: {
     icon: AlertCircle,
-    bgColor: 'bg-red-100 dark:bg-red-900/30',
+    label: 'Missed',
+    bgColor: 'bg-red-50 dark:bg-red-950/40',
     iconColor: 'text-red-600 dark:text-red-400',
+    accentColor: 'border-l-red-500',
   },
   TEAM_ALERT: {
     icon: Users,
-    bgColor: 'bg-orange-100 dark:bg-orange-900/30',
+    label: 'Team',
+    bgColor: 'bg-orange-50 dark:bg-orange-950/40',
     iconColor: 'text-orange-600 dark:text-orange-400',
+    accentColor: 'border-l-orange-500',
   },
   SYSTEM: {
     icon: Info,
-    bgColor: 'bg-gray-100 dark:bg-gray-800',
-    iconColor: 'text-gray-600 dark:text-gray-400',
+    label: 'System',
+    bgColor: 'bg-slate-50 dark:bg-slate-900/40',
+    iconColor: 'text-slate-600 dark:text-slate-400',
+    accentColor: 'border-l-slate-400',
   },
   INCIDENT_SUBMITTED: {
     icon: AlertTriangle,
-    bgColor: 'bg-amber-100 dark:bg-amber-900/30',
+    label: 'Incident',
+    bgColor: 'bg-amber-50 dark:bg-amber-950/40',
     iconColor: 'text-amber-600 dark:text-amber-400',
+    accentColor: 'border-l-amber-500',
   },
   INCIDENT_APPROVED: {
     icon: CheckCircle2,
-    bgColor: 'bg-green-100 dark:bg-green-900/30',
+    label: 'Approved',
+    bgColor: 'bg-green-50 dark:bg-green-950/40',
     iconColor: 'text-green-600 dark:text-green-400',
+    accentColor: 'border-l-green-500',
   },
   INCIDENT_REJECTED: {
     icon: XCircle,
-    bgColor: 'bg-red-100 dark:bg-red-900/30',
+    label: 'Rejected',
+    bgColor: 'bg-red-50 dark:bg-red-950/40',
     iconColor: 'text-red-600 dark:text-red-400',
+    accentColor: 'border-l-red-500',
   },
 };
 
-export function NotificationItem({ notification, onClick }: NotificationItemProps) {
-  const config = iconConfig[notification.type] ?? iconConfig.SYSTEM;
+export function NotificationItem({ notification, onClick, compact }: NotificationItemProps) {
+  const config = typeConfig[notification.type] ?? typeConfig.SYSTEM;
   const Icon = config.icon;
   const isUnread = !notification.read_at;
 
   return (
-    <Alert 
+    <button
+      type="button"
       className={cn(
-        'flex items-center justify-between p-3 border-0 transition-colors cursor-pointer',
-        isUnread ? 'bg-muted/40 hover:bg-muted/60' : 'hover:bg-muted/20 bg-background'
+        'group relative flex w-full items-start gap-3 border-l-[3px] text-left transition-all',
+        compact ? 'px-3 py-2.5' : 'px-4 py-3.5',
+        // Unread: accent border + tinted bg + stronger presence
+        isUnread && [
+          config.accentColor,
+          'bg-muted/50 dark:bg-muted/30',
+          'hover:bg-muted/70 dark:hover:bg-muted/50',
+        ],
+        // Read: transparent border + clean bg + subtle hover
+        !isUnread && [
+          'border-l-transparent',
+          'bg-background',
+          'hover:bg-muted/30 dark:hover:bg-muted/20',
+        ]
       )}
       onClick={onClick}
     >
-      <Avatar className="h-9 w-9 rounded-sm mr-3">
-        <AvatarFallback className={cn('rounded-sm', config.bgColor)}>
-          <Icon className={cn('h-4 w-4', config.iconColor)} />
-        </AvatarFallback>
-      </Avatar>
-      
-      <div className="flex-1 flex-col justify-center gap-0.5 min-w-0">
-        <AlertTitle className={cn("text-sm mb-0", isUnread ? "font-semibold" : "font-medium")}>
-          {notification.title}
-        </AlertTitle>
-        <AlertDescription className="text-xs text-muted-foreground line-clamp-2">
-          {notification.message}
-        </AlertDescription>
-        <span className="text-[10px] text-muted-foreground/70">
-          {getRelativeTime(notification.created_at)}
-        </span>
+      {/* Icon avatar */}
+      <div
+        className={cn(
+          'flex shrink-0 items-center justify-center rounded-lg transition-colors',
+          compact ? 'h-8 w-8' : 'h-9 w-9',
+          config.bgColor
+        )}
+      >
+        <Icon className={cn('h-4 w-4', config.iconColor)} />
       </div>
-      
-      {isUnread && (
-        <AlertCircle className="h-3 w-3 text-red-600 dark:text-red-400 ml-2 flex-shrink-0" />
-      )}
-    </Alert>
+
+      {/* Content */}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            {/* Title row: title + type label */}
+            <div className="flex items-center gap-2">
+              <p
+                className={cn(
+                  'truncate text-sm leading-snug',
+                  isUnread ? 'font-semibold text-foreground' : 'font-medium text-foreground/80'
+                )}
+              >
+                {notification.title}
+              </p>
+              {!compact && (
+                <span
+                  className={cn(
+                    'shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium leading-none',
+                    config.bgColor,
+                    config.iconColor
+                  )}
+                >
+                  {config.label}
+                </span>
+              )}
+            </div>
+
+            {/* Message */}
+            <p
+              className={cn(
+                'mt-0.5 text-xs leading-relaxed text-muted-foreground',
+                compact ? 'line-clamp-1' : 'line-clamp-2'
+              )}
+            >
+              {notification.message}
+            </p>
+          </div>
+
+          {/* Unread indicator dot */}
+          {isUnread && (
+            <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
+          )}
+        </div>
+
+        {/* Timestamp */}
+        <p className={cn('mt-1 text-[11px] text-muted-foreground/60', compact && 'mt-0.5')}>
+          {getRelativeTime(notification.created_at)}
+        </p>
+      </div>
+    </button>
   );
 }

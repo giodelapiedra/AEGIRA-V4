@@ -15,12 +15,29 @@
   "rules": {
     "react-refresh/only-export-components": [
       "warn",
-      { "allowConstantExport": true }
+      {
+        "allowConstantExport": true,
+        "allowExportNames": [
+          "buttonVariants",
+          "badgeVariants",
+          "useToast",
+          "setGlobalToast",
+          "toast"
+        ]
+      }
     ],
     "@typescript-eslint/no-explicit-any": "error",
     "@typescript-eslint/no-unused-vars": [
       "error",
       { "argsIgnorePattern": "^_" }
     ]
-  }
+  },
+  "overrides": [
+    {
+      "files": ["src/test/**/*.{ts,tsx}", "src/**/*.test.{ts,tsx}"],
+      "rules": {
+        "react-refresh/only-export-components": "off"
+      }
+    }
+  ]
 }

@@ -93,49 +93,50 @@ export function AdminWorkersPage() {
 
   return (
     <PageLoader isLoading={isLoading} error={error} skeleton="table">
-    <div className="space-y-6">
-      <PageHeader
-        title="Worker Management"
-        description="Create and manage workers"
-        action={
-          <Button asChild>
-            <Link to={ROUTES.ADMIN_WORKERS_CREATE}>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Worker
-            </Link>
-          </Button>
-        }
-      />
+      <div className="section-stack">
+        <PageHeader
+          title="Worker Management"
+          description="Manage workforce accounts, roles, and team assignments."
+          action={
+            <Button asChild>
+              <Link to={ROUTES.ADMIN_WORKERS_CREATE}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Worker
+              </Link>
+            </Button>
+          }
+        />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <UserCircle className="h-5 w-5" />
-            All Workers ({personsData?.pagination?.total || 0})
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <TableSearch
-              placeholder="Search by name or email..."
-              value={searchInput}
-              onChange={setSearchInput}
-              onSearch={handleSearch}
-            />
-            <DataTable
-              columns={columns}
-              data={persons}
-              pageCount={pageCount}
-              pagination={pagination}
-              onPaginationChange={setPagination}
-              isLoading={isLoading}
-              totalCount={personsData?.pagination?.total || 0}
-              emptyMessage="No workers found. Add your first worker to get started."
-            />
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <UserCircle className="h-5 w-5" />
+              All Workers ({personsData?.pagination?.total || 0})
+            </CardTitle>
+            <p className="section-description">Search and update worker records across all roles and teams.</p>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <TableSearch
+                placeholder="Search by name or email..."
+                value={searchInput}
+                onChange={setSearchInput}
+                onSearch={handleSearch}
+              />
+              <DataTable
+                columns={columns}
+                data={persons}
+                pageCount={pageCount}
+                pagination={pagination}
+                onPaginationChange={setPagination}
+                isLoading={isLoading}
+                totalCount={personsData?.pagination?.total || 0}
+                emptyMessage="No workers found. Add your first worker to get started."
+              />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </PageLoader>
   );
 }

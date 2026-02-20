@@ -114,14 +114,14 @@ export function AdminAuditLogsPage() {
 
   if (!verified) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Card className="w-full max-w-sm">
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Card className="w-full max-w-md">
           <CardHeader className="text-center">
-            <div className="mx-auto mb-2 h-12 w-12 rounded-full bg-muted flex items-center justify-center">
+            <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
               <Lock className="h-6 w-6 text-muted-foreground" />
             </div>
             <CardTitle>Verify Your Identity</CardTitle>
-            <CardDescription>Enter your password to access audit logs</CardDescription>
+            <CardDescription>Enter your password to access audit logs.</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit(onVerify)} className="space-y-4">
@@ -139,7 +139,7 @@ export function AdminAuditLogsPage() {
               </div>
               <Button
                 type="submit"
-                className="w-full h-11"
+                className="h-11 w-full"
                 disabled={isSubmitting || verifyMutation.isPending}
               >
                 {verifyMutation.isPending ? (
@@ -223,69 +223,77 @@ function AuditLogsContent() {
 
   return (
     <PageLoader isLoading={isLoading} error={error} skeleton="table">
-    <div className="space-y-6">
-      <PageHeader
-        title="Audit Logs"
-        description="View system activity and audit trail"
-        action={
-          <Button variant="outline" onClick={handleExport}>
-            <Download className="h-4 w-4 mr-2" />
-            Export Logs
-          </Button>
-        }
-      />
+      <div className="section-stack">
+        <PageHeader
+          title="Audit Logs"
+          description="Track user actions and system events across the platform."
+          action={
+            <Button variant="outline" onClick={handleExport}>
+              <Download className="mr-2 h-4 w-4" />
+              Export Logs
+            </Button>
+          }
+        />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5" />
-            Activity Log
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row gap-4">
-              <TableSearch
-                placeholder="Search by user name or email..."
-                value={searchInput}
-                onChange={setSearchInput}
-                onSearch={handleSearch}
-              />
-              <div className="flex gap-2">
-                <Input
-                  type="date"
-                  value={dateFilter}
-                  onChange={(e) => {
-                    setDateFilter(e.target.value);
-                    setPagination((prev) => ({ ...prev, pageIndex: 0 }));
-                  }}
-                  className="w-auto h-9"
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Activity Log
+            </CardTitle>
+            <p className="section-description">
+              Filter by user and date to inspect administrative activity.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <TableSearch
+                  placeholder="Search by user name or email..."
+                  value={searchInput}
+                  onChange={setSearchInput}
+                  onSearch={handleSearch}
                 />
-                {dateFilter && (
-                  <Button variant="outline" size="sm" onClick={() => {
-                    setDateFilter('');
-                    setPagination((prev) => ({ ...prev, pageIndex: 0 }));
-                  }}>
-                    Clear Date
-                  </Button>
-                )}
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Input
+                    type="date"
+                    value={dateFilter}
+                    onChange={(e) => {
+                      setDateFilter(e.target.value);
+                      setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+                    }}
+                    className="h-10 w-full sm:w-auto"
+                  />
+                  {dateFilter && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-10"
+                      onClick={() => {
+                        setDateFilter('');
+                        setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+                      }}
+                    >
+                      Clear Date
+                    </Button>
+                  )}
+                </div>
               </div>
-            </div>
 
-            <DataTable
-            columns={columns}
-            data={logs}
-            pageCount={pageCount}
-            pagination={pagination}
-            onPaginationChange={setPagination}
-            isLoading={isLoading}
-            totalCount={data?.pagination?.total || 0}
-            emptyMessage="No audit logs found."
-          />
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+              <DataTable
+                columns={columns}
+                data={logs}
+                pageCount={pageCount}
+                pagination={pagination}
+                onPaginationChange={setPagination}
+                isLoading={isLoading}
+                totalCount={data?.pagination?.total || 0}
+                emptyMessage="No audit logs found."
+              />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </PageLoader>
   );
 }

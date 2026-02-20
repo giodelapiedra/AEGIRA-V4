@@ -105,49 +105,50 @@ export function AdminTeamsPage() {
 
   return (
     <PageLoader isLoading={isLoading} error={error} skeleton="table">
-    <div className="space-y-6">
-      <PageHeader
-        title="Team Management"
-        description="Create and manage teams"
-        action={
-          <Button asChild>
-            <Link to={ROUTES.ADMIN_TEAMS_CREATE}>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Team
-            </Link>
-          </Button>
-        }
-      />
+      <div className="section-stack">
+        <PageHeader
+          title="Team Management"
+          description="Create, activate, and organize teams from one centralized workspace."
+          action={
+            <Button asChild>
+              <Link to={ROUTES.ADMIN_TEAMS_CREATE}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Team
+              </Link>
+            </Button>
+          }
+        />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Users className="h-5 w-5" />
-            All Teams ({teamsData?.pagination?.total || 0})
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <TableSearch
-              placeholder="Search by team name..."
-              value={searchInput}
-              onChange={setSearchInput}
-              onSearch={handleSearch}
-            />
-            <DataTable
-              columns={columns}
-              data={teams}
-              pageCount={pageCount}
-              pagination={pagination}
-              onPaginationChange={setPagination}
-              isLoading={isLoading}
-              totalCount={teamsData?.pagination?.total || 0}
-              emptyMessage="No teams found. Create your first team to get started."
-            />
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              All Teams ({teamsData?.pagination?.total || 0})
+            </CardTitle>
+            <p className="section-description">Use search and actions to review or update team records.</p>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <TableSearch
+                placeholder="Search by team name..."
+                value={searchInput}
+                onChange={setSearchInput}
+                onSearch={handleSearch}
+              />
+              <DataTable
+                columns={columns}
+                data={teams}
+                pageCount={pageCount}
+                pagination={pagination}
+                onPaginationChange={setPagination}
+                isLoading={isLoading}
+                totalCount={teamsData?.pagination?.total || 0}
+                emptyMessage="No teams found. Create your first team to get started."
+              />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </PageLoader>
   );
 }

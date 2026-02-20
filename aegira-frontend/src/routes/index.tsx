@@ -252,20 +252,13 @@ export function AppRoutes() {
 
           {/* ============================================ */}
           {/* WHS ONLY ROUTES                             */}
-          {/* Incident and case management                */}
+          {/* Incidents, cases, workers, analytics        */}
           {/* ============================================ */}
           <Route element={<RouteGuard allowedRoles={['WHS']} />}>
             <Route path={ROUTES.WHS_INCIDENTS} element={<AdminIncidentsPage />} />
             <Route path={ROUTES.WHS_INCIDENT_DETAIL} element={<IncidentDetailPage />} />
             <Route path={ROUTES.WHS_CASES} element={<AdminCasesPage />} />
             <Route path={ROUTES.WHS_CASE_DETAIL} element={<CaseDetailPage />} />
-          </Route>
-
-          {/* ============================================ */}
-          {/* WHS ONLY ROUTES                             */}
-          {/* Workers lookup + analytics                  */}
-          {/* ============================================ */}
-          <Route element={<RouteGuard allowedRoles={['WHS']} />}>
             <Route path={ROUTES.WHS_WORKERS} element={<WhsWorkersPage />} />
             <Route path={ROUTES.WHS_ANALYTICS} element={<WhsAnalyticsPage />} />
           </Route>

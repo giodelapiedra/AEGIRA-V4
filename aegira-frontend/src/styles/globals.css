@@ -4,26 +4,28 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
+    --background: 215 28% 97%;
+    --foreground: 220 29% 14%;
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
+    --card-foreground: 220 29% 14%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-    --primary: 212 96% 48%;
+    --popover-foreground: 220 29% 14%;
+    --primary: 222 89% 55%;
     --primary-foreground: 0 0% 98%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
-    --destructive: 0 84.2% 60.2%;
+    --secondary: 214 32% 94%;
+    --secondary-foreground: 220 29% 14%;
+    --muted: 215 25% 93%;
+    --muted-foreground: 220 13% 42%;
+    --accent: 216 45% 93%;
+    --accent-foreground: 220 29% 14%;
+    --destructive: 0 74% 56%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 212 96% 48%;
-    --radius: 0.75rem;
+    --border: 214 25% 86%;
+    --input: 214 25% 86%;
+    --ring: 222 89% 55%;
+    --radius: 0.875rem;
+    --font-sans: 'Plus Jakarta Sans', 'Inter', 'Segoe UI', sans-serif;
+    --font-display: 'Sora', 'Plus Jakarta Sans', 'Segoe UI', sans-serif;
   }
 
   .dark {
@@ -54,16 +56,50 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+    background-image:
+      radial-gradient(circle at 20% 0%, hsl(var(--primary) / 0.06), transparent 38%),
+      radial-gradient(circle at 100% 100%, hsl(var(--accent) / 0.75), transparent 32%);
+    background-attachment: fixed;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
   }
 }
 
 /* Subtle dot grid pattern background */
 .bg-dot-pattern {
-  background-image: radial-gradient(circle, hsl(var(--muted-foreground) / 0.05) 1px, transparent 1px);
-  background-size: 32px 32px;
+  background-image:
+    radial-gradient(circle, hsl(var(--muted-foreground) / 0.06) 1px, transparent 1px);
+  background-size: 28px 28px;
 }
 
 .dark .bg-dot-pattern {
   background-image: radial-gradient(circle, hsl(var(--muted-foreground) / 0.05) 1px, transparent 1px);
+}
+
+@layer components {
+  .content-shell {
+    @apply mx-auto w-full max-w-[1360px] px-4 md:px-8;
+  }
+
+  .section-stack {
+    @apply space-y-8;
+  }
+
+  .section-description {
+    @apply text-sm text-muted-foreground;
+  }
+
+  .dashboard-grid-4 {
+    @apply grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4;
+  }
+
+  .dashboard-grid-2 {
+    @apply grid grid-cols-1 gap-6 xl:grid-cols-2;
+  }
 }

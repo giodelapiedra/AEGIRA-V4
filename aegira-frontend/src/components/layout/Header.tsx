@@ -26,13 +26,14 @@ export function Header() {
   };
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center justify-end bg-background/50 backdrop-blur-xl px-6 transition-all duration-200">
-      <div className="flex items-center gap-3">
+    <header className="sticky top-0 z-30 border-b border-border/60 bg-background/85 backdrop-blur-xl">
+      <div className="content-shell flex h-16 items-center justify-end">
+        <div className="flex items-center gap-2.5">
         <NotificationBell />
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="relative rounded-full" aria-label="User menu">
+            <Button variant="ghost" size="icon" className="relative rounded-full border border-transparent hover:border-border/70" aria-label="User menu">
               <Avatar className="h-8 w-8">
                 {user?.profilePictureUrl && (
                   <AvatarImage src={user.profilePictureUrl} alt={`${user.firstName} ${user.lastName}`} />
@@ -64,6 +65,7 @@ export function Header() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+      </div>
       </div>
     </header>
   );

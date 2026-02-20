@@ -25,17 +25,17 @@ export function TableSearch({
   };
 
   return (
-    <div className={cn('flex items-center gap-2', className)}>
+    <div className={cn('flex w-full flex-col gap-2 sm:flex-row sm:items-center', className)}>
       <Input
         type="search"
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={handleKeyDown}
-        className="max-w-sm"
+        className="h-10 sm:max-w-sm"
         aria-label="Search"
       />
-      <Button onClick={onSearch} variant="secondary" size="sm">
+      <Button onClick={onSearch} variant="secondary" size="sm" className="h-10 sm:w-auto">
         <Search className="h-4 w-4 mr-1" />
         Search
       </Button>

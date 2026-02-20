@@ -193,21 +193,18 @@ export function Sidebar() {
 
   return (
     <>
-      {/* ── Desktop Sidebar ── */}
-      <aside className="hidden md:flex fixed left-0 top-0 z-40 h-screen w-[72px] bg-card/80 backdrop-blur-sm border-r border-border/40 flex-col">
-        {/* Logo */}
-        <div className="flex h-16 items-center justify-center shrink-0">
+      <aside className="fixed left-0 top-0 z-40 hidden h-screen w-[84px] flex-col border-r border-border/60 bg-card/85 backdrop-blur-xl md:flex">
+        <div className="flex h-16 shrink-0 items-center justify-center">
           <Link
             to={ROUTES.DASHBOARD}
-            className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-sm font-bold text-primary transition-all duration-200 hover:bg-primary/15 hover:scale-105"
+            className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-sm font-semibold text-primary transition-all duration-200 hover:scale-105 hover:bg-primary/15"
           >
             A
           </Link>
         </div>
 
-        {/* Main Navigation */}
-        <nav className="flex-1 overflow-y-auto px-2.5 pt-2 pb-4" role="navigation" aria-label="Main navigation">
-          <div className="flex flex-col gap-0.5">
+        <nav className="flex-1 overflow-y-auto px-2.5 pb-4 pt-2" role="navigation" aria-label="Main navigation">
+          <div className="flex flex-col gap-1">
             {navItems.map((item) => {
               const active = isActive(item.href);
               return (
@@ -215,28 +212,24 @@ export function Sidebar() {
                   key={item.href}
                   to={item.href}
                   className={cn(
-                    'relative flex flex-col items-center gap-1 rounded-lg px-2 py-2.5 text-center transition-all duration-200',
-                    active
-                      ? 'text-primary'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                    'relative flex flex-col items-center gap-1 rounded-xl px-2 py-2.5 text-center transition-all duration-200',
+                    active ? 'text-primary' : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
                   )}
                   aria-label={item.label}
                   aria-current={active ? 'page' : undefined}
                 >
-                  {/* Active indicator bar */}
                   {active && (
-                    <span className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-[3px] rounded-r-full bg-primary" />
+                    <span className="absolute left-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-r-full bg-primary" />
                   )}
-                  <span className={cn(
-                    'flex items-center justify-center rounded-md h-8 w-8 transition-colors duration-200',
-                    active && 'bg-primary/10',
-                  )}>
+                  <span
+                    className={cn(
+                      'flex h-8 w-8 items-center justify-center rounded-lg transition-colors duration-200',
+                      active && 'bg-primary/10',
+                    )}
+                  >
                     {item.icon}
                   </span>
-                  <span className={cn(
-                    'text-[10px] leading-tight transition-colors duration-200',
-                    active ? 'font-semibold' : 'font-medium'
-                  )}>
+                  <span className={cn('text-[10px] leading-tight', active ? 'font-semibold' : 'font-medium')}>
                     {item.label}
                   </span>
                 </Link>
@@ -245,44 +238,42 @@ export function Sidebar() {
           </div>
         </nav>
 
-        {/* Divider */}
         <div className="mx-4 border-t border-border/40" />
 
-        {/* Bottom - Settings */}
         <div className="shrink-0 px-2.5 py-4">
           <Link
             to={ROUTES.SETTINGS}
             className={cn(
-              'relative flex flex-col items-center gap-1 rounded-lg px-2 py-2.5 text-center transition-all duration-200',
-              isActive(ROUTES.SETTINGS)
-                ? 'text-primary'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              'relative flex flex-col items-center gap-1 rounded-xl px-2 py-2.5 text-center transition-all duration-200',
+              isActive(ROUTES.SETTINGS) ? 'text-primary' : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
             )}
             aria-label="Settings"
             aria-current={isActive(ROUTES.SETTINGS) ? 'page' : undefined}
           >
             {isActive(ROUTES.SETTINGS) && (
-              <span className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-[3px] rounded-r-full bg-primary" />
+              <span className="absolute left-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-r-full bg-primary" />
             )}
-            <span className={cn(
-              'flex items-center justify-center rounded-md h-8 w-8 transition-colors duration-200',
-              isActive(ROUTES.SETTINGS) && 'bg-primary/10',
-            )}>
+            <span
+              className={cn(
+                'flex h-8 w-8 items-center justify-center rounded-lg transition-colors duration-200',
+                isActive(ROUTES.SETTINGS) && 'bg-primary/10',
+              )}
+            >
               <Settings className="h-5 w-5" />
             </span>
-            <span className={cn(
-              'text-[10px] leading-tight transition-colors duration-200',
-              isActive(ROUTES.SETTINGS) ? 'font-semibold' : 'font-medium'
-            )}>
+            <span className={cn('text-[10px] leading-tight', isActive(ROUTES.SETTINGS) ? 'font-semibold' : 'font-medium')}>
               Settings
             </span>
           </Link>
         </div>
       </aside>
 
-      {/* ── Mobile Bottom Navigation ── */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-border/40 bg-card/90 backdrop-blur-md safe-area-bottom" role="navigation" aria-label="Mobile navigation">
-        <div className="flex justify-around items-end h-16 px-1">
+      <nav
+        className="safe-area-bottom fixed bottom-0 left-0 right-0 z-40 border-t border-border/60 bg-card/95 backdrop-blur-xl md:hidden"
+        role="navigation"
+        aria-label="Mobile navigation"
+      >
+        <div className="flex h-16 items-end justify-around px-1">
           {mobileVisibleItems.map((item) => {
             const active = isActive(item.href);
             return (
@@ -290,21 +281,17 @@ export function Sidebar() {
                 key={item.href}
                 to={item.href}
                 className={cn(
-                  'relative flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg transition-colors min-w-[56px]',
-                  active ? 'text-primary' : 'text-muted-foreground'
+                  'relative flex min-w-[56px] flex-col items-center gap-0.5 rounded-lg px-3 py-2 transition-colors',
+                  active ? 'text-primary' : 'text-muted-foreground',
                 )}
                 aria-label={item.label}
                 aria-current={active ? 'page' : undefined}
               >
-                {/* Active dot indicator */}
                 {active && (
-                  <span className="absolute top-0.5 left-1/2 -translate-x-1/2 h-[3px] w-5 rounded-full bg-primary" />
+                  <span className="absolute left-1/2 top-0.5 h-[3px] w-5 -translate-x-1/2 rounded-full bg-primary" />
                 )}
                 {item.icon}
-                <span className={cn(
-                  'text-[10px]',
-                  active ? 'font-semibold' : 'font-medium'
-                )}>
+                <span className={cn('text-[10px]', active ? 'font-semibold' : 'font-medium')}>
                   {item.label}
                 </span>
               </Link>
@@ -316,19 +303,16 @@ export function Sidebar() {
               <DropdownMenuTrigger asChild>
                 <button
                   className={cn(
-                    'relative flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg transition-colors min-w-[56px]',
-                    isOverflowActive ? 'text-primary' : 'text-muted-foreground'
+                    'relative flex min-w-[56px] flex-col items-center gap-0.5 rounded-lg px-3 py-2 transition-colors',
+                    isOverflowActive ? 'text-primary' : 'text-muted-foreground',
                   )}
                   aria-label="More navigation items"
                 >
                   {isOverflowActive && (
-                    <span className="absolute top-0.5 left-1/2 -translate-x-1/2 h-[3px] w-5 rounded-full bg-primary" />
+                    <span className="absolute left-1/2 top-0.5 h-[3px] w-5 -translate-x-1/2 rounded-full bg-primary" />
                   )}
                   <MoreHorizontal className="h-5 w-5" />
-                  <span className={cn(
-                    'text-[10px]',
-                    isOverflowActive ? 'font-semibold' : 'font-medium'
-                  )}>
+                  <span className={cn('text-[10px]', isOverflowActive ? 'font-semibold' : 'font-medium')}>
                     More
                   </span>
                 </button>
@@ -338,10 +322,7 @@ export function Sidebar() {
                   <DropdownMenuItem key={item.href} asChild>
                     <Link
                       to={item.href}
-                      className={cn(
-                        'flex items-center gap-2.5',
-                        isActive(item.href) && 'text-primary font-medium'
-                      )}
+                      className={cn('flex items-center gap-2.5', isActive(item.href) && 'font-medium text-primary')}
                     >
                       {item.icon}
                       {item.label}
@@ -355,20 +336,17 @@ export function Sidebar() {
           <Link
             to={ROUTES.SETTINGS}
             className={cn(
-              'relative flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg transition-colors min-w-[56px]',
-              isActive(ROUTES.SETTINGS) ? 'text-primary' : 'text-muted-foreground'
+              'relative flex min-w-[56px] flex-col items-center gap-0.5 rounded-lg px-3 py-2 transition-colors',
+              isActive(ROUTES.SETTINGS) ? 'text-primary' : 'text-muted-foreground',
             )}
             aria-label="Settings"
             aria-current={isActive(ROUTES.SETTINGS) ? 'page' : undefined}
           >
             {isActive(ROUTES.SETTINGS) && (
-              <span className="absolute top-0.5 left-1/2 -translate-x-1/2 h-[3px] w-5 rounded-full bg-primary" />
+              <span className="absolute left-1/2 top-0.5 h-[3px] w-5 -translate-x-1/2 rounded-full bg-primary" />
             )}
             <Settings className="h-5 w-5" />
-            <span className={cn(
-              'text-[10px]',
-              isActive(ROUTES.SETTINGS) ? 'font-semibold' : 'font-medium'
-            )}>
+            <span className={cn('text-[10px]', isActive(ROUTES.SETTINGS) ? 'font-semibold' : 'font-medium')}>
               Settings
             </span>
           </Link>
