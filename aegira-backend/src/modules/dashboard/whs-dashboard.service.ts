@@ -2,14 +2,6 @@
 import { prisma } from '../../config/database';
 import { DateTime } from 'luxon';
 
-// Severity sort order for pending incidents (CRITICAL first)
-const SEVERITY_ORDER: Record<string, number> = {
-  CRITICAL: 4,
-  HIGH: 3,
-  MEDIUM: 2,
-  LOW: 1,
-};
-
 // Human-readable event messages
 function formatEventMessage(
   eventType: string,
@@ -149,7 +141,7 @@ export class WhsDashboardService {
         _count: { id: true },
       }),
 
-      // 6. Top 5 pending incidents (sorted by severity DESC, then date ASC)
+      // 6. Top 5 pending incidents (severity DESC via enum definition order, then oldest first)
       prisma.incident.findMany({
         where: {
           company_id: this.companyId,
@@ -167,9 +159,10 @@ export class WhsDashboardService {
           },
         },
         orderBy: [
+          { severity: 'desc' },
           { created_at: 'asc' },
         ],
-        take: 20, // Over-fetch to sort by severity in-memory
+        take: 5,
       }),
 
       // 7. Recent activity (last 10 incident/case events)
@@ -215,23 +208,16 @@ export class WhsDashboardService {
       }
     }
 
-    // Sort pending incidents by severity (CRITICAL first), then by date (oldest first)
-    const sortedPending = pendingIncidents
-      .sort((a, b) => {
-        const severityDiff = (SEVERITY_ORDER[b.severity] || 0) - (SEVERITY_ORDER[a.severity] || 0);
-        if (severityDiff !== 0) return severityDiff;
-        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-      })
-      .slice(0, 5)
-      .map((incident) => ({
-        id: incident.id,
-        incidentNumber: incident.incident_number,
-        title: incident.title,
-        reporterName: `${incident.reporter.first_name} ${incident.reporter.last_name}`,
-        incidentType: incident.incident_type,
-        severity: incident.severity,
-        createdAt: incident.created_at.toISOString(),
-      }));
+    // Map pending incidents (already sorted by DB: severity DESC, created_at ASC)
+    const sortedPending = pendingIncidents.map((incident) => ({
+      id: incident.id,
+      incidentNumber: incident.incident_number,
+      title: incident.title,
+      reporterName: `${incident.reporter.first_name} ${incident.reporter.last_name}`,
+      incidentType: incident.incident_type,
+      severity: incident.severity,
+      createdAt: incident.created_at.toISOString(),
+    }));
 
     // Format recent activity events
     const recentActivity = recentEvents.map((event) => {

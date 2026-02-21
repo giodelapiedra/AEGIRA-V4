@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   XCircle,
   Info,
+  Archive,
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { getRelativeTime } from '@/lib/utils/date.utils';
@@ -15,6 +16,7 @@ import type { Notification, NotificationType } from '@/types/common.types';
 interface NotificationItemProps {
   notification: Notification;
   onClick?: () => void;
+  onArchive?: (id: string) => void;
   compact?: boolean;
 }
 
@@ -79,7 +81,7 @@ const typeConfig: Record<
   },
 };
 
-export function NotificationItem({ notification, onClick, compact }: NotificationItemProps) {
+export function NotificationItem({ notification, onClick, onArchive, compact }: NotificationItemProps) {
   const config = typeConfig[notification.type] ?? typeConfig.SYSTEM;
   const Icon = config.icon;
   const isUnread = !notification.read_at;
@@ -154,10 +156,33 @@ export function NotificationItem({ notification, onClick, compact }: Notificatio
             </p>
           </div>
 
-          {/* Unread indicator dot */}
-          {isUnread && (
-            <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
-          )}
+          {/* Right side: archive button (on hover) + unread dot */}
+          <div className="flex shrink-0 items-center gap-1.5">
+            {onArchive && (
+              <span
+                role="button"
+                tabIndex={0}
+                className="rounded-md p-1 text-muted-foreground/50 opacity-0 transition-all hover:bg-muted hover:text-foreground group-hover:opacity-100"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onArchive(notification.id);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    onArchive(notification.id);
+                  }
+                }}
+                title="Archive"
+              >
+                <Archive className="h-3.5 w-3.5" />
+              </span>
+            )}
+            {isUnread && (
+              <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
+            )}
+          </div>
         </div>
 
         {/* Timestamp */}

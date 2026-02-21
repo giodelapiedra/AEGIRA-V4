@@ -8,6 +8,7 @@ import {
   Inbox,
   Loader2,
   BellOff,
+  Archive,
 } from 'lucide-react';
 import { useToast } from '@/lib/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -22,10 +23,13 @@ import {
   useUnreadCount,
   useMarkAsRead,
   useMarkAllAsRead,
+  useArchiveNotification,
+  useArchiveAllRead,
   type Notification,
+  type NotificationFilter,
 } from '../hooks/useNotifications';
 
-type NotificationTab = 'all' | 'unread' | 'read';
+type NotificationTab = NotificationFilter;
 
 /** Group notifications by date bucket: Today, Yesterday, This Week, Earlier */
 function groupByDate(notifications: Notification[]): { label: string; items: Notification[] }[] {
@@ -78,6 +82,8 @@ export function NotificationsPage() {
   const { data: unreadData } = useUnreadCount();
   const markAsRead = useMarkAsRead();
   const markAllAsRead = useMarkAllAsRead();
+  const archiveNotification = useArchiveNotification();
+  const archiveAllRead = useArchiveAllRead();
 
   // Build accumulated list: store items per page, flatten for display
   // Skip writing when data is stale placeholder from a previous tab (prevents cross-tab leakage)
@@ -95,6 +101,7 @@ export function NotificationsPage() {
   const total = data?.pagination?.total ?? 0;
   const hasMore = page * limit < total;
   const unreadCount = unreadData?.count ?? 0;
+  const isArchivedTab = tab === 'archived';
 
   const grouped = useMemo(() => groupByDate(notifications), [notifications]);
 
@@ -104,14 +111,28 @@ export function NotificationsPage() {
     accumulatedRef.current.delete(value);
   };
 
+  // Optimistically remove a notification from the accumulated ref
+  const optimisticRemove = useCallback((notificationId: string) => {
+    const pages = accumulatedRef.current.get(cacheKey);
+    if (!pages) return;
+    for (const pageItems of pages) {
+      if (!pageItems) continue;
+      const idx = pageItems.findIndex((n) => n.id === notificationId);
+      if (idx !== -1) {
+        pageItems.splice(idx, 1);
+        break;
+      }
+    }
+  }, [cacheKey]);
+
   // Optimistically update a notification's read_at in the accumulated ref
   const optimisticMarkRead = useCallback((notificationId: string) => {
     const pages = accumulatedRef.current.get(cacheKey);
     if (!pages) return;
     const now = new Date().toISOString();
-    for (const page of pages) {
-      if (!page) continue;
-      const item = page.find((n) => n.id === notificationId);
+    for (const pageItems of pages) {
+      if (!pageItems) continue;
+      const item = pageItems.find((n) => n.id === notificationId);
       if (item && !item.read_at) {
         item.read_at = now;
         break;
@@ -137,6 +158,22 @@ export function NotificationsPage() {
     [markAsRead, toast, optimisticMarkRead]
   );
 
+  const handleArchive = useCallback(
+    async (notificationId: string) => {
+      optimisticRemove(notificationId);
+      try {
+        await archiveNotification.mutateAsync(notificationId);
+      } catch (err) {
+        toast({
+          title: 'Error',
+          description: err instanceof Error ? err.message : 'Failed to archive notification',
+          variant: 'destructive',
+        });
+      }
+    },
+    [archiveNotification, toast, optimisticRemove]
+  );
+
   const handleLoadMore = () => {
     setPage((p) => p + 1);
   };
@@ -144,13 +181,26 @@ export function NotificationsPage() {
   const handleMarkAllRead = async () => {
     try {
       await markAllAsRead.mutateAsync();
-      // Clear accumulated ref so refetch populates fresh read-state across all pages
       accumulatedRef.current.clear();
-      toast({ title: 'All notifications marked as read' });
+      toast({ variant: 'success', title: 'All notifications marked as read' });
     } catch (err) {
       toast({
         title: 'Error',
         description: err instanceof Error ? err.message : 'Failed to mark all as read',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleArchiveAllRead = async () => {
+    try {
+      await archiveAllRead.mutateAsync();
+      accumulatedRef.current.clear();
+      toast({ variant: 'success', title: 'Read notifications archived' });
+    } catch (err) {
+      toast({
+        title: 'Error',
+        description: err instanceof Error ? err.message : 'Failed to archive notifications',
         variant: 'destructive',
       });
     }
@@ -176,6 +226,11 @@ export function NotificationsPage() {
       title: 'No read notifications',
       description: "Notifications you've read will appear here.",
     },
+    archived: {
+      icon: <Archive className="h-12 w-12" />,
+      title: 'No archived notifications',
+      description: 'Notifications you archive will appear here.',
+    },
   };
 
   const empty = emptyStates[tab];
@@ -193,22 +248,40 @@ export function NotificationsPage() {
               : undefined
           }
           action={
-            unreadCount > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleMarkAllRead}
-                disabled={markAllAsRead.isPending}
-                className="gap-1.5"
-              >
-                {markAllAsRead.isPending ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <CheckCheck className="h-3.5 w-3.5" />
-                )}
-                Mark all read
-              </Button>
-            )
+            <div className="flex items-center gap-2">
+              {!isArchivedTab && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleArchiveAllRead}
+                  disabled={archiveAllRead.isPending}
+                  className="gap-1.5"
+                >
+                  {archiveAllRead.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Archive className="h-3.5 w-3.5" />
+                  )}
+                  Archive read
+                </Button>
+              )}
+              {unreadCount > 0 && !isArchivedTab && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleMarkAllRead}
+                  disabled={markAllAsRead.isPending}
+                  className="gap-1.5"
+                >
+                  {markAllAsRead.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <CheckCheck className="h-3.5 w-3.5" />
+                  )}
+                  Mark all read
+                </Button>
+              )}
+            </div>
           }
         />
 
@@ -218,7 +291,7 @@ export function NotificationsPage() {
             <TabsTrigger value="all" className="gap-1.5">
               <Bell className="h-3.5 w-3.5" />
               All
-              {total > 0 && (
+              {total > 0 && tab === 'all' && (
                 <Badge variant="secondary" className="ml-0.5 h-5 min-w-5 px-1.5 text-[10px]">
                   {total > 99 ? '99+' : total}
                 </Badge>
@@ -237,20 +310,25 @@ export function NotificationsPage() {
               <CheckCircle2 className="h-3.5 w-3.5" />
               Read
             </TabsTrigger>
+            <TabsTrigger value="archived" className="gap-1.5">
+              <Archive className="h-3.5 w-3.5" />
+              Archived
+            </TabsTrigger>
           </TabsList>
         </Tabs>
 
         {/* Content */}
+        {!isLoading && notifications.length === 0 ? (
+          <EmptyState
+            variant="sticky"
+            title={empty.title}
+            description={empty.description}
+            icon={empty.icon}
+          />
+        ) : (
         <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
           {isLoading && page === 1 ? (
             <NotificationSkeleton />
-          ) : notifications.length === 0 ? (
-            <EmptyState
-              title={empty.title}
-              description={empty.description}
-              icon={empty.icon}
-              className="py-16"
-            />
           ) : (
             <div>
               {grouped.map((group) => (
@@ -271,6 +349,7 @@ export function NotificationsPage() {
                         onClick={() =>
                           handleNotificationClick(notification.id, !!notification.read_at)
                         }
+                        onArchive={!isArchivedTab ? handleArchive : undefined}
                       />
                     ))}
                   </div>
@@ -301,6 +380,7 @@ export function NotificationsPage() {
             </div>
           )}
         </div>
+        )}
       </div>
     </PageLoader>
   );

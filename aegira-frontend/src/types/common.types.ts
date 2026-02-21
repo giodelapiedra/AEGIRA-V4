@@ -32,7 +32,8 @@ export interface Notification {
   type: NotificationType;
   title: string;
   message: string;
-  read_at: string | null;  // null if unread
+  read_at: string | null;      // null if unread
+  archived_at: string | null;  // null if active
   created_at: string;
 }
 

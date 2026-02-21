@@ -268,6 +268,7 @@ model Event {
   @@index([company_id, person_id, created_at]) // Person event history queries
   @@index([company_id, event_time]) // Query by event time
   @@index([company_id, person_id, event_time]) // Person event history by event time
+  @@index([company_id, event_type, created_at(sort: Desc)]) // Dashboard recent activity
   @@map("events")
 }
 
@@ -282,8 +283,9 @@ model Notification {
   type       NotificationType
   title      String
   message    String
-  read_at    DateTime?
-  created_at DateTime         @default(now())
+  read_at     DateTime?
+  archived_at DateTime?
+  created_at  DateTime         @default(now())
 
   // Relations
   company Company @relation(fields: [company_id], references: [id], onDelete: Cascade)
@@ -293,6 +295,7 @@ model Notification {
   @@index([company_id, person_id, created_at])
   @@index([company_id, person_id, read_at])
   @@index([company_id, created_at])
+  @@index([company_id, person_id, archived_at, created_at]) // Active vs archived filter
   @@map("notifications")
 }
 
@@ -531,5 +534,7 @@ model Case {
   @@index([company_id, assigned_to]) // My assigned cases (company-scoped)
   @@index([assigned_to]) // FK: onDelete SetNull — required for cascade
   @@index([company_id, created_at])
+  @@index([company_id, assigned_to, status]) // Dashboard: my cases by status
+  @@index([company_id, resolved_at]) // Dashboard: resolved this month count
   @@map("cases")
 }

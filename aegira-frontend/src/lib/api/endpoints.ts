@@ -63,6 +63,8 @@ export const ENDPOINTS = {
     UNREAD_COUNT: '/notifications/unread',
     MARK_READ: (id: string) => `/notifications/${id}/read`,
     MARK_ALL_READ: '/notifications/mark-all-read',
+    ARCHIVE: (id: string) => `/notifications/${id}/archive`,
+    ARCHIVE_ALL_READ: '/notifications/archive-all-read',
   },
 
   // Admin Module

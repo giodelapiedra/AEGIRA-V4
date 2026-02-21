@@ -264,6 +264,7 @@ export function WorkerExportButton({ person }: WorkerExportButtonProps) {
       downloadFile(csv, filename);
 
       toast({
+        variant: 'success',
         title: 'Export complete',
         description: `Downloaded ${filteredCheckIns.length} check-ins and ${filteredMissed.length} missed check-ins.`,
       });

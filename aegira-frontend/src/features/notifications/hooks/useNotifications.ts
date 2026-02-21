@@ -6,7 +6,7 @@ import type { Notification, PaginatedResponse, NotificationUnreadCount } from '@
 
 export type { Notification, NotificationUnreadCount } from '@/types/common.types';
 
-type NotificationFilter = 'all' | 'unread' | 'read';
+export type NotificationFilter = 'all' | 'unread' | 'read' | 'archived';
 
 interface UseNotificationsParams {
   page?: number;
@@ -82,6 +82,29 @@ export function useMarkAllAsRead() {
 
   return useMutation({
     mutationFn: () => apiClient.patch(ENDPOINTS.NOTIFICATIONS.MARK_ALL_READ, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    },
+  });
+}
+
+export function useArchiveNotification() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (notificationId: string) =>
+      apiClient.patch(ENDPOINTS.NOTIFICATIONS.ARCHIVE(notificationId), {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    },
+  });
+}
+
+export function useArchiveAllRead() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => apiClient.patch(ENDPOINTS.NOTIFICATIONS.ARCHIVE_ALL_READ, {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },

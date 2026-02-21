@@ -106,7 +106,7 @@ function mapCaseToResponse(caseRecord: CaseWithRelations, timezone: string): Cas
 
 /**
  * GET /api/v1/cases
- * List all cases for the company (WHS/ADMIN only).
+ * List all cases for the company (WHS only).
  */
 export async function getCases(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
@@ -135,7 +135,7 @@ export async function getCases(c: Context): Promise<Response> {
 /**
  * GET /api/v1/cases/:id
  * Get a single case by ID.
- * Workers can view if they are the incident reporter; WHS/ADMIN can view all.
+ * Workers can view if they are the incident reporter; WHS can view all.
  */
 export async function getCaseById(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
@@ -151,9 +151,9 @@ export async function getCaseById(c: Context): Promise<Response> {
     throw new AppError('NOT_FOUND', 'Case not found', 404);
   }
 
-  // Non-WHS/ADMIN users can only view cases linked to their own incidents
-  const whsOrAdmin = ['ADMIN', 'WHS'].includes(userRole.toUpperCase());
-  if (!whsOrAdmin && caseRecord.incident.reporter.id !== userId) {
+  // Only WHS can view any case; others can only view cases linked to their own incidents
+  const isWhs = userRole.toUpperCase() === 'WHS';
+  if (!isWhs && caseRecord.incident.reporter.id !== userId) {
     throw new AppError('FORBIDDEN', 'You do not have permission to view this case', 403);
   }
 

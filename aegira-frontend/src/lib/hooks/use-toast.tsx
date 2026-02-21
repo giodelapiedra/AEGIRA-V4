@@ -1,44 +1,130 @@
-import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useRef, ReactNode } from 'react';
 
-export type ToastVariant = 'default' | 'destructive' | 'success';
+export type ToastVariant = 'default' | 'destructive' | 'success' | 'warning';
+
+const VARIANT_DURATIONS: Record<ToastVariant, number> = {
+  success: 3000,
+  default: 4000,
+  warning: 5000,
+  destructive: 6000,
+};
+
+const MAX_TOASTS = 5;
+const EXIT_ANIMATION_MS = 300;
 
 export interface Toast {
   id: string;
   title?: string;
   description?: string;
   variant?: ToastVariant;
+  /** @internal Used by Toaster to trigger exit animation */
+  _exiting?: boolean;
 }
 
 interface ToastContextType {
   toasts: Toast[];
   addToast: (toast: Omit<Toast, 'id'>) => void;
   removeToast: (id: string) => void;
+  pauseToast: (id: string) => void;
+  resumeToast: (id: string) => void;
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
 let toastCount = 0;
 
+interface TimerState {
+  timeout: ReturnType<typeof setTimeout>;
+  startedAt: number;
+  remaining: number;
+}
+
+function toastKey(t: { title?: string; description?: string }): string {
+  return `${t.title ?? ''}::${t.description ?? ''}`;
+}
+
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const timersRef = useRef<Map<string, TimerState>>(new Map());
+  const activeKeysRef = useRef<Set<string>>(new Set());
 
-  const addToast = useCallback((toast: Omit<Toast, 'id'>) => {
-    const id = String(++toastCount);
-
-    setToasts((prev) => [...prev, { ...toast, id }]);
-
-    // Auto remove after 5 seconds
+  const startExitAnimation = useCallback((id: string) => {
+    setToasts((prev) => {
+      const found = prev.find((t) => t.id === id);
+      if (found) activeKeysRef.current.delete(toastKey(found));
+      return prev.map((t) => (t.id === id ? { ...t, _exiting: true } : t));
+    });
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 5000);
+    }, EXIT_ANIMATION_MS);
   }, []);
+
+  const startDismissTimer = useCallback((id: string, duration: number) => {
+    const timeout = setTimeout(() => {
+      timersRef.current.delete(id);
+      startExitAnimation(id);
+    }, duration);
+
+    timersRef.current.set(id, { timeout, startedAt: Date.now(), remaining: duration });
+  }, [startExitAnimation]);
 
   const removeToast = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
+    const timer = timersRef.current.get(id);
+    if (timer) {
+      clearTimeout(timer.timeout);
+      timersRef.current.delete(id);
+    }
+    startExitAnimation(id);
+  }, [startExitAnimation]);
+
+  const pauseToast = useCallback((id: string) => {
+    const timer = timersRef.current.get(id);
+    if (timer) {
+      clearTimeout(timer.timeout);
+      const elapsed = Date.now() - timer.startedAt;
+      timer.remaining = Math.max(timer.remaining - elapsed, 0);
+    }
   }, []);
 
+  const resumeToast = useCallback((id: string) => {
+    const timer = timersRef.current.get(id);
+    if (timer && timer.remaining > 0) {
+      startDismissTimer(id, timer.remaining);
+    }
+  }, [startDismissTimer]);
+
+  const addToast = useCallback((toast: Omit<Toast, 'id'>) => {
+    const key = toastKey(toast);
+
+    // Duplicate prevention: skip if same title+description already showing
+    if (activeKeysRef.current.has(key)) return;
+
+    const id = String(++toastCount);
+    const variant = toast.variant || 'default';
+    const duration = VARIANT_DURATIONS[variant];
+
+    activeKeysRef.current.add(key);
+
+    setToasts((prev) => {
+      const next = [...prev, { ...toast, id }];
+      // Cap at MAX_TOASTS — evict oldest
+      while (next.length > MAX_TOASTS) {
+        const removed = next.shift()!;
+        activeKeysRef.current.delete(toastKey(removed));
+        const timer = timersRef.current.get(removed.id);
+        if (timer) {
+          clearTimeout(timer.timeout);
+          timersRef.current.delete(removed.id);
+        }
+      }
+      return next;
+    });
+
+    startDismissTimer(id, duration);
+  }, [startDismissTimer]);
+
   return (
-    <ToastContext.Provider value={{ toasts, addToast, removeToast }}>
+    <ToastContext.Provider value={{ toasts, addToast, removeToast, pauseToast, resumeToast }}>
       {children}
     </ToastContext.Provider>
   );
@@ -53,6 +139,8 @@ export function useToast() {
     toasts: context.toasts,
     toast: context.addToast,
     dismiss: context.removeToast,
+    pauseToast: context.pauseToast,
+    resumeToast: context.resumeToast,
   };
 }
 

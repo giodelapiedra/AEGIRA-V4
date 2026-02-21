@@ -52,3 +52,24 @@ export async function markAllAsRead(c: Context): Promise<Response> {
 
   return c.json({ success: true, data: { markedCount: count } });
 }
+
+export async function archiveNotification(c: Context): Promise<Response> {
+  const user = c.get('user') as AuthenticatedUser;
+  const companyId = c.get('companyId') as string;
+  const { id } = c.req.valid('param' as never) as { id: string };
+
+  const service = getService(companyId);
+  const result = await service.archive(id, user.id);
+
+  return c.json({ success: true, data: result });
+}
+
+export async function archiveAllRead(c: Context): Promise<Response> {
+  const user = c.get('user') as AuthenticatedUser;
+  const companyId = c.get('companyId') as string;
+
+  const service = getService(companyId);
+  const count = await service.archiveAllRead(user.id);
+
+  return c.json({ success: true, data: { archivedCount: count } });
+}

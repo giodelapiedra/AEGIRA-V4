@@ -132,7 +132,7 @@ export function SettingsPage() {
         currentPassword: data.currentPassword,
         newPassword: data.newPassword,
       });
-      toast({ title: 'Password updated', description: 'Your password has been changed successfully.' });
+      toast({ variant: 'success', title: 'Password updated', description: 'Your password has been changed successfully.' });
       resetPassword();
     } catch (error) {
       toast({
@@ -163,7 +163,7 @@ export function SettingsPage() {
     };
 
     if (Object.keys(updates).length === 0) {
-      toast({ title: 'No changes', description: 'No modifications were detected.' });
+      toast({ variant: 'warning', title: 'No changes', description: 'No modifications were detected.' });
       setIsEditing(false);
       return;
     }
@@ -172,7 +172,7 @@ export function SettingsPage() {
       await updateProfileMutation.mutateAsync(updates);
       // Update the auth store with new profile data (all fields required by form)
       setAuth({ ...user, firstName: data.firstName, lastName: data.lastName, gender, dateOfBirth, contactNumber, emergencyContactName, emergencyContactPhone, emergencyContactRelationship });
-      toast({ title: 'Profile updated', description: 'Your profile has been updated successfully.' });
+      toast({ variant: 'success', title: 'Profile updated', description: 'Your profile has been updated successfully.' });
       setIsEditing(false);
     } catch (error) {
       toast({
@@ -229,7 +229,7 @@ export function SettingsPage() {
       if (user) {
         setAuth({ ...user, profilePictureUrl: data.profilePictureUrl });
       }
-      toast({ title: 'Profile picture updated', description: 'Your profile picture has been updated successfully.' });
+      toast({ variant: 'success', title: 'Profile picture updated', description: 'Your profile picture has been updated successfully.' });
     } catch (error) {
       toast({
         variant: 'destructive',

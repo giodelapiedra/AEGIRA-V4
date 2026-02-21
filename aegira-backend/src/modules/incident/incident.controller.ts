@@ -159,7 +159,7 @@ export async function getMyIncidents(c: Context): Promise<Response> {
 
 /**
  * GET /api/v1/incidents
- * List all incidents for the company (WHS/ADMIN only).
+ * List all incidents for the company (WHS only).
  */
 export async function getIncidents(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
@@ -188,7 +188,7 @@ export async function getIncidents(c: Context): Promise<Response> {
 /**
  * GET /api/v1/incidents/:id
  * Get a single incident by ID.
- * Workers can only view their own; WHS/ADMIN can view all.
+ * Workers can only view their own; WHS can view all.
  */
 export async function getIncidentById(c: Context): Promise<Response> {
   const companyId = c.get('companyId') as string;
@@ -204,9 +204,9 @@ export async function getIncidentById(c: Context): Promise<Response> {
     throw new AppError('NOT_FOUND', 'Incident not found', 404);
   }
 
-  // Non-WHS/ADMIN users can only view their own incidents
-  const whsOrAdmin = ['ADMIN', 'WHS'].includes(userRole.toUpperCase());
-  if (!whsOrAdmin && incident.reporter_id !== userId) {
+  // Only WHS can view any incident; others can only view their own
+  const isWhs = userRole.toUpperCase() === 'WHS';
+  if (!isWhs && incident.reporter_id !== userId) {
     throw new AppError('FORBIDDEN', 'You do not have permission to view this incident', 403);
   }
 
@@ -228,14 +228,14 @@ export async function getIncidentTimeline(c: Context): Promise<Response> {
 
   const repository = getRepository(companyId);
 
-  // Verify access
-  const incident = await repository.findById(id);
+  // Lean access check (avoids loading full incident relations)
+  const incident = await repository.findForAccessCheck(id);
   if (!incident) {
     throw new AppError('NOT_FOUND', 'Incident not found', 404);
   }
 
-  const whsOrAdmin = ['ADMIN', 'WHS'].includes(userRole.toUpperCase());
-  if (!whsOrAdmin && incident.reporter_id !== userId) {
+  const isWhs = userRole.toUpperCase() === 'WHS';
+  if (!isWhs && incident.reporter_id !== userId) {
     throw new AppError('FORBIDDEN', 'You do not have permission to view this timeline', 403);
   }
 

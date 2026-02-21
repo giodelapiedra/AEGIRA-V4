@@ -149,7 +149,7 @@ function TeamEditForm({ team, teamLeads, supervisors, loadingTeamLeads, loadingS
     }
 
     if (Object.keys(updates).length === 0) {
-      toast({ title: 'No changes', description: 'No modifications were detected.' });
+      toast({ variant: 'warning', title: 'No changes', description: 'No modifications were detected.' });
       return;
     }
 

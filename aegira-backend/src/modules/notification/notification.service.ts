@@ -1,6 +1,6 @@
 // Notification Service - Business Logic + Fire-and-Forget Utilities
 import type { PrismaClient, Notification } from '@prisma/client';
-import { NotificationRepository, type CreateNotificationData } from './notification.repository';
+import { NotificationRepository, type CreateNotificationData, type NotificationFilter } from './notification.repository';
 import { AppError } from '../../shared/errors';
 import { logger } from '../../config/logger';
 import type { PaginationParams, PaginatedResponse } from '../../types/api.types';
@@ -15,7 +15,7 @@ export class NotificationService {
 
   async list(
     personId: string,
-    params: PaginationParams & { filter?: 'unread' | 'read' }
+    params: PaginationParams & { filter?: NotificationFilter }
   ): Promise<PaginatedResponse<Notification>> {
     return this.repository.findByPerson(personId, params);
   }
@@ -46,6 +46,30 @@ export class NotificationService {
 
   async markAllAsRead(personId: string): Promise<number> {
     return this.repository.markAllAsRead(personId);
+  }
+
+  /**
+   * Archives a notification.
+   * Same ownership pattern as markAsRead — verifies person_id + company_id at DB level.
+   * Returns the notification if newly archived, or the existing one if already archived.
+   * Throws NOT_FOUND if the notification doesn't exist or doesn't belong to the user.
+   */
+  async archive(id: string, personId: string): Promise<Notification> {
+    const updated = await this.repository.archive(id, personId);
+
+    if (updated) return updated;
+
+    // updateMany returned 0 rows — either not found, wrong owner, or already archived.
+    const existing = await this.repository.findById(id);
+    if (existing && existing.person_id === personId) {
+      return existing;
+    }
+
+    throw new AppError('NOT_FOUND', 'Notification not found', 404);
+  }
+
+  async archiveAllRead(personId: string): Promise<number> {
+    return this.repository.archiveAllRead(personId);
   }
 }
 

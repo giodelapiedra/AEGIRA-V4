@@ -155,7 +155,7 @@ export function AdminHolidaysPage() {
       if (formData.recurring !== editingHoliday.recurring) updates.recurring = formData.recurring;
 
       if (Object.keys(updates).length === 0) {
-        toast({ title: 'No changes', description: 'No modifications were detected.' });
+        toast({ variant: 'warning', title: 'No changes', description: 'No modifications were detected.' });
         setShowForm(false);
         setEditingHoliday(null);
         resetForm();

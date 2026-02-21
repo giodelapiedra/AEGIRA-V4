@@ -197,7 +197,7 @@ function WorkerEditForm({ person, teams }: WorkerEditFormProps) {
     const updates = buildUpdates(data);
 
     if (Object.keys(updates).length === 0) {
-      toast({ title: 'No changes', description: 'No modifications were detected.' });
+      toast({ variant: 'warning', title: 'No changes', description: 'No modifications were detected.' });
       return;
     }
 

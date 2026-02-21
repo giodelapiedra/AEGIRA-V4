@@ -14,7 +14,6 @@ D:\AEGIRA V5\
 │   ├── rules/         → 3 rule templates
 │   └── sync.config.json
 ├── .claude/           → AUTO-GENERATED (Claude Code reads from here)
-├── .cursor/           → AUTO-GENERATED (Cursor reads from here)
 ├── docs/              → Human documentation (guides, architecture, audits)
 ├── sync-patterns.js   → Pattern-aware build/watch/validate script
 └── package.json       → Root scripts
@@ -24,7 +23,7 @@ See `aegira-backend/CLAUDE.md` and `aegira-frontend/CLAUDE.md` for module-specif
 
 ## Pattern Library
 
-All coding patterns live in `.ai/patterns/` as atomic markdown files. Skills and rules reference these patterns via `<!-- @pattern: category/name -->` markers. The `sync-patterns.js` script resolves markers and generates `.claude/` and `.cursor/` output.
+All coding patterns live in `.ai/patterns/` as atomic markdown files. Skills and rules reference these patterns via `<!-- @pattern: category/name -->` markers. The `sync-patterns.js` script resolves markers and generates `.claude/` output (current `sync.config.json` target).
 
 **DO NOT** edit `.claude/skills/` or `.claude/rules/` directly — edit `.ai/` and run `npm run ai:build`.
 

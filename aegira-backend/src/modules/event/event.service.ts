@@ -15,6 +15,10 @@ export interface CreateEventInput {
   payload: Record<string, unknown>;
   timezone: string;
   scheduleWindow?: { start: string; end: string };
+  /** Optional pre-captured time (HH:mm in company timezone).
+   *  When provided, avoids re-reading DateTime.now() for late detection,
+   *  ensuring consistency with the caller's time checks. */
+  capturedTimeHHmm?: string;
 }
 
 interface LateDetectionResult {
@@ -56,7 +60,10 @@ export function buildEventData(input: CreateEventInput): Prisma.EventUncheckedCr
   const now = DateTime.now().setZone(input.timezone);
   const eventTime = now.toJSDate();
   const ingestedAt = new Date(); // UTC server time
-  const currentTimeHHmm = now.toFormat('HH:mm');
+  // Use caller's captured time if provided, otherwise read from clock.
+  // This prevents late detection from disagreeing with the caller's window check
+  // when the two DateTime.now() reads straddle the window boundary.
+  const currentTimeHHmm = input.capturedTimeHHmm ?? now.toFormat('HH:mm');
 
   const { isLate, lateByMinutes } = detectLateSubmission(
     currentTimeHHmm,

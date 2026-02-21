@@ -5,10 +5,9 @@ import { AppError } from '../../shared/errors';
 import type { CheckInInput, ReadinessScore, ReadinessLevel } from '../../types/domain.types';
 import type { PaginationParams, PaginatedResponse } from '../../types/api.types';
 import { prisma } from '../../config/database';
+import { DateTime } from 'luxon';
 import {
   getTodayInTimezone,
-  getCurrentTimeInTimezone,
-  getDayOfWeekInTimezone,
   parseDateInTimezone,
   formatTime12h,
 } from '../../shared/utils';
@@ -48,8 +47,15 @@ export class CheckInService {
     personId: string,
     companyId: string
   ): Promise<CheckIn> {
-    // Get today's date in company timezone
-    const todayStr = getTodayInTimezone(this.timezone);
+    // BUG-A FIX: Capture a single DateTime snapshot and derive all time values from it.
+    // Previously, getTodayInTimezone(), getDayOfWeekInTimezone(), and getCurrentTimeInTimezone()
+    // each called DateTime.now() separately. If the async gap (holiday + person fetch) between
+    // the first and subsequent calls crossed midnight, the date, day-of-week, and current time
+    // could be inconsistent — e.g., todayStr="Monday" but dayOfWeek=Tuesday.
+    const now = DateTime.now().setZone(this.timezone);
+    const todayStr = now.toFormat('yyyy-MM-dd');
+    const dayOfWeek = (now.weekday === 7 ? 0 : now.weekday).toString();
+    const currentTime = now.toFormat('HH:mm');
     const today = parseDateInTimezone(todayStr, this.timezone);
 
     // NOTE: No pre-check for duplicate here. The DB unique constraint
@@ -123,8 +129,7 @@ export class CheckInService {
       // Capture schedule window for late detection in EventService
       scheduleWindow = { start: schedule.checkInStart, end: schedule.checkInEnd };
 
-      // Check if today is a work day (using company timezone)
-      const dayOfWeek = getDayOfWeekInTimezone(this.timezone).toString();
+      // Check if today is a work day (using snapshot dayOfWeek)
       if (!schedule.workDays.includes(dayOfWeek)) {
         throw new AppError(
           'NOT_WORK_DAY',
@@ -133,12 +138,11 @@ export class CheckInService {
         );
       }
 
-      // Check if before check-in window opens (using company timezone).
+      // Check if before check-in window opens (using snapshot currentTime).
       // DESIGN: Late submissions (after window closes) are intentionally allowed at any time
       // of day. They are flagged as late via EventService with late_by_minutes, and can
       // auto-resolve missed check-in records. No upper-bound cutoff is enforced — if a
       // business requirement for maximum lateness arises, add a configurable deadline here.
-      const currentTime = getCurrentTimeInTimezone(this.timezone);
       if (currentTime < schedule.checkInStart) {
         throw new AppError(
           'OUTSIDE_CHECK_IN_WINDOW',
@@ -158,6 +162,8 @@ export class CheckInService {
     try {
       const { checkIn, resolvedMiss } = await prisma.$transaction(async (tx) => {
         // Create event first (event sourcing) with time tracking
+        // BUG-B FIX: Pass capturedTimeHHmm so buildEventData uses the same
+        // time as our window check, preventing late-detection disagreement.
         const eventData = buildEventData({
           companyId,
           personId,
@@ -180,6 +186,7 @@ export class CheckInService {
           },
           timezone: this.timezone,
           scheduleWindow,
+          capturedTimeHHmm: currentTime,
         });
         const event = await tx.event.create({ data: eventData });
 
@@ -360,7 +367,9 @@ export class CheckInService {
    * All times are in company timezone
    */
   async getCheckInStatus(personId: string): Promise<CheckInStatus> {
-    const todayStr = getTodayInTimezone(this.timezone);
+    // Capture single time snapshot (same fix as submit() — prevents drift across midnight)
+    const now = DateTime.now().setZone(this.timezone);
+    const todayStr = now.toFormat('yyyy-MM-dd');
     const today = parseDateInTimezone(todayStr, this.timezone);
 
     // All three queries are independent — run in parallel
@@ -431,9 +440,9 @@ export class CheckInService {
       }
     );
 
-    // Get current day and time in company timezone
-    const dayOfWeek = getDayOfWeekInTimezone(this.timezone).toString();
-    const currentTime = getCurrentTimeInTimezone(this.timezone);
+    // Use snapshot values (not separate DateTime.now() calls)
+    const dayOfWeek = (now.weekday === 7 ? 0 : now.weekday).toString();
+    const currentTime = now.toFormat('HH:mm');
 
     // Check if today is a work day
     const isWorkDay = schedule.workDays.includes(dayOfWeek);

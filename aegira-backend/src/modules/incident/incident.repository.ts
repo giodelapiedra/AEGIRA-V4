@@ -128,6 +128,14 @@ export class IncidentRepository extends BaseRepository {
     }) as Promise<IncidentWithRelations | null>;
   }
 
+  /** Lean query for access-check only (avoids loading full relations) */
+  async findForAccessCheck(id: string): Promise<{ id: string; reporter_id: string } | null> {
+    return this.prisma.incident.findFirst({
+      where: this.where({ id }),
+      select: { id: true, reporter_id: true },
+    });
+  }
+
   private buildFiltersWhere(filters: Omit<IncidentFilters, 'page' | 'limit'>): Prisma.IncidentWhereInput {
     return {
       company_id: this.companyId,

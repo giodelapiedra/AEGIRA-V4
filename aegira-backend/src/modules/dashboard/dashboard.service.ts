@@ -569,7 +569,7 @@ export class DashboardService {
           check_in_end: true,
         },
       }),
-      // Get today's check-ins with person info (includes team_id via join)
+      // Get today's check-ins (team_id resolved via allWorkers map, no join needed)
       prisma.checkIn.findMany({
         where: {
           company_id: this.companyId,
@@ -579,12 +579,17 @@ export class DashboardService {
         select: {
           person_id: true,
           readiness_score: true,
-          person: { select: { team_id: true } },
         },
       }),
       // Check if today is a company holiday
       checkHolidayForDate(prisma, this.companyId, todayStr),
     ]);
+
+    // Build worker → team lookup from allWorkers (avoids redundant join on check-ins)
+    const workerTeamMap = new Map<string, string>();
+    for (const w of allWorkers) {
+      if (w.team_id) workerTeamMap.set(w.id, w.team_id);
+    }
 
     // Build check-in lookup: personId → check-in
     const checkedInPersonIds = new Set(checkInsByPerson.map(ci => ci.person_id));
@@ -592,7 +597,7 @@ export class DashboardService {
     // Group check-ins by team for readiness stats
     const checkInStats = new Map<string, { count: number; avgSum: number }>();
     for (const ci of checkInsByPerson) {
-      const teamId = ci.person.team_id;
+      const teamId = workerTeamMap.get(ci.person_id);
       if (!teamId) continue;
       const existing = checkInStats.get(teamId) || { count: 0, avgSum: 0 };
       existing.count++;

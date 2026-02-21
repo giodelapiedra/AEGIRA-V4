@@ -22,7 +22,7 @@ router.get(
   controller.getCases
 );
 
-// GET /api/v1/cases/:id — single case detail (owner of linked incident or WHS/ADMIN)
+// GET /api/v1/cases/:id — single case detail (owner of linked incident or WHS)
 router.get('/:id', allAuthenticated, controller.getCaseById);
 
 // PATCH /api/v1/cases/:id — update case (WHS only)

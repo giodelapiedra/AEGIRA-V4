@@ -11,6 +11,8 @@ export interface CreateNotificationData {
   message: string;
 }
 
+export type NotificationFilter = 'unread' | 'read' | 'archived';
+
 export class NotificationRepository extends BaseRepository {
   constructor(prisma: PrismaClient, companyId: string) {
     super(prisma, companyId);
@@ -49,13 +51,19 @@ export class NotificationRepository extends BaseRepository {
 
   async findByPerson(
     personId: string,
-    params: PaginationParams & { filter?: 'unread' | 'read' }
+    params: PaginationParams & { filter?: NotificationFilter }
   ): Promise<PaginatedResponse<Notification>> {
+    const isArchived = params.filter === 'archived';
+
     const where: Prisma.NotificationWhereInput = {
       company_id: this.companyId,
       person_id: personId,
-      ...(params.filter === 'unread' && { read_at: null }),
-      ...(params.filter === 'read' && { read_at: { not: null } }),
+      // Archived tab: show only archived. All other tabs: exclude archived.
+      ...(isArchived
+        ? { archived_at: { not: null } }
+        : { archived_at: null }),
+      ...(!isArchived && params.filter === 'unread' && { read_at: null }),
+      ...(!isArchived && params.filter === 'read' && { read_at: { not: null } }),
     };
 
     const [items, total] = await Promise.all([
@@ -72,6 +80,7 @@ export class NotificationRepository extends BaseRepository {
           title: true,
           message: true,
           read_at: true,
+          archived_at: true,
           created_at: true,
         },
       }),
@@ -86,6 +95,7 @@ export class NotificationRepository extends BaseRepository {
       where: this.where({
         person_id: personId,
         read_at: null,
+        archived_at: null, // Archived notifications don't count as unread
       }),
     });
   }
@@ -111,10 +121,38 @@ export class NotificationRepository extends BaseRepository {
       where: this.where({
         person_id: personId,
         read_at: null,
+        archived_at: null, // Don't touch archived notifications
       }),
       data: { read_at: new Date() },
     });
     return result.count;
   }
 
+  async archive(id: string, personId: string): Promise<Notification | null> {
+    const result = await this.prisma.notification.updateMany({
+      where: {
+        id,
+        person_id: personId,
+        company_id: this.companyId,
+        archived_at: null, // Only archive if not already archived
+      },
+      data: { archived_at: new Date() },
+    });
+
+    if (result.count === 0) return null;
+
+    return this.prisma.notification.findFirst({ where: this.where({ id }) });
+  }
+
+  async archiveAllRead(personId: string): Promise<number> {
+    const result = await this.prisma.notification.updateMany({
+      where: this.where({
+        person_id: personId,
+        read_at: { not: null }, // Only archive read notifications
+        archived_at: null, // Skip already archived
+      }),
+      data: { archived_at: new Date() },
+    });
+    return result.count;
+  }
 }
